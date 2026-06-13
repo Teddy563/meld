@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Meld</title>
+<link rel="icon" type="image/png" href="assets/world_icon.png"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<style>
+  /* dark brown-black stone + golden (matches the MELD logo) */
+  @font-face { font-family:'Monocraft'; src:url('https://cdn.jsdelivr.net/gh/IdreesInc/Monocraft@main/dist/Monocraft-ttf/Monocraft.ttf') format('truetype'); font-weight:400 700; font-display:swap; }
+  :root { --bg:#0b0a08; --panel:#16130d; --line:#2e2a20; --fg:#f0e9da; --mut:#9a9079;
+          --acc:#e3a417; --acc2:#f0bf3a; --ok:#86b45a; --run:#cf9f3c; --bad:#cf5a3e; --plan:#6b6253;
+          --pixel:'Monocraft','system-ui',sans-serif; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font:14px/1.45 system-ui,Segoe UI,sans-serif;
+              background:var(--bg); color:var(--fg); }
+  #app { display:flex; height:100%; }
+  #map { flex:1; background:var(--bg); }
+  .leaflet-container { background:var(--bg); }
+  /* dim the OSM tiles to match the dark panel */
+  .leaflet-tile { filter: brightness(0.78) saturate(0.9) contrast(1.04); }
+  #side { width:340px; background:var(--panel); border-left:1px solid var(--line);
+          overflow-y:auto; padding:14px; }
+  h1 { font-size:15px; margin:0 0 4px; letter-spacing:.5px; }
+  .sub { color:var(--mut); font-size:12px; margin-bottom:12px; }
+  .card { background:var(--panel); border:2px solid var(--line); border-radius:2px;
+          padding:11px 13px; margin-bottom:12px; }
+  .card h2 { font-family:var(--pixel); font-size:12px; text-transform:uppercase; letter-spacing:.04em;
+             color:var(--acc2); margin:0 0 9px; }
+  label { display:flex; justify-content:space-between; align-items:center;
+          gap:8px; margin:6px 0; font-size:13px; }
+  label .i { color:var(--mut); cursor:help; font-size:11px; border:1px solid var(--line);
+             border-radius:50%; width:15px; height:15px; text-align:center; line-height:13px; }
+  input,select { background:var(--bg); color:var(--fg); border:2px solid var(--line);
+                 border-radius:2px; padding:4px 6px; width:120px; font:inherit; }
+  input:focus,select:focus { outline:none; border-color:var(--acc); }
+  button { background:#e3a417; color:#241a02;
+           border:2px solid #9a6a12; border-radius:0;
+           padding:8px 10px; font-family:var(--pixel); font-weight:700; letter-spacing:.02em;
+           cursor:pointer; width:100%; margin-top:6px;
+           box-shadow: inset 0 2px 0 rgba(255,235,170,.28); }
+  button:hover { filter:brightness(1.07); }
+  button:active { transform:translateY(1px); }
+  button.sec { background:var(--panel); color:var(--fg); border:2px solid var(--line);
+               box-shadow:none; font-weight:700; }
+  button.sec:hover { border-color:var(--acc); color:var(--acc2); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  /* custom checkbox: dark box; when ticked, a gold button with a centered dark check */
+  input[type=checkbox] { appearance:none; -webkit-appearance:none; width:18px; height:18px; margin:0;
+    border:2px solid var(--line); border-radius:2px; background:var(--bg) center/12px no-repeat; cursor:pointer;
+    flex:0 0 auto; align-self:center; transition:border-color .1s, background-color .1s; }
+  input[type=checkbox]:hover { border-color:var(--acc); }
+  input[type=checkbox]:checked { border-color:#9a6a12; background-color:var(--acc);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23241a02' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-6.5'/%3E%3C/svg%3E"); }
+  .row { display:flex; gap:6px; }
+  .row button { margin-top:0; }
+  .chip { display:inline-block; padding:2px 7px; border-radius:2px; font-size:10px;
+          font-family:var(--pixel); letter-spacing:.04em; text-transform:uppercase;
+          background:var(--bg); border:2px solid var(--line); }
+  .lk { color:var(--ok); } .un { color:var(--mut); }
+  .legend span { display:inline-flex; align-items:center; gap:4px; margin-right:8px; font-size:11px; }
+  .dot { width:9px; height:9px; border-radius:2px; display:inline-block; }
+  #log { font:11px/1.4 ui-monospace,Consolas,monospace; color:var(--mut);
+         white-space:pre-wrap; max-height:140px; overflow-y:auto; }
+  .stat { font-size:12px; color:var(--mut); margin:2px 0; overflow-wrap:anywhere; }
+  .bar { height:5px; background:var(--panel); border-radius:3px; overflow:hidden; margin-top:3px; }
+  .bar > i { display:block; height:100%; background:var(--run); width:0; transition:width .3s ease; }
+  .bar > i.ok { background:var(--ok); } .bar > i.bad { background:var(--bad); }
+  /* live per-worker rows (Workers card, near the log) */
+  .wjob { display:flex; gap:8px; align-items:flex-start; padding:6px 0; border-bottom:1px solid var(--line); }
+  .wjob:last-child { border-bottom:0; }
+  .wnum { flex:0 0 auto; min-width:34px; text-align:center; font-family:var(--pixel); font-size:12px;
+          padding:4px 6px; border-radius:2px; color:#241a02; background:var(--mut); }
+  .wnum.run { background:var(--acc); } .wnum.ok { background:var(--ok); } .wnum.bad { background:var(--bad); color:#fff; }
+  .wjbody { flex:1 1 auto; min-width:0; }
+  .wjtop { display:flex; justify-content:space-between; align-items:baseline; gap:6px; }
+  .wjkey { font-size:12px; color:var(--fg); overflow-wrap:anywhere; }
+  .wjpct { flex:0 0 auto; font-family:var(--pixel); font-size:12px; color:var(--acc2); font-variant-numeric:tabular-nums; }
+  .wjmsg { font-size:11px; color:var(--mut); overflow-wrap:anywhere; margin-top:2px; }
+  .cellemoji { background:none !important; border:none !important; }
+  .cellemoji div { font-size:17px; text-align:center; line-height:22px;
+                   text-shadow:0 0 3px rgba(0,0,0,.7),0 0 2px rgba(0,0,0,.7); }
+  .wrow { display:flex; align-items:center; justify-content:space-between; gap:6px;
+          font-size:12px; padding:3px 0; border-bottom:1px solid var(--line); min-width:0; }
+  .wrow > span:first-child { min-width:0; overflow-wrap:anywhere; }
+  .wrow > span:last-child { flex:0 0 auto; }
+  .wrow button { width:auto; margin:0; padding:2px 7px; font-size:11px; }
+  .xbtn { background:var(--bad); color:#fff; }
+  #coordbox { position:fixed; left:10px; bottom:10px; z-index:600; pointer-events:none;
+              background:rgba(20,18,13,.82); color:var(--fg); border:1px solid var(--line);
+              border-radius:5px; padding:4px 9px; font:11px/1.3 ui-monospace,Consolas,monospace; }
+  #credit { position:fixed; left:10px; bottom:40px; z-index:600;
+            background:rgba(20,18,13,.82); color:var(--mut); border:1px solid var(--line);
+            border-radius:5px; padding:3px 8px; font:10.5px/1.3 ui-monospace,Consolas,monospace; }
+  #credit a { color:var(--acc2); text-decoration:none; }
+  #credit a:hover { text-decoration:underline; }
+  /* all cards always shown (Simple/Detail toggle removed) */
+  .report { background:var(--bg); border:2px solid var(--line); border-radius:2px;
+            padding:9px 11px; margin:4px 0 8px; }
+  .report .big { font-family:var(--pixel); font-size:18px; font-weight:700; color:var(--acc2); }
+  .report .lbl { color:var(--mut); font-size:11px; }
+  .report .stat { margin:2px 0; }
+  .report b { color:var(--fg); }
+  /* themed center modal (replaces native alert/confirm) */
+  .modal-overlay { position:fixed; inset:0; z-index:5000; display:flex; align-items:center; justify-content:center;
+    background:rgba(6,5,4,.66); backdrop-filter:blur(3px); padding:20px; animation:mfade .12s ease; }
+  @keyframes mfade { from { opacity:0; } to { opacity:1; } }
+  /* same frame as the cards: dark --line border, straight corners, soft shadow */
+  .modal-box { background:var(--panel); border:2px solid var(--line); border-radius:0; max-width:380px; width:100%;
+    padding:18px 18px 14px; box-shadow:none; color:var(--fg); }
+  .modal-title { font-family:var(--pixel); font-size:14px; color:var(--acc2); text-transform:uppercase;
+    letter-spacing:.04em; margin-bottom:10px; }
+  .modal-body { font-size:13px; line-height:1.55; color:var(--fg); max-height:62vh; overflow:auto; }
+  .modal-body b { color:var(--acc2); }
+  .modal-body table { width:100%; border-collapse:collapse; }
+  .modal-body td { padding:3px 0; }
+  .modal-btns { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+  /* primary = the Generate button; secondary = the Stop/sec button. Straight corners. */
+  .modal-btn { width:auto; margin:0; padding:8px 16px; font-size:12px; cursor:pointer; border-radius:0;
+    font-family:var(--pixel); font-weight:700; letter-spacing:.02em; }
+  .mb-gold { background:#e3a417; color:#241a02; border:2px solid #9a6a12;
+    box-shadow: inset 0 2px 0 rgba(255,235,170,.28); }
+  .mb-ghost { background:var(--panel); color:var(--fg); border:2px solid var(--line); box-shadow:none; }
+  .mb-gold:hover { filter:brightness(1.07); } .mb-ghost:hover { color:var(--acc2); border-color:var(--acc); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+  <div id="coordbox">move the mouse over the map</div>
+  <div id="credit">Arnis by <a href="https://github.com/louis-e/arnis" target="_blank" rel="noopener">louis-e</a> · Meld by <a href="https://github.com/Teddy563/meld" target="_blank" rel="noopener">Teddy563</a></div>
+  <div id="side">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+      <a href="https://meldmc.com" target="_blank" rel="noopener" title="meldmc.com" style="line-height:0">
+        <img src="assets/meld_icon.png" alt="Meld" style="height:40px;width:auto;display:block;cursor:pointer"/></a>
+      <div style="display:flex;gap:6px">
+        <button id="btnRecommend" class="sec" style="width:auto;margin:0;padding:5px 9px;font-size:12px" title="Check this PC (CPU, RAM, save-disk speed) and recommend the best cell size + worker count.">⚡ Recommend</button>
+      </div>
+    </div>
+    <div class="sub">From a city block to a whole continent, in Minecraft.</div>
+
+    <div class="card">
+      <h2>World</h2>
+      <label>Name
+        <input id="worldName" type="text" style="width:160px" placeholder="Meld World"></label>
+      <button class="sec" id="btnName">Save name</button>
+      <label style="margin-top:8px">Save location (worlds folder)
+        <span class="i" title="The FOLDER that holds your worlds, each world is a subfolder named by the World Name above. Point it at .minecraft/saves to keep several (Meld World, Meld World 2, …) in one place. Blank = the project folder.">i</span></label>
+      <input id="masterDir" type="text" style="width:100%" placeholder="paste a path, or Browse…">
+      <button class="sec" id="btnBrowse">Browse…</button>
+      <label style="margin-top:8px">Prune subregion after merge
+        <span class="i" title="Delete each per-cell Arnis subregion once it merges into the master world, avoids doubling storage. Merged content stays in the master.">i</span>
+        <input id="prune" type="checkbox"></label>
+    </div>
+
+    <div class="card">
+      <h2>Generate</h2>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--plan)"></i>planned</span>
+        <span><i class="dot" style="background:var(--acc)"></i>queued</span>
+        <span><i class="dot" style="background:var(--run)"></i>running</span>
+        <span><i class="dot" style="background:var(--ok)"></i>merged</span>
+        <span><i class="dot" style="background:var(--bad)"></i>failed</span>
+      </div>
+      <div class="report">
+        <div><span id="estSize" class="big">, </span> <span class="lbl">estimated size</span></div>
+        <div class="stat" id="estSub"></div>
+        <div class="stat" id="diskLine"></div>
+        <div class="stat" id="useLine"></div>
+        <div class="stat" id="runLine" style="margin-top:6px"></div>
+      </div>
+      <button id="btnGen" title="Generates only the cells that aren't merged yet, safe to re-run after a stop or crash. Set cell size + workers in Settings below.">Generate &amp; merge</button>
+      <button id="btnResume" class="sec" title="Re-queue every cell that isn't merged (failed, drift, interrupted). Crash / overnight recovery.">Resume unfinished</button>
+      <button id="btnPlan" class="sec" title="Split the selection into cells at the Settings cell size. Change cell size in Settings, then Plan.">Plan or re-split</button>
+      <div class="row" style="margin-top:6px">
+        <button class="sec" id="btnStop">Stop</button>
+        <button class="sec xbtn" id="btnClear" title="Clear plan" style="width:auto;flex:0 0 auto;padding:8px 12px">🗑️</button>
+      </div>
+      <button class="sec" id="btnNewWorld" title="Start a fresh world. The current one stays saved in your worlds folder; the map clears for a new selection.">✦ New world</button>
+    </div>
+
+    <div class="card">
+      <h2>Selection</h2>
+      <input id="search" placeholder="Search place (e.g. Bavaria)" style="width:100%"/>
+      <button class="sec" id="btnSearch">Search</button>
+      <div class="stat" id="selVal">Draw a rectangle on the map, or search.</div>
+    </div>
+
+    <div class="card adv">
+      <h2>Elevation lock <span id="elevState" class="chip un">none</span></h2>
+      <div class="stat" id="elevVal">, </div>
+      <button class="sec" id="btnSurvey">Survey selection</button>
+      <div class="row" style="margin-top:6px">
+        <input id="emin" placeholder="min m" style="width:50%"/>
+        <input id="emax" placeholder="max m" style="width:50%"/>
+      </div>
+      <button class="sec" id="btnManual">Set range manually</button>
+    </div>
+
+    <div class="card">
+      <h2>Settings</h2>
+      <label>Scale <input id="scale" type="number" step="0.05" min="0.01"></label>
+      <label>Cell size (regions)
+        <span class="i" title="Side length of each generation cell in 512-block regions (1-16). Smaller = smaller per-cell save burst, safer + lighter on disk. Default 4, sweet spot 4-6. Above 8 the save gets heavy (warns on Generate). Change this then Plan to re-split.">i</span>
+        <input id="size" type="number" min="1" max="16" step="1"></label>
+      <div class="stat" style="margin-top:-2px">1-16 · default 4, sweet spot 4-6. Bigger cells = heavier saves.</div>
+      <label>Ground level <input id="ground" type="number" step="1"></label>
+      <label>Road detail
+        <span class="i" title="auto = compact below scale 0.7 (cleaner at coarse block size), clean at/above.">i</span>
+        <select id="road"><option>auto</option><option>max</option><option>clean</option><option>compact</option></select></label>
+      <label>Elevation mode
+        <span class="i" title="global = one locked range, no height cliffs across cells. local = per-cell auto-fit (will seam).">i</span>
+        <select id="emode"><option>global</option><option>local</option></select></label>
+      <label>Workers
+        <span class="i" title="Parallel Arnis runs (aim ~8, max 16). Generation is disk + RAM bound at the save phase, not CPU bound, so past ~8-12 the SSD saturates instead of going faster. Auto-clamped lower when Bake lighting is on or cells are big (heavy saves), and to 2 below scale 0.5.">i</span>
+        <input id="workers" type="number" min="1" max="16" step="1" list="workerpresets"></label>
+      <datalist id="workerpresets"><option value="4"></option><option value="8"></option><option value="12"></option><option value="16"></option></datalist>
+      <label>Seed
+        <span class="i" title="Tile-invariant building seed. Same value for the whole project keeps buildings identical across seams.">i</span>
+        <input id="seed" type="number" min="1" step="1"></label>
+      <label>3D models
+        <span class="i" title="Fetch + place real 3D structure models for landmarks (3DMR + Wikimedia). Off = faster & smaller, plain block buildings. Needs internet.">i</span>
+        <input id="m3d" type="checkbox"></label>
+      <div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px"></div>
+      <label>Terrain
+        <span class="i" title="Generate real elevation/terrain (uses the elevation lock). Off = flat ground.">i</span>
+        <input id="terrain" type="checkbox"></label>
+      <label>Roofs
+        <span class="i" title="Generate building roofs.">i</span>
+        <input id="roof" type="checkbox"></label>
+      <label>Interiors
+        <span class="i" title="Generate building interiors (slower, bigger).">i</span>
+        <input id="interior" type="checkbox"></label>
+      <label>Land cover
+        <span class="i" title="ESA WorldCover surface blocks (forests, fields, water, built-up). Needs Terrain.">i</span>
+        <input id="landcover" type="checkbox"></label>
+      <label>Fill ground
+        <span class="i" title="Fill solid ground beneath the surface down to bedrock.">i</span>
+        <input id="fillground" type="checkbox"></label>
+      <label>Extend build height
+        <span class="i" title="Disable the Y height limit (experimental; Java 1.21.4+ Y=-2032..2031).">i</span>
+        <input id="heightlimit" type="checkbox"></label>
+      <label>Bake lighting (LOD mods)
+        <span class="i" title="Pre-bake per-chunk light so Voxy / Distant Horizons render distant chunks lit without visiting them (Arnis issue #1071). On by default; slower to generate and bigger region files.">i</span>
+        <input id="bakelight" type="checkbox"></label>
+      <button class="sec" id="btnSave">Save settings</button>
+
+      <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px">
+        <label>Origin <span id="originState" class="chip un">unset</span>
+          <span class="i" title="Auto-centers on the selection, a region corner where 4 cells meet (= Minecraft 0,0). Move or resize the selection box and it follows. Frozen once any cell is merged.">i</span></label>
+        <div class="stat">Auto-centers on the selection (region corner, 4 cells meet).</div>
+        <label style="margin-top:6px">Origin lat / lon
+          <span class="i" title="Editable, paste an origin from another project to match its grid exactly. Snaps to the region grid.">i</span></label>
+        <div class="row">
+          <input id="originLat" type="number" step="0.000001" placeholder="lat" style="width:50%">
+          <input id="originLon" type="number" step="0.000001" placeholder="lon" style="width:50%">
+        </div>
+        <div class="row">
+          <button class="sec" id="btnRecenter">Center on selection</button>
+          <button class="sec" id="btnSetOrigin">Set from coords</button>
+        </div>
+        <button class="sec" id="btnPickOrigin">📍 Click map to set origin</button>
+      </div>
+    </div>
+
+    <div class="card adv">
+      <h2>Subregions / worlds</h2>
+      <div class="stat" id="masterInfo">, </div>
+      <div id="worldList" style="max-height:200px;overflow-y:auto;margin:6px 0"></div>
+      <div class="row">
+        <button class="sec" id="btnRefreshWorlds">Refresh</button>
+        <button class="sec xbtn" id="btnMasterReset">Reset master</button>
+      </div>
+    </div>
+
+    <div class="card adv">
+      <h2>Workers <span id="workersCount" class="chip un" style="float:right">idle</span></h2>
+      <div id="workersState"><div class="stat">Idle. Start a generation to see live workers here.</div></div>
+    </div>
+
+    <div class="card adv">
+      <h2>Log <button id="btnPopLog" class="sec" style="width:auto;margin:0;padding:2px 8px;font-size:11px;float:right">Pop out</button></h2>
+      <div id="log"></div>
+    </div>
+    <div class="stat" style="text-align:center;opacity:.6;margin-top:2px">Not affiliated with Mojang AB or Minecraft. Built on the open source Arnis generator.</div>
+  </div>
+</div>
+
+<script>
+const map = L.map('map').setView([46.0, 25.0], 6);
+// Default OpenStreetMap basemap (standard texture) in both themes. Dark mode only
+// dims the tiles via the .leaflet-tile CSS filter; the texture stays OSM.
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+
+// Live cursor coordinates: lat/lon + Minecraft block X/Z (origin-anchored, same
+// formula as meld/coords.block_x/z).
+map.on('mousemove', e => {
+  const ll = e.latlng;
+  let t = `lat ${ll.lat.toFixed(5)}  lon ${ll.lng.toFixed(5)}`;
+  if (projOrigin && projOrigin.lat != null) {
+    const mpdLat = 111320, mpdLon = mpdLat * Math.cos(projOrigin.lat * Math.PI / 180);
+    const bx = Math.floor((ll.lng - projOrigin.lon) * mpdLon * projScale);
+    const bz = Math.floor((projOrigin.lat - ll.lat) * mpdLat * projScale);
+    t += `   |   X ${bx}  Z ${bz}`;
+  }
+  document.getElementById('coordbox').textContent = t;
+});
+
+let selection = null;          // {south,west,north,east}
+let drawLayer = null;
+let polyLayer = null;          // searched region's actual border polygon
+let pickingOrigin = false;     // true while "click map to set origin" is armed
+let cellLayers = {};           // cell_key -> L.rectangle
+let cellMarkers = {};          // cell_key -> L.marker (stage emoji)
+let combinedBorder = [];       // bold double-line outline around the whole grid
+let plannedCells = [];         // last planned cell list (cell_key + bbox)
+let projOrigin = null;         // {lat,lon} for recomputing cell geometry on refresh
+let projScale = 0.3;
+const drawnItems = new L.FeatureGroup().addTo(map);
+const prefetchGroup = L.layerGroup().addTo(map);   // cyan dashed OSM-download chunks
+
+const drawControl = new L.Control.Draw({
+  draw: { rectangle: { shapeOptions:{ color:'#d6ba58', weight:2, fillOpacity:0.06 } },
+          polygon:false, polyline:false, circle:false, marker:false, circlemarker:false },
+  edit: false,
+});
+map.addControl(drawControl);
+
+map.on(L.Draw.Event.CREATED, e => {
+  if (polyLayer) { map.removeLayer(polyLayer); polyLayer = null; }
+  if (drawLayer) drawnItems.removeLayer(drawLayer);
+  drawLayer = e.layer; drawnItems.addLayer(drawLayer);
+  attachEditing(drawLayer);   // movable + resizable
+  const b = drawLayer.getBounds();
+  selection = { south:b.getSouth(), west:b.getWest(), north:b.getNorth(), east:b.getEast() };
+  saveSelection();
+  onSelectionChanged();   // recenter + re-tile + survey
+  document.getElementById('selVal').textContent =
+    `S${selection.south.toFixed(4)} W${selection.west.toFixed(4)} N${selection.north.toFixed(4)} E${selection.east.toFixed(4)}`;
+});
+
+const $ = id => document.getElementById(id);
+const api = (url, body) => fetch(url, body ? { method:'POST',
+  headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : undefined)
+  .then(r => r.json());
+
+// ── themed center modal (replaces native alert/confirm so popups match the theme) ──
+function _meldModal({ title, html, buttons }) {
+  return new Promise(resolve => {
+    // Only one modal at a time, drop any already-open one so they never stack/overlay.
+    document.querySelectorAll('.modal-overlay').forEach(el => el.remove());
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay';
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    box.innerHTML = (title ? `<div class="modal-title">${title}</div>` : '')
+      + `<div class="modal-body">${html}</div><div class="modal-btns"></div>`;
+    const row = box.querySelector('.modal-btns');
+    const onKey = (e) => { if (e.key === 'Escape') done(buttons && buttons.length > 1 ? false : true); };
+    const done = (val) => { document.removeEventListener('keydown', onKey); ov.remove(); resolve(val); };
+    (buttons || [{ label: 'OK', value: true, kind: 'gold' }]).forEach(b => {
+      const el = document.createElement('button');
+      el.className = 'modal-btn ' + (b.kind === 'gold' ? 'mb-gold' : 'mb-ghost');
+      el.textContent = b.label;
+      el.onclick = () => done(b.value);
+      row.appendChild(el);
+    });
+    ov.onclick = (e) => { if (e.target === ov) done(buttons && buttons.length > 1 ? false : true); };
+    document.addEventListener('keydown', onKey);
+    ov.appendChild(box); document.body.appendChild(ov);
+    const f = row.querySelector('.mb-gold') || row.querySelector('button'); if (f) f.focus();
+  });
+}
+const _nl2br = (t) => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])).replace(/\n/g, '<br>');
+function modalInfo(title, text) {
+  return _meldModal({ title, html: _nl2br(text), buttons: [{ label: 'OK', value: true, kind: 'gold' }] });
+}
+function modalConfirm(title, text, okLabel = 'Continue', cancelLabel = 'Cancel') {
+  return _meldModal({ title, html: _nl2br(text), buttons: [
+    { label: cancelLabel, value: false, kind: 'ghost' }, { label: okLabel, value: true, kind: 'gold' }] });
+}
+
+const STATUS_COLOR = { planned:'#5e5a53', queued:'#c2a23e', running:'#b58f39',
+  generated:'#b58f39', merged:'#7ea958', failed:'#c75740', drift:'#c75740', collision:'#c75740' };
+let _arnisWarned = false;   // show the "arnis not found" warning once
+// planned = nothing; building = a single 🛠️ (no animation); merged/failed fixed glyphs.
+const STATUS_EMOJI = { planned:'', queued:'⏳', running:'🛠️', generated:'🛠️',
+  merged:'✅', failed:'❌', drift:'⚠️', collision:'💥' };
+
+// Mirror of meld/coords.cell_bbox (origin-anchored mpd_lon) so the overlay can be
+// rebuilt from grid keys alone after a page refresh, no geometry stored server-side.
+function cellBboxFromKey(key, origin, scale) {
+  const p = key.split(','); const rx = +p[0], rz = +p[1], size = +p[2];
+  const mpdLat = 111320.0, mpdLon = mpdLat * Math.cos(origin.lat * Math.PI / 180);
+  const meters = (size * 512) / scale;
+  const dLat = meters / mpdLat, dLon = meters / mpdLon;
+  const south = origin.lat + rz * dLat, west = origin.lon + rx * dLon;
+  return { south, west, north: south + dLat, east: west + dLon };
+}
+
+function emojiIcon(status) {
+  return L.divIcon({ className: 'cellemoji', iconSize: [26, 22],
+    html: `<div>${STATUS_EMOJI[status] || ''}</div>` });
+}
+
+// Stage emojis show only when cells are big enough on screen that the icons don't
+// overlap. Zoom out past that and ALL emojis hide at once (the coloured cells still
+// convey status) — no per-cell sampling, just a single on/off by zoom.
+function emojisVisible() {
+  const keys = Object.keys(cellLayers);
+  if (!keys.length || !projOrigin || projOrigin.lat == null) return true;
+  let bb; try { bb = cellBboxFromKey(keys[0], projOrigin, projScale); } catch (e) { return true; }
+  const a = map.latLngToContainerPoint([bb.south, bb.west]);
+  const b = map.latLngToContainerPoint([bb.south, bb.east]);
+  return Math.abs(b.x - a.x) >= 24;   // below ~24px the 26px icons would overlap
+}
+
+// ── OSM prefetch overlay: cyan dashed boxes showing where Meld downloads OSM ──
+// One box = one Overpass request (whole selection first; splits into quadrants only
+// if the endpoint rejects it). Colour tracks each chunk's state.
+const PF_STYLE = {
+  planned:     { color:'#38bdf8', weight:2, dashArray:'7 6', fillColor:'#38bdf8', fillOpacity:0.05 },
+  downloading: { color:'#22d3ee', weight:3, dashArray:'4 5', fillColor:'#22d3ee', fillOpacity:0.10 },
+  cached:      { color:'#5eead4', weight:2, dashArray:'7 6', fillColor:'#5eead4', fillOpacity:0.06 },
+  done:        { color:'#38bdf8', weight:2, dashArray:'7 6', fillColor:'#38bdf8', fillOpacity:0.06 },
+  split:       { color:'#38bdf8', weight:1, dashArray:'3 6', fillColor:'#38bdf8', fillOpacity:0.0, opacity:0.45 },
+  failed:      { color:'#f87171', weight:2, dashArray:'4 4', fillColor:'#f87171', fillOpacity:0.05 },
+};
+function _chunkLabel(c) {
+  const b = c.bbox, midLat = (b.south + b.north) / 2;
+  const kmH = Math.abs(b.north - b.south) * 111.32;
+  const kmW = Math.abs(b.east - b.west) * 111.32 * Math.cos(midLat * Math.PI / 180);
+  const n = (c.cells || []).length;
+  return `OSM ${kmW.toFixed(1)}×${kmH.toFixed(1)} km · ${n} cell${n === 1 ? '' : 's'} · ${c.state}`;
+}
+function renderPrefetch(chunks) {
+  prefetchGroup.clearLayers();
+  for (const c of (chunks || [])) {
+    if (!c || !c.bbox) continue;
+    const b = c.bbox;
+    const st = PF_STYLE[c.state] || PF_STYLE.planned;
+    L.rectangle([[b.south, b.west], [b.north, b.east]],
+      { ...st, fill: true, interactive: false })
+      .bindTooltip(_chunkLabel(c), { sticky: true, direction: 'top' })
+      .addTo(prefetchGroup);
+  }
+}
+// Show the would-be download box while idle (before Generate), throttled.
+let _pfPreviewSig = '';
+async function updatePrefetchPreview(force) {
+  try {
+    const r = await api('/api/prefetch/plan');
+    if (!r.enabled) { prefetchGroup.clearLayers(); return; }
+    const sig = JSON.stringify((r.chunks || []).map(c => c.bbox));
+    if (!force && sig === _pfPreviewSig) return;
+    _pfPreviewSig = sig;
+    renderPrefetch(r.chunks);
+  } catch (e) {}
+}
+
+// Draw / recolor / re-emoji every cell in the grid; prune cells no longer present.
+let _overlaySig = '';
+let _lastGrid = {};
+function ensureCells(grid) {
+  grid = grid || {};
+  _lastGrid = grid;
+  // Cell positions depend on origin + scale. When either changes, every existing
+  // rectangle/marker is at a STALE map position (we only ever drew them once), so
+  // wipe and rebuild, this is what caused leftover/white cells after re-centering.
+  const sig = projOrigin && projOrigin.lat != null ? `${projOrigin.lat}|${projOrigin.lon}|${projScale}` : '';
+  if (sig !== _overlaySig) {
+    for (const k of Object.keys(cellLayers)) { map.removeLayer(cellLayers[k]); delete cellLayers[k]; }
+    for (const k of Object.keys(cellMarkers)) { map.removeLayer(cellMarkers[k]); delete cellMarkers[k]; }
+    _overlaySig = sig;
+  }
+  if (projOrigin && projOrigin.lat != null) {
+    const showEmoji = emojisVisible();   // hide all stage emojis when zoomed out
+    for (const [key, st] of Object.entries(grid)) {
+      let rect = cellLayers[key];
+      const col = STATUS_COLOR[st] || '#6f6553';
+      if (!rect) {
+        let bb; try { bb = cellBboxFromKey(key, projOrigin, projScale); } catch (e) { continue; }
+        rect = L.rectangle([[bb.south, bb.west], [bb.north, bb.east]],
+          { color: col, weight: 1, fillColor: col, fillOpacity: 0.14 }).addTo(map);
+        rect.bindTooltip(key, { sticky: true });
+        rect.on('click', (e) => {                 // click a cell to regenerate it
+          if (pickingOrigin) return;
+          L.DomEvent.stopPropagation(e);
+          regenCell(key);
+        });
+        cellLayers[key] = rect;
+      }
+      rect.setStyle({ color: col, fillColor: col });
+      // Marker (stage emoji) is decoupled from the rectangle: shown only when it has a
+      // glyph AND passes decimation (or is an active cell), so emojis never pile up.
+      const show = showEmoji && (STATUS_EMOJI[st] || '') !== '';
+      if (show) {
+        if (!cellMarkers[key]) {
+          cellMarkers[key] = L.marker(rect.getBounds().getCenter(),
+            { icon: emojiIcon(st), interactive: false }).addTo(map);
+        } else {
+          cellMarkers[key].setIcon(emojiIcon(st));
+        }
+      } else if (cellMarkers[key]) {
+        map.removeLayer(cellMarkers[key]); delete cellMarkers[key];
+      }
+    }
+  }
+  for (const key of Object.keys(cellLayers)) {
+    if (!(key in grid)) {
+      map.removeLayer(cellLayers[key]); delete cellLayers[key];
+      if (cellMarkers[key]) { map.removeLayer(cellMarkers[key]); delete cellMarkers[key]; }
+    }
+  }
+  drawCombinedBorder(grid);
+  updateStats(grid);
+}
+// Re-decimate the stage emojis when the zoom changes so they never overlap.
+map.on('zoomend', () => ensureCells(_lastGrid));
+
+// Bold double line around the union of all cells (the whole generated area).
+// Two stacked rectangles: a thick brass stroke split by a thin dark line down
+// its centre = a clean double rail, fitting the Meld gold palette.
+function drawCombinedBorder(grid) {
+  combinedBorder.forEach(l => map.removeLayer(l));
+  combinedBorder = [];
+  const keys = Object.keys(grid || {});
+  if (!keys.length || !projOrigin || projOrigin.lat == null) return;
+  let s = 1e9, w = 1e9, n = -1e9, e = -1e9;
+  for (const k of keys) {
+    let bb; try { bb = cellBboxFromKey(k, projOrigin, projScale); } catch (_) { continue; }
+    s = Math.min(s, bb.south); w = Math.min(w, bb.west);
+    n = Math.max(n, bb.north); e = Math.max(e, bb.east);
+  }
+  if (s > n || w > e) return;
+  const bounds = [[s, w], [n, e]];
+  const outer = L.rectangle(bounds, { color:'#e0bd55', weight:6, opacity:.95, fill:false, interactive:false });
+  const inner = L.rectangle(bounds, { color:'#1a1712', weight:2, opacity:1,  fill:false, interactive:false });
+  outer.addTo(map); inner.addTo(map);
+  combinedBorder = [outer, inner];
+}
+
+// Coordinates + world size, like the original Meld. Each cell owns size*size
+// regions (512 blocks each). Rough size estimate ~4 MB / generated region.
+function fmtMB(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB'; }
+function fmtTime(s) {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return (h ? String(h).padStart(2, '0') + ':' : '') + String(m).padStart(2, '0') + ':' + String(x).padStart(2, '0');
+}
+function updateStats(grid) {
+  const keys = Object.keys(grid || {});
+  if (!keys.length) { $('estSize').textContent = ', '; $('estSub').textContent = 'draw or search an area'; return; }
+  let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9, regions = 0;
+  for (const k of keys) {
+    const p = k.split(','), rx = +p[0], rz = +p[1], sz = +p[2];
+    regions += sz * sz;
+    minX = Math.min(minX, rx * sz); maxX = Math.max(maxX, rx * sz + sz);
+    minZ = Math.min(minZ, rz * sz); maxZ = Math.max(maxZ, rz * sz + sz);
+  }
+  const wBlk = (maxX - minX) * 512, hBlk = (maxZ - minZ) * 512;
+  $('estSize').textContent = '~' + fmtMB(regions * 4);
+  $('estSub').textContent = `${keys.length} cells · ${regions} regions · ${wBlk}×${hBlk} blocks`;
+}
+
+// Live elapsed timer + final report (server /api/status .run).
+let _run = null, _runAt = 0, _runWasActive = false, _runDoneShown = null;
+function setRun(run) { _run = run; _runAt = Date.now(); renderRun(); }
+function renderRun() {
+  const el = $('runLine'); if (!el) return;
+  if (!_run || !_run.started) { el.textContent = ''; return; }
+  let e = _run.elapsed || 0;
+  if (_run.active) e += (Date.now() - _runAt) / 1000;
+  if (_run.active) {
+    _runWasActive = true;
+    const pct = _run.total ? Math.round((_run.done + _run.failed) / _run.total * 100) : 0;
+    el.innerHTML = `⏱ <b>${fmtTime(e)}</b> elapsed · ${_run.done}/${_run.total} done`
+      + `<div class="bar"><i style="width:${pct}%"></i></div>`;
+  } else {
+    const act = _run.actual_mb != null ? fmtMB(_run.actual_mb) : ', ';
+    el.innerHTML = `✓ Done in <b>${fmtTime(e)}</b> · ${_run.done} merged`
+      + (_run.failed ? ` · <b style="color:var(--bad)">${_run.failed} failed</b>` : '')
+      + ` · <b>${act}</b> on disk <span class="lbl">(est ~${fmtMB(_run.est_mb || 0)})</span>`;
+    // Show the finished-stats modal once, only if we watched this run go active->done
+    // this session (so it doesn't pop on every page refresh of an old run).
+    if (_runWasActive && _runDoneShown !== _run.started) {
+      _runDoneShown = _run.started; _runWasActive = false;
+      showRunDone(_run, e);
+    }
+  }
+}
+function showRunDone(run, elapsed) {
+  const size = run.actual_mb != null ? fmtMB(run.actual_mb) : fmtMB(run.est_mb || 0);
+  const r = (k, v) => `<tr><td style="color:var(--mut)">${k}</td><td style="text-align:right"><b>${v}</b></td></tr>`;
+  const html =
+    `<div style="font-size:30px;text-align:center;margin:-2px 0 8px">${run.failed ? '⚠️' : '✅'}</div>`
+    + `<table>`
+    + r('Time', fmtTime(elapsed))
+    + r('Cells merged', run.done + (run.failed ? ` · <span style="color:var(--bad)">${run.failed} failed</span>` : ''))
+    + r('Regions', run.est_regions || 0)
+    + r('On disk', size)
+    + `</table>`
+    + `<div style="font-size:11.5px;color:var(--mut);margin-top:10px">Open it in Minecraft from the save location in the World panel.</div>`;
+  _meldModal({ title: run.failed ? 'Finished, with failures' : 'World ready',
+    html, buttons: [{ label: run.failed ? 'Review' : 'Open Minecraft folder', value: 'open', kind: 'gold' },
+                    { label: 'Close', value: false, kind: 'ghost' }] })
+    .then(v => { if (v === 'open') api('/api/open-folder', {}).catch(() => {}); });
+}
+setInterval(() => { if (_run && _run.active) renderRun(); }, 1000);
+
+let originMarker = null;
+function updateOriginMarker(lat, lon) {
+  if (lat == null) { if (originMarker) { map.removeLayer(originMarker); originMarker = null; } return; }
+  const icon = L.divIcon({ className: 'cellemoji', iconSize: [28, 28], iconAnchor: [14, 24],
+                           html: '<div>📍</div>' });
+  if (originMarker) originMarker.setLatLng([lat, lon]);
+  else originMarker = L.marker([lat, lon], { icon, interactive: false, zIndexOffset: 1000 }).addTo(map);
+}
+function selCenter(sel) {
+  return { lat: (sel.north + sel.south) / 2, lon: (sel.west + sel.east) / 2 };
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let _selSeq = 0;
+// Auto-sequence that runs whenever the selection is drawn/moved/resized:
+//   1) re-center the origin on the selection (region corner, 4 cells meet there)
+//   2) re-tile the cells
+//   3) auto-run the elevation survey (if not locked yet)
+// Small delays between steps so it visibly steps through. Skips moving the origin
+// once any cell is merged (protects generated content). A newer selection cancels
+// an in-flight run via _selSeq.
+async function onSelectionChanged() {
+  if (!selection) return;
+  const seq = ++_selSeq;
+  const st = await api('/api/state');
+  const grid = st.grid || {};
+  const merged = Object.values(grid).includes('merged');
+  // Tile the plan at the existing world's cell size. Once any cell is merged the size
+  // is LOCKED to whatever that world was built at, so re-tiling on refresh/edit can't
+  // overlay a stale default (e.g. an 8x8 grid) on smaller generated cells. With no
+  // merged cells yet, the size input drives it (respects a pending size change).
+  const gridded = gridCellSize(grid);
+  let size;
+  if (merged && gridded) {
+    size = gridded;
+    $('size').value = gridded;
+  } else {
+    size = parseInt($('size').value) || gridded || 4;
+  }
+
+  // Re-center the origin on the selection EVERY time, so re-selecting moves the
+  // grid to the new area. Frozen only once cells are merged (that content is
+  // anchored to its origin; use "✦ New world" to start a fresh one, or "Center on
+  // selection" to move it deliberately). The overlay fully rebuilds on origin
+  // change (_overlaySig), so no stale cells are left behind.
+  if (!merged) {
+    const c = selCenter(selection);
+    await api('/api/origin', { lat: c.lat, lon: c.lon, force: true });
+    await refreshState();
+  }
+  if (seq !== _selSeq) return;
+  await sleep(120);
+
+  // Planned cells ALWAYS reflect the CURRENT selection (clear planned, keep
+  // merged). So what you see tiled is exactly what you drew.
+  await api('/api/grid/clear', { keep_merged: true });
+  const r = await api('/api/grid', { bbox: selection, size });
+  if (r.ok) plannedCells = r.cells;
+  await refreshState();
+  if (r.ok) $('selVal').textContent = `${r.count} cells (size ${size})`;
+  if (seq !== _selSeq) return;
+  await sleep(120);
+
+  const st2 = await api('/api/state');
+  if (!st2.elevation || !st2.elevation.locked) autoSurvey();
+}
+async function autoSurvey() {
+  if (!selection) return;
+  $('btnSurvey').textContent = 'Surveying…'; $('btnSurvey').disabled = true;
+  try { await api('/api/survey', { bbox: selection }); } catch (e) {}
+  $('btnSurvey').textContent = 'Survey selection'; $('btnSurvey').disabled = false;
+  refreshState();
+}
+// Make a drawn/searched rectangle movable + resizable; re-run the sequence on edit.
+function attachEditing(layer) {
+  try { layer.editing.enable(); } catch (e) {}
+  layer.on('edit', () => {
+    const b = layer.getBounds();
+    selection = { south:b.getSouth(), west:b.getWest(), north:b.getNorth(), east:b.getEast() };
+    saveSelection();
+    onSelectionChanged();
+  });
+}
+
+// The grid itself is the source of truth for cell size: every cell key is
+// "rx,rz,size", so the size the world was actually tiled at is encoded in the keys.
+// Reading it back from the grid (instead of the saved job_size_regions setting, which
+// can drift) means a refresh always re-tiles at the SAME size as the cells already on
+// the map, so a stale default never overlays a mismatched grid. Returns the most
+// common size (robust if the grid is left in a mixed state), or null when empty.
+function gridCellSize(grid) {
+  const counts = {};
+  for (const k of Object.keys(grid || {})) {
+    const s = parseInt((k.split(',')[2] || '').trim());
+    if (s > 0) counts[s] = (counts[s] || 0) + 1;
+  }
+  let best = null, bestN = 0;
+  for (const [s, n] of Object.entries(counts)) if (n > bestN) { best = parseInt(s); bestN = n; }
+  return best;
+}
+
+async function refreshState() {
+  const s = await api('/api/state');
+  // origin (also feeds overlay geometry recompute)
+  if (s.origin && s.origin.lat != null) {
+    projOrigin = { lat: s.origin.lat, lon: s.origin.lon };
+    $('originState').textContent = 'set';
+    $('originState').className = 'chip lk';
+    if (document.activeElement !== $('originLat')) $('originLat').value = s.origin.lat.toFixed(6);
+    if (document.activeElement !== $('originLon')) $('originLon').value = s.origin.lon.toFixed(6);
+    updateOriginMarker(s.origin.lat, s.origin.lon);
+  } else {
+    projOrigin = null;
+    $('originState').textContent = 'unset';
+    $('originState').className = 'chip un';
+    updateOriginMarker(null);
+  }
+  // settings
+  const st = s.settings || {};
+  projScale = parseFloat(st.scale) || 0.3;
+  $('scale').value = st.scale;
+  if (document.activeElement !== $('size')) $('size').value = st.job_size_regions;
+  $('ground').value = st.ground_level; $('road').value = st.road_detail_level;
+  $('emode').value = st.elevation_mode;
+  if (document.activeElement !== $('workers')) $('workers').value = st.max_workers;
+  if ($('useLine')) $('useLine').textContent =
+    `Using ${st.max_workers} worker${st.max_workers == 1 ? '' : 's'} · cell size ${st.job_size_regions} regions`;
+  $('seed').value = (s.elevation && s.elevation.seed) || 1;
+  $('m3d').checked = !!st.generate_3d_models;
+  const ckmap = { terrain:'terrain', roof:'roof', interior:'interior',
+                  landcover:'land_cover', fillground:'fill_ground', heightlimit:'disable_height_limit',
+                  bakelight:'bake_lighting' };
+  for (const [id, key] of Object.entries(ckmap))
+    if ($(id) && document.activeElement !== $(id)) $(id).checked = key === 'interior' || key === 'fill_ground'
+      || key === 'disable_height_limit' ? !!st[key] : st[key] !== false;
+  if ($('prune')) $('prune').checked = st.prune_cell_after_merge !== false;
+  if ($('masterDir') && document.activeElement !== $('masterDir')) $('masterDir').value = st.master_world_dir || '';
+  // elevation
+  if (s.elevation && s.elevation.locked) {
+    $('elevState').textContent = 'locked'; $('elevState').className = 'chip lk';
+    $('elevVal').textContent = `${s.elevation.min_m} … ${s.elevation.max_m} m`;
+  }
+  // Arnis binary missing is critical, surface it once as a themed warning (the old
+  // inline "Master world:" path line was removed).
+  if (!s.arnis_found && !_arnisWarned) {
+    _arnisWarned = true;
+    modalInfo('Arnis not found', 'The arnis.exe binary was not found. Put it next to server.py (or build the fork), then refresh. Generation will fail until it is present.');
+  }
+  if (s.name && $('worldName') && document.activeElement !== $('worldName')) $('worldName').value = s.name;
+  ensureCells(s.grid || {});
+  // Override the size inputs from the grid's real cell size (keys carry it), so the
+  // control always matches the cells on the map rather than a drifted saved setting.
+  const gs = gridCellSize(s.grid);
+  if (gs && document.activeElement !== $('size')) $('size').value = gs;
+}
+
+// ── Recommend settings wizard: probe this PC + the save disk, suggest cell/workers ──
+$('btnRecommend').onclick = async () => {
+  const btn = $('btnRecommend'); const old = btn.textContent;
+  btn.textContent = 'Checking…'; btn.disabled = true;
+  try {
+    const r = await api('/api/recommend');
+    if (!r.ok) { modalInfo('Meld', r.error || 'check failed'); return; }
+    const row = (k, v) => `<tr><td style="color:var(--mut)">${k}</td><td style="text-align:right"><b>${v}</b></td></tr>`;
+    const html =
+      `<div style="font-family:var(--pixel);color:var(--acc2);font-size:12px;margin-bottom:4px">This PC</div>`
+      + `<table>` + row('CPU', `${r.cores} cores`) + row('RAM', `${r.ram_gb} GB`)
+      + row(`Save disk (${r.drive})`, `${r.disk_mbps} MB/s`) + `</table>`
+      + `<div style="font-family:var(--pixel);color:var(--acc2);font-size:12px;margin:12px 0 4px">Recommended</div>`
+      + `<table>` + row('Cell size', `${r.rec_cell} regions`) + row('Workers', r.rec_workers)
+      + row('Bake lighting', r.rec_bake ? 'on' : 'off') + `</table>`
+      + `<div style="font-size:11.5px;color:var(--mut);margin-top:10px">${_nl2br(r.note)}</div>`;
+    const apply = await _meldModal({ title: 'Recommended settings', html, buttons: [
+      { label: 'Keep mine', value: false, kind: 'ghost' }, { label: 'Apply', value: true, kind: 'gold' }] });
+    if (apply) {
+      $('size').value = r.rec_cell;
+      $('workers').value = r.rec_workers;
+      $('bakelight').checked = !!r.rec_bake;
+      await api('/api/settings', {
+        job_size_regions: r.rec_cell, max_workers: r.rec_workers, bake_lighting: !!r.rec_bake,
+      });
+      await refreshState();
+    }
+  } catch (e) { modalInfo('Meld', 'check failed: ' + e); }
+  finally { btn.textContent = old; btn.disabled = false; }
+};
+
+$('btnName').onclick = async () => {
+  await api('/api/name', { name: $('worldName').value.trim() || 'Meld World' });
+  refreshState(); loadWorlds();
+};
+$('btnBrowse').onclick = async () => {
+  $('btnBrowse').textContent = 'Opening…'; $('btnBrowse').disabled = true;
+  try {
+    const r = await api('/api/pick-folder', {});
+    if (r.ok && r.path) {
+      $('masterDir').value = r.path;
+      await api('/api/settings', { master_world_dir: r.path });   // auto-save
+      refreshState(); loadWorlds();
+    }
+  } catch (e) {}
+  $('btnBrowse').textContent = 'Browse…'; $('btnBrowse').disabled = false;
+};
+$('btnPopLog').onclick = () => window.open('/logs', 'meldlog', 'width=780,height=540');
+$('prune').addEventListener('change', async () => {
+  await api('/api/settings', { prune_cell_after_merge: $('prune').checked });
+});
+
+async function loadWorlds() {
+  let w;
+  try { w = await api('/api/worlds'); } catch (e) { return; }
+  const m = w.master || {};
+  $('masterInfo').textContent = `Master "${m.name || 'Meld World'}", `
+    + (m.exists ? `${m.regions} regions, ${m.size_mb} MB` : 'empty')
+    + `\n${m.path || ''}`;
+  $('masterInfo').style.whiteSpace = 'pre-wrap';
+  // Actual region-file count on disk → report line.
+  if ($('diskLine')) $('diskLine').textContent = m.exists
+    ? `On disk: ${m.regions} region files · ${fmtMB(m.size_mb)}` : 'On disk: 0 region files';
+  const rows = (w.cells || []).map(c =>
+    `<div class="wrow"><span>${STATUS_EMOJI[c.status] || ''} ${c.cell_key}`
+    + ` <span style="color:var(--mut)">${c.status}${c.has_source ? ' · ' + c.size_mb + 'MB' : ''}</span></span>`
+    + `<span style="display:flex;gap:4px"><button data-regen="${c.cell_key}" title="Regenerate">↻</button>`
+    + `<button class="xbtn" data-k="${c.cell_key}">✕</button></span></div>`).join('');
+  $('worldList').innerHTML = rows || '<div class="stat">No cells yet.</div>';
+  $('worldList').querySelectorAll('button[data-k]').forEach(b => {
+    b.onclick = async () => {
+      if (!(await modalConfirm('Delete subregion', `Delete ${b.dataset.k}? Removes its source world and its regions inside the master.`, 'Delete'))) return;
+      await api('/api/world/delete', { cell_key: b.dataset.k });
+      loadWorlds(); refreshState();
+    };
+  });
+  $('worldList').querySelectorAll('button[data-regen]').forEach(b => {
+    b.onclick = () => regenCell(b.dataset.regen);
+  });
+}
+$('btnRefreshWorlds').onclick = loadWorlds;
+$('btnMasterReset').onclick = async () => {
+  if (!(await modalConfirm('Reset master world', 'Wipe the entire merged master world? Merged cells revert to planned (their blocks are removed).', 'Wipe'))) return;
+  await api('/api/master/reset', {});
+  loadWorlds(); refreshState();
+};
+
+$('btnSearch').onclick = async () => {
+  const q = $('search').value.trim();
+  if (!q) return;
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1&limit=1&q=' + encodeURIComponent(q);
+  let arr;
+  try {
+    const resp = await fetch(url, { headers:{'Accept':'application/json'} });
+    if (!resp.ok) { modalInfo('Meld', 'search failed: HTTP ' + resp.status + ' (Nominatim rate limit?)'); return; }
+    arr = await resp.json();
+  } catch (e) { modalInfo('Meld', 'search error: ' + e.message); return; }
+  if (!Array.isArray(arr) || !arr.length) { modalInfo('Meld', 'not found'); return; }
+  const p = arr[0], bb = p.boundingbox.map(Number); // [south,north,west,east]
+  selection = { south:bb[0], north:bb[1], west:bb[2], east:bb[3] };
+  saveSelection();
+  if (drawLayer) drawnItems.removeLayer(drawLayer);
+  drawLayer = L.rectangle([[selection.south,selection.west],[selection.north,selection.east]],
+    { color:'#d6ba58', weight:1, dashArray:'5 4', fillOpacity:0.03 });
+  drawnItems.addLayer(drawLayer);
+  attachEditing(drawLayer);
+  // Highlight the actual region border (the polygon), not just the bbox.
+  if (polyLayer) { map.removeLayer(polyLayer); polyLayer = null; }
+  if (p.geojson && p.geojson.type !== 'Point') {
+    polyLayer = L.geoJSON(p.geojson, { style: { color:'#f4d36a', weight:3, fill:false } }).addTo(map);
+  }
+  map.fitBounds([[selection.south,selection.west],[selection.north,selection.east]]);
+  onSelectionChanged();   // set origin (once) + auto-apply cells
+  $('selVal').textContent = `${p.display_name}`;
+};
+
+$('btnSurvey').onclick = async () => {
+  if (!selection) { modalInfo('Meld', 'select an area first'); return; }
+  $('btnSurvey').textContent = 'Surveying…'; $('btnSurvey').disabled = true;
+  const r = await api('/api/survey', { bbox: selection });
+  $('btnSurvey').textContent = 'Survey selection'; $('btnSurvey').disabled = false;
+  if (!r.ok) { modalInfo('Meld', r.reason || 'survey failed'); }
+  refreshState();
+};
+
+$('btnManual').onclick = async () => {
+  const mn = parseFloat($('emin').value), mx = parseFloat($('emax').value);
+  if (isNaN(mn) || isNaN(mx)) { modalInfo('Meld', 'enter min and max metres'); return; }
+  await api('/api/elevation/manual', { min_m:mn, max_m:mx, seed:parseInt($('seed').value)||1 });
+  refreshState();
+};
+
+$('btnSave').onclick = async () => {
+  const num = (v, d) => { const n = parseFloat(v); return isNaN(n) ? d : n; };
+  await api('/api/settings', {
+    scale: num($('scale').value, 1.0),
+    job_size_regions: num($('size').value, 8),
+    ground_level: num($('ground').value, -56),
+    road_detail_level: $('road').value,
+    elevation_mode: $('emode').value,
+    max_workers: num($('workers').value, 4),
+    seed: num($('seed').value, 1),
+    terrain: $('terrain').checked, roof: $('roof').checked, interior: $('interior').checked,
+    land_cover: $('landcover').checked, fill_ground: $('fillground').checked,
+    disable_height_limit: $('heightlimit').checked, generate_3d_models: $('m3d').checked,
+    bake_lighting: $('bakelight').checked,
+  });
+  refreshState();
+};
+$('m3d').addEventListener('change', () => api('/api/settings', { generate_3d_models: $('m3d').checked }));
+// Arnis toggles auto-save on change (so they apply even without clicking Save).
+[['terrain','terrain'],['roof','roof'],['interior','interior'],['landcover','land_cover'],
+ ['fillground','fill_ground'],['heightlimit','disable_height_limit'],
+ ['bakelight','bake_lighting']].forEach(([id, key]) =>
+  $(id).addEventListener('change', () => api('/api/settings', { [key]: $(id).checked })));
+
+// Above this, the save phase (disk + RAM) can overload. Warn before accepting.
+const HEAVY = 8;
+function heavyWarn(label, n) {
+  return `${label} = ${n} is above ${HEAVY}.\n\n` +
+    `Generation is limited by the SAVE phase (disk write + a RAM burst as the world is ` +
+    `serialised), NOT by CPU. Past ~8 concurrent heavy saves even a good NVMe SSD hits ` +
+    `100% active and workers can be killed mid-save (out of memory), so those cells fail.\n\n` +
+    `Safer: workers <= 8 and cell size <= 6, or smaller cells. Bake lighting makes saves ` +
+    `heavier still.\n\nContinue anyway and accept the risk?`;
+}
+
+// Workers: clamp 1-16 and PERSIST on change (remembered across refreshes). Changing this
+// LIVE during a run resizes the pool: raising spawns workers immediately, lowering lets the
+// extra workers finish their current cell then stop (no mid-save kill). Warns above 8.
+const saveWorkers = async () => {
+  let n = parseInt($('workers').value);
+  if (isNaN(n)) return;
+  n = Math.max(1, Math.min(16, n));
+  if (n > HEAVY && !(await modalConfirm('Heavy save warning', heavyWarn('Workers', n), 'Use ' + n, 'Back to 8'))) n = HEAVY;   // declined risk -> safe ceiling
+  $('workers').value = n;
+  api('/api/settings', { max_workers: n });
+};
+$('workers').addEventListener('change', saveWorkers);
+
+// Cell size lives only in Settings now. Clamp to 1-16 and PERSIST on change so the
+// chosen size survives refreshes and New world.
+const clampSize = v => { const n = parseInt(v); return isNaN(n) ? '' : Math.max(1, Math.min(16, n)); };
+const saveSize = () => {
+  const n = clampSize($('size').value);
+  if (n === '') return;
+  $('size').value = n;
+  api('/api/settings', { job_size_regions: n });
+};
+$('size').addEventListener('change', saveSize);
+
+$('btnPlan').onclick = async () => {
+  if (!selection) { modalInfo('Meld', 'select an area first'); return; }
+  const size = parseInt($('size').value) || 4;
+  $('size').value = size;
+  // Re-center the origin so the new cell size stays centered on the selection
+  // (half-cell offset → center cell on the selection center). Skipped once any
+  // cell is merged, to protect generated content.
+  const cur = await api('/api/state');
+  if (!Object.values(cur.grid || {}).includes('merged')) {
+    const c = selCenter(selection);
+    await api('/api/origin', { lat: c.lat, lon: c.lon, force: true });
+  }
+  await api('/api/settings', { job_size_regions: size });
+  // revert any previous (non-merged) plan, then re-split at the new size
+  await api('/api/grid/clear', { keep_merged: true });
+  const r = await api('/api/grid', { bbox: selection, size });
+  if (!r.ok) { modalInfo('Meld', r.error); return; }
+  plannedCells = r.cells;
+  await refreshState();   // redraws overlay (+emoji) from the new grid
+  $('selVal').textContent = `${plannedCells.length} cells @ size ${size}`;
+};
+
+$('btnClear').onclick = async () => {
+  if (!(await modalConfirm('Clear plan', 'Clear the plan? Removes planned cells (merged cells are kept).', 'Clear'))) return;
+  const r = await api('/api/grid/clear', { keep_merged: true });
+  plannedCells = [];
+  await refreshState();   // ensureCells prunes the removed overlays
+  const keptN = (r.kept || []).length;
+  $('selVal').textContent = `plan cleared (${(r.removed || []).length} removed`
+    + (keptN ? `, ${keptN} merged kept)` : ')');
+};
+
+$('btnSetOrigin').onclick = async () => {
+  const lat = parseFloat($('originLat').value), lon = parseFloat($('originLon').value);
+  if (isNaN(lat) || isNaN(lon)) { modalInfo('Meld', 'enter origin lat and lon'); return; }
+  await api('/api/origin', { lat, lon, force: true });
+  refreshState();
+};
+$('btnRecenter').onclick = async () => {
+  if (!selection) { modalInfo('Meld', 'select an area first'); return; }
+  const st = await api('/api/state');
+  if (Object.values(st.grid || {}).includes('merged')
+      && !(await modalConfirm('Move the grid?', 'Merged cells exist, recentering moves the grid so they will misalign. Continue?'))) return;
+  const size = parseInt($('size').value) || 4;
+  const c = selCenter(selection);
+  await api('/api/origin', { lat: c.lat, lon: c.lon, force: true });
+  await api('/api/grid/clear', { keep_merged: true });   // re-tile around the new center
+  const r = await api('/api/grid', { bbox: selection, size });
+  if (r.ok) plannedCells = r.cells;
+  await refreshState();
+};
+$('btnPickOrigin').onclick = () => {
+  pickingOrigin = true;
+  $('selVal').textContent = 'Click the map to place the origin…';
+  map.getContainer().style.cursor = 'crosshair';
+  map.once('click', async (e) => {
+    pickingOrigin = false;
+    map.getContainer().style.cursor = '';
+    await api('/api/origin', { lat: e.latlng.lat, lon: e.latlng.lng, force: true });
+    if (selection) {   // re-tile the current selection around the new origin
+      const size = parseInt($('size').value) || 4;
+      await api('/api/grid/clear', { keep_merged: true });
+      const r = await api('/api/grid', { bbox: selection, size });
+      if (r.ok) plannedCells = r.cells;
+    }
+    await refreshState();
+    $('selVal').textContent = 'Origin set from map click.';
+  });
+};
+$('masterDir').addEventListener('change', async () => {
+  await api('/api/settings', { master_world_dir: $('masterDir').value.trim() });
+  refreshState(); loadWorlds();
+});
+
+$('btnGen').onclick = async () => {
+  let body;
+  if (plannedCells.length) body = { cells: plannedCells };   // exact planned split
+  else if (selection) body = { bbox: selection };
+  else { modalInfo('Meld', 'plan a grid or select an area first'); return; }
+  // Risk gate: cell size or workers above 8 makes the save phase heavy (see heavyWarn).
+  const wk = parseInt($('workers').value) || 4, cs = parseInt($('size').value) || 4;
+  if (wk > HEAVY && !(await modalConfirm('Heavy save warning', heavyWarn('Workers', wk), 'Generate anyway'))) return;
+  if (cs > HEAVY && !(await modalConfirm('Heavy save warning', heavyWarn('Cell size', cs), 'Generate anyway'))) return;
+  const r = await api('/api/queue', body);
+  if (!r.ok) { modalInfo('Meld', r.error); return; }
+  if (r.note) console.log(r.note);
+};
+
+$('btnStop').onclick = () => api('/api/stop', {});
+
+$('btnNewWorld').onclick = async () => {
+  if (!(await modalConfirm('New world', 'Start a new world? The current world stays saved in your worlds folder; the map clears for a fresh selection.', 'New world'))) return;
+  const r = await api('/api/new-world', {});
+  if (!r.ok) { modalInfo('Meld', r.error || 'failed'); return; }
+  // wipe the map overlay + selection for a clean slate
+  for (const k of Object.keys(cellLayers)) { map.removeLayer(cellLayers[k]); delete cellLayers[k]; }
+  for (const k of Object.keys(cellMarkers)) { map.removeLayer(cellMarkers[k]); delete cellMarkers[k]; }
+  if (originMarker) { map.removeLayer(originMarker); originMarker = null; }
+  if (drawLayer) { drawnItems.removeLayer(drawLayer); drawLayer = null; }
+  if (polyLayer) { map.removeLayer(polyLayer); polyLayer = null; }
+  combinedBorder.forEach(l => map.removeLayer(l)); combinedBorder = [];
+  selection = null; plannedCells = []; projOrigin = null; _overlaySig = '';
+  localStorage.removeItem('meld-selection');
+  await refreshState();
+  $('selVal').textContent = `New world "${r.name}", draw an area to begin.`;
+};
+
+async function regenCell(key) {
+  if (!(await modalConfirm('Regenerate cell', `Regenerate cell ${key}? Re-runs Arnis for it and re-merges into the world.`, 'Regenerate'))) return;
+  const r = await api('/api/cell/regenerate', { cell_key: key });
+  if (!r.ok) { modalInfo('Meld', r.error || 'failed'); return; }
+  refreshState();
+}
+$('btnResume').onclick = async () => {
+  const r = await api('/api/resume', {});
+  if (!r.ok) { modalInfo('Meld', r.error || 'resume failed'); return; }
+  if (!r.count) modalInfo('Meld', 'All cells already merged, nothing to resume.');
+  refreshState();
+};
+
+let _pollN = 0;
+async function poll() {
+  try {
+    const s = await api('/api/status');
+    ensureCells(s.grid || {});   // redraw + recolor + stage emoji (survives refresh)
+    setRun(s.run);               // elapsed timer + final report
+    const ws = (s.workers || []).filter(w => w.running || w.success != null);
+    const nRun = ws.filter(w => w.running).length;
+    $('workersCount').textContent = nRun ? `${nRun} running` : (ws.length ? 'done' : 'idle');
+    $('workersCount').className = 'chip ' + (nRun ? 'lk' : 'un');
+    $('workersState').innerHTML = ws.length ? ws.map(w => {
+      const pct = Math.max(0, Math.min(100, Math.round(w.progress || 0)));
+      const cls = w.running ? 'run' : (w.success ? 'ok' : 'bad');
+      return `<div class="wjob">`
+        + `<span class="wnum ${cls}">#${w.worker_id + 1}</span>`
+        + `<div class="wjbody">`
+        +   `<div class="wjtop"><span class="wjkey">${w.cell_key || 'idle'}</span><span class="wjpct">${pct}%</span></div>`
+        +   `<div class="bar"><i class="${cls}" style="width:${pct}%"></i></div>`
+        +   (w.message ? `<div class="wjmsg">${w.message}</div>` : '')
+        + `</div></div>`;
+    }).join('') : '<div class="stat">Idle. Start a generation to see live workers here.</div>';
+    $('log').textContent = (s.log||[]).join('\n');
+    $('log').scrollTop = $('log').scrollHeight;
+    // OSM prefetch overlay: live cyan chunks while downloading, hidden during
+    // generation (cells take over), the planned download box while idle.
+    const pf = s.prefetch || {};
+    if (pf.active) {
+      renderPrefetch(pf.chunks);
+      _pfPreviewSig = '';                          // force a preview refresh once it clears
+    } else if (s.running || s.queue_size) {
+      prefetchGroup.clearLayers();
+    } else if (_pollN % 3 === 0) {
+      updatePrefetchPreview(false);
+    }
+    if (_pollN++ % 3 === 0) loadWorlds();   // refresh subregion list ~every 4.5s
+  } catch(e) {}
+  setTimeout(poll, 1500);
+}
+
+// Persist + restore the selection rectangle across refresh.
+function saveSelection() {
+  if (selection) localStorage.setItem('meld-selection', JSON.stringify(selection));
+}
+function restoreSelection() {
+  try {
+    const s = JSON.parse(localStorage.getItem('meld-selection') || 'null');
+    if (s && s.south != null) {
+      selection = s;
+      drawLayer = L.rectangle([[s.south, s.west], [s.north, s.east]],
+        { color: '#d6ba58', weight: 2, fillOpacity: 0.05 });
+      drawnItems.addLayer(drawLayer);
+      attachEditing(drawLayer);
+      $('selVal').textContent = `restored selection · S${s.south.toFixed(3)} W${s.west.toFixed(3)}`;
+    }
+  } catch (e) {}
+}
+
+restoreSelection();
+refreshState();
+poll();
+// After a page refresh: re-tile the planned cells to the restored selection so the
+// overlay always matches what's drawn. Skipped during an active generation.
+setTimeout(async () => {
+  if (!selection) return;
+  try {
+    const s = await api('/api/status');
+    if (s.running || s.queue_size) return;
+    onSelectionChanged();
+  } catch (e) {}
+}, 900);
+</script>
+</body>
+</html>

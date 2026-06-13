@@ -1,0 +1,13 @@
+# Runtime project state + generated worlds
+projects/
+cells/
+
+# Scratch
+docs-temp/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Note: arnis.exe (the custom Arnis fork binary) is intentionally committed to this repo.
