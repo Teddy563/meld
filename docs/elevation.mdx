@@ -1,0 +1,69 @@
+---
+title: Elevation
+slug: elevation
+description: The Meld elevation system. The global height lock, region data packs you download once, selectable elevation detail with Auto, the no-data hole repair, and the height preview.
+---
+
+# Elevation
+
+Terrain height is the part that decides whether a build looks like one world or a patchwork of cliffs. This page covers the whole elevation system: how Meld keeps height continuous, how to download a region's terrain once and build offline, how to pick the right detail, and how it sees and repairs gaps in the source data.
+
+## The global height lock
+
+**Why.** Each cell is a separate build. If every cell worked out its own height range, two cells side by side would map the same hill to a different in game height, and the join would step or cliff.
+
+**The mechanism.** Before generating, Meld surveys the whole selection at a coarse zoom and locks one `(min, max)` range in metres. That single range goes to every cell, so the same real world height always lands at the same Minecraft Y. The survey filters out empty no-data readings and wild spikes (it keeps a sane band) so one broken pixel cannot blow up the range and flatten the world.
+
+**How to use it.** The survey runs on its own when you change the selection, and the Elevation lock card shows the range with a status chip. If you have no connection or no Pillow installed, type a min and max in metres and click Set range manually. In global elevation mode the build will wait until a range is locked. Local mode lets each cell pick its own height, which is only for single tile tests, not seamless worlds.
+
+## Region data packs
+
+**Why.** When many cells each pull elevation tiles from the source at once, the source rate limits them and hands back broken, truncated tiles. Those show up as flat seams in the world. Pulling the tiles in bulk, up front, in a controlled way, avoids the whole problem.
+
+**The mechanism.** One careful downloader fetches a region's missing terrain tiles into the shared cache. It runs at a bounded speed (16 at a time by default), retries with backoff, writes each tile to a temp name and renames it only after it decodes cleanly, and writes a small manifest of what it pulled. A coverage scan reads the cache off disk and tells you the percent cached plus the exact tiles still missing, so you know at a glance whether an area is ready. The path and format match exactly what the generator reads, so a pre pulled tile is the same one a live run would have fetched.
+
+**How to use it.** Draw or search an area, open the Data pack card, click Check coverage to see the percent and the red gaps on the map, then click Download elevation to pull the missing tiles. A progress bar appears, and Stop download halts it while keeping what it already got. Each downloaded pack shows its live coverage in the packs list.
+
+## Working offline
+
+**Why.** Once a region's terrain is on disk, the build has no reason to touch the network. That means no rate limits, repeatable results, and the ability to build on a machine with no connection.
+
+**The mechanism.** All of Meld's caches (map data, terrain, and land cover) live in one shared folder reused by every project and world. When a region is fully packed, generation is a clean cache hit on every tile. The first download still needs a connection, but after that the build runs straight from disk.
+
+**How to use it.** Download or import a pack first, then generate as normal. The Cache card shows where the cache lives and the size of each type, with Clear buttons. Set the `MELD_CACHE_DIR` environment variable to move the cache to another drive.
+
+## Importing a pack
+
+**Why.** A pack built on one machine should move to another, or be shared, with no re-download.
+
+**The mechanism.** Import takes a folder of pack files (elevation tiles named `z*_x*_y*.png`, and any shared map data) and adds them to the cache. On the same drive it hardlinks, so there is no second copy and it is instant; across drives it falls back to a copy. Files already present are skipped.
+
+**How to use it.** In the Data pack card, set the Import folder path and click Import pack folder. It reports how many tiles and map files it brought in, and the packs list and any preview refresh after.
+
+## Elevation detail
+
+**Why.** Finer than one block per pixel buys you nothing visible but multiplies the number of tiles, and the very finest zoom levels are where the source has gaps. A lighter level is far fewer tiles, still carries the full terrain signal, and dodges the gaps.
+
+**The mechanism.** A single Elevation detail setting drives everything at once: the pack download, the coverage check, the height preview, and the actual build. Because all four use the same zoom, they always agree and you get a clean cache hit. The source is roughly 30 metres per sample, so a lighter zoom is lossless against it while using a fraction of the tiles.
+
+**How to use it.** In the Data pack card, set Elevation detail. Leave it on **Auto** and Meld matches the zoom to your scale: at 1:1 it picks the finest level, at 1:10 it picks a lighter one, both matched so a terrain sample is about one block. You can also pin a level from z11 (coarsest) to z15 (finest). The note under the dropdown tells you which zoom Auto resolved to.
+
+## No-data holes and the repair
+
+**Why.** The terrain source has real gaps at its highest zoom levels. At the finest zooms it sometimes serves an empty no-data tile, even though the same spot has real data at a lower zoom. Those empty tiles show as dark bands in the preview and flat dips in the world.
+
+**The mechanism.** Meld scans the cache, finds the all-empty holes, and rebuilds each one by upsampling from the deepest zoom that does have data, then writes a real terrain tile back in place. Good tiles are left alone, nothing good is re-downloaded, and the scan is fast because a uniform empty tile compresses tiny, so any larger tile is skipped without decoding. The repaired tile is baked into the cache, so both the preview and the generator read real terrain. New bulk downloads also self heal as they go.
+
+**How to use it.** Fix one tile from its click popup, fix a drawn area with Fix no-data holes, or fix the whole cache with Fix ALL holes. After a repair, restart the server and hard refresh the browser so the new tiles show.
+
+## The height preview
+
+**Why.** You want to see exactly what terrain is cached, and exactly where the gaps are, before you commit to a build.
+
+**The mechanism.** Meld draws the cached terrain over the map as a grayscale or hillshade overlay. It normalizes every tile against one shared height range, so flat ground reads as an honest mid gray instead of black and adjacent tiles do not stripe. Missing or no-data tiles render as translucent red. The overlay shows native detail at and above your pack zoom, a seam free mosaic just below, and a clean low detail view far out, so it works from a continental view down to fine terrain.
+
+**How to use it.** In the Data pack card, tick Height preview and choose grayscale or hillshade in Preview style. Zoom out for a wide regional view, zoom in for full detail. **Red means not cached**, which is a hole that would build as a flat dip, so it tells you what to download first. While the preview is on, click any tile to open a popup with its height range, file size, and status, which turns a vague dark band into a clear answer (a real hole, or just flat ground), and offers a one click repair for holes.
+
+---
+
+[Back to the docs hub](./index.md)

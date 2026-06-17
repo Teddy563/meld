@@ -33,6 +33,34 @@ def mpd_lon(origin_lat: float) -> float:
     return METERS_PER_DEG_LAT * math.cos(math.radians(origin_lat))
 
 
+# ── elevation source zoom ────────────────────────────────────────────────────
+# AWS terrarium pixel ground size at z15 (≈ earth_circ * cos(lat) / (256 * 2^15)).
+_TERRARIUM_M_PER_PX_Z15_EQ = 40075016.0 / (256.0 * 32768.0)   # ≈ 4.777 m/px at the equator
+ELEV_ZOOM_MIN = 11
+ELEV_ZOOM_MAX = 15
+
+
+def recommended_elev_zoom(scale: float, origin_lat: float = 45.0) -> int:
+    """The terrarium zoom whose pixel ≈ one Minecraft block on the ground, for this build's `scale`
+    (blocks per metre, so 1 block = 1/scale metres). Going finer than the block — or finer than the
+    ~30 m SRTM source — buys nothing, so we match pixel size to block size and clamp to [11,15].
+
+        z15≈3.4 m/px, z14≈6.8, z13≈13.5, z12≈27, z11≈54  (at lat 45)
+
+    Examples: 1:1 (scale 1.0)→z15, 1:5 (0.2)→z14, 1:10 (0.1)→z13, 1:20 (0.05)→z13, ≤1:30→z12."""
+    try:
+        s = float(scale)
+    except (TypeError, ValueError):
+        s = 1.0
+    if s <= 0:
+        s = 1.0
+    block_m = 1.0 / s                                          # ground metres per block
+    px15 = _TERRARIUM_M_PER_PX_Z15_EQ * math.cos(math.radians(origin_lat or 45.0))
+    # px(z) = px15 * 2^(15-z); want px(z) ≈ block_m -> z = 15 - log2(block_m / px15)
+    z = round(15.0 - math.log2(max(block_m, 1e-6) / max(px15, 1e-6)))
+    return max(ELEV_ZOOM_MIN, min(ELEV_ZOOM_MAX, int(z)))
+
+
 # ── point → block ──────────────────────────────────────────────────────────
 
 def block_x(lon: float, origin_lat: float, origin_lon: float, scale: float) -> int:

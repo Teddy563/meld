@@ -5,6 +5,14 @@ cells/
 # Scratch
 docs-temp/
 
+# Shared map cache (terrain / OSM / land cover) - huge, regenerated on demand, never committed
+cache/
+
+# Backup / pre-merge binaries (only the live arnis.exe is committed)
+arnis-*.exe
+*.exe.bak*
+!arnis.exe
+
 # Python
 __pycache__/
 *.pyc

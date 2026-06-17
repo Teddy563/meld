@@ -4,6 +4,115 @@ All notable changes to Meld are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Meld follows
 [Semantic Versioning](https://semver.org).
 
+## [1.1.0] - 2026-06-16
+
+The "go bigger, see more, waste nothing" release. Meld's Arnis fork gained upstream's in-process
+multi-core engine and stream-to-disk, so single cells can be huge (8x8, 16x16). The UI grew a live
+status rail (CPU / RAM / disk, workers, build, log), a paint tool, a retry queue, and CPU controls.
+All map caches moved into one shared, visible folder reused by every world. And a per-spawn cache
+walk that was quietly adding seconds to every cell's startup is gone.
+
+> Engine note: the fork (Teddy563/arnis, now version 2.9.0) carries a merge of 53
+> upstream `louis-e/arnis` commits - spatial tile parallelization + stream-to-disk. The Meld seam
+> (master-origin tile-invariant rendering) was preserved through the merge and verified: two
+> independently generated overlapping cells agree block-for-block (0 of 1024 boundary chunks differ).
+
+> Heads up: cell sizes 8 and 16, region data packs, and the elevation zoom chooser are new and best
+> treated as power-user features. Build a small area first to confirm your scale, elevation detail,
+> and save location before you commit a whole country. Big builds can be tens of gigabytes on disk,
+> so keep an eye on the free-space bar. After you download or repair an elevation pack, restart the
+> server and hard-refresh the browser so the new tiles show. Generation is offline-friendly once a
+> region is packed, but the first download still needs a connection.
+
+### Added
+
+- **In-process multi-core generation.** A cell spanning >= 3 region-tiles now builds its tiles in
+  parallel inside ONE Arnis process (rayon), on top of Meld's existing cross-process parallelism.
+  Small production cells keep the unchanged sequential path; big test cells go wide.
+- **Stream-to-disk.** Big cells evict finished regions to disk during generation instead of holding
+  the whole world in RAM, so 8x8 / 16x16 test tiles complete without running out of memory
+  (auto-enabled via the `ARNIS_STREAM_TO_DISK` env Meld sets for `size >= 8`).
+- **No-buildings mode.** A `--no-buildings` flag (alias `--no-structures`) on the Arnis fork, a
+  **Buildings** toggle in both the Arnis GUI and the Meld settings, for a roads + land-cover only
+  world. Roads, bridges, railways, water, natural and terrain are all kept; building footprints are
+  emptied too, so land cover fills in cleanly with no building-shaped holes. (Verified: same dense
+  area generates a different world with the flag on vs off.)
+- **Cell sizes 1 / 2 / 4 / 8 / 16** (powers of two, default 4; 8 and 16 marked as testing). Cap
+  raised from 6 to 16.
+- **Left status rail.** A second thin panel mirroring the right: Meld logo, a live **System** card
+  (CPU %, RAM used/total, save-disk free + low-disk warning), the **Build** estimate, **Workers**,
+  and the **Log** at the bottom. Settings stay on the right.
+- **Cache card.** Shows where the shared cache lives + per-type size (OSM / terrain / land cover)
+  with Clear buttons. Backed by `GET /api/cache` + a run-guarded `POST /api/cache/clear`.
+- **Paint tool.** In Edit mode, click-drag across the map to add or remove cells (the first cell
+  decides add vs remove); the whole drag persists in one atomic write (`/api/cell/toggle-bulk`).
+- **Select-to-retry.** Drag to mark a clump of cells (distinct blue dashed ring), then re-run them
+  with one button (`/api/cell/regenerate-cells`).
+- **CPU controls.** A **CPU budget** slider (10-95%), a **Threads / task** floor (1-8), a stagger
+  **toggle + step** slider, and **adaptive pacing** (spaces worker starts from the measured average
+  cell time so cores stay busy without all 16 launching at once).
+- **Spiral generation order.** Cells build center-out in concentric rings instead of edge-first.
+- **Failed cells say why.** Hovering a red cell now shows the parsed cause (out of memory / disk
+  full / Overpass rate limit / network timeout / crash) instead of nothing.
+- **Auto-retry.** A cell that fails for a transient reason (network / rate-limit / timeout / OOM)
+  is re-queued up to 2x; deterministic failures (drift / collision / disk-full / panic) are not.
+- **Shared global cache in the Meld project.** OSM, AWS terrain, and ESA land-cover caches now live
+  under `light-meld/cache/` (override with `MELD_CACHE_DIR`), reused by every project/world instead
+  of being hidden in AppData and re-downloaded per project.
+- **Region data packs.** Bulk-download a whole region's elevation once into the shared cache, so
+  generation runs offline and is never rate-limited. The Data pack card has Check coverage,
+  Download elevation, a re-fetch-this-view button, a packs list, and Import folder (drop in a folder
+  of tiles to use them with no download). Backed by the `/api/datapack/*` routes.
+- **Height preview.** A grayscale or hillshade overlay of the cached elevation on the map, so you can
+  see the terrain before you build. Red means a tile is not cached yet. Zoom out to a regional view
+  or in for full detail. Click a tile for a popup with its height range, size, and status.
+- **No-data hole repair (overzoom).** The AWS terrarium set has real gaps at z14/z15 where it serves
+  an all-black no-data tile. Those showed up as dark bands in the preview and flat dips in game. Meld
+  now rebuilds each hole by upsampling the deepest zoom that does have data, baked into the cache so
+  both the preview and Arnis read real terrain. Fix one tile from its popup, the drawn selection, or
+  the whole cache in one pass; new downloads also self-heal.
+- **Selectable elevation detail (zoom).** An Elevation detail dropdown picks the terrarium zoom used
+  for download and generation. Auto matches the zoom to your scale (1:1 picks z15, 1:10 picks z13),
+  so you get the right detail with no waste. A lower zoom is far fewer tiles, dodges the no-data
+  holes, and stays lossless against the roughly 30 m source. Wired to the Arnis fork through the
+  `ARNIS_ELEV_ZOOM` env var.
+
+### Changed
+
+- Build/size stats and the log moved into the left rail; the cell-size field is now a dropdown.
+- **Build-time estimate recalibrated** against a measured run (adds a per-cell overhead term; ~30
+  min @ 8 workers for a 9,408-region world now matches reality, was ~2x optimistic).
+- **Prefetch now counts toward the elapsed timer** with a "prefetching OSM / terrain..." indicator,
+  so the OSM + terrain warm-up time is visible instead of looking like a stall.
+- **Per-child env tuning:** `RAYON_NUM_THREADS = max(threads-floor, floor(cores x cpu% ) / workers)`
+  so N parallel cells don't oversubscribe; `ARNIS_STREAM_TO_DISK=1` for big cells.
+
+### Performance
+
+- **Per-spawn startup walk removed.** Arnis ran `cleanup_old_cached_tiles()` synchronously on every
+  process spawn, walking the entire elevation cache (541k files): ~17.7s cold / ~1.1s warm per
+  cell, deleting nothing. Now skipped in Meld tile-mode, throttled to once/day, and backgrounded.
+- **AWS bilinear elevation resample parallelized** (`par_iter_mut`) - it was single-threaded and was
+  the reason big 16x16 cells sat at ~15% CPU. Output byte-identical.
+- **mimalloc** global allocator (~30% lower peak RSS at 1 thread) + an **i32 corner-sum overflow**
+  crash fix that triggered on far-from-origin master-origin coordinates.
+
+### Fixed
+
+- **Floating vegetation over water/roads** on big/streamed exports - the cleanup ran post-merge,
+  after stream-to-disk had already evicted regions; now runs per-tile.
+- **Duplicate banners / signs / chests** on the parallel path (tiles overlap at edges) - block
+  entities are now deduped by coordinate on the Java write path.
+- **Worker-thread panic** on the parallel path: our fork has u16 block IDs (Meld blocks at 256+) but
+  upstream's palette array assumed u8 (256 slots) - sized to a `BLOCK_ID_CEILING`.
+- **Editing the plan during a running generation** desynced the worker pool (could re-add a deleted
+  cell or strand planned cells) - all cell + plan-edit routes now refuse while a run/prefetch is
+  active.
+- Invalid cell keys (`NaN`, floats) rejected before they poison the grid; retry-ring ghosts pruned
+  each poll; `MELD_CACHE_DIR` normalized (quotes / relative path); stale run-phase reset on switch.
+
+[1.1.0]: https://github.com/Teddy563/meld/releases/tag/v1.1.0
+
 ## [1.0.0] - 2026-06-13
 
 First public release. One origin, one coordinate convention, parallel cells, and a region perfect

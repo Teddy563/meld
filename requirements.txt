@@ -1,2 +1,3 @@
 Flask>=3.0
 Pillow>=10.0   # optional: only needed for the elevation survey (manual range works without it)
+psutil>=5.9

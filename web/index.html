@@ -25,15 +25,36 @@
   .leaflet-tile { filter: brightness(0.78) saturate(0.9) contrast(1.04); }
   #side { width:340px; background:var(--panel); border-left:1px solid var(--line);
           overflow-y:auto; padding:14px; }
+  /* Left status rail: mirrors #side but borders on the right. #map (flex:1) shrinks to fit. */
+  #sideL { width:300px; flex:0 0 300px; background:var(--panel); border-right:1px solid var(--line);
+           overflow-y:auto; padding:14px; }
+  #sideL .logo { display:block; line-height:0; margin-bottom:10px; }
   h1 { font-size:15px; margin:0 0 4px; letter-spacing:.5px; }
   .sub { color:var(--mut); font-size:12px; margin-bottom:12px; }
   .card { background:var(--panel); border:2px solid var(--line); border-radius:2px;
-          padding:11px 13px; margin-bottom:12px; }
+          padding:12px 14px; margin-bottom:10px; }
   .card h2 { font-family:var(--pixel); font-size:12px; text-transform:uppercase; letter-spacing:.04em;
              color:var(--acc2); margin:0 0 9px; }
+  /* collapsible #side sections: click a heading to open/close; many can be open at once. The
+     gold chevron + hover highlight make it read clearly as a dropdown. */
+  #side .card { transition:border-color .12s; }
+  #side .card > h2 { cursor:pointer; user-select:none; margin:-2px -4px 9px; padding:4px 6px;
+    border-radius:3px; transition:background .12s, color .12s; }
+  #side .card > h2:hover { background:rgba(240,191,58,.10); color:#ffd86b; }
+  #side .card.collapsed:hover { border-color:#5a5037; }
+  /* crisp solid triangle (CSS borders, not a font glyph): points down when open, rotates to
+     point right when collapsed — same on every OS, scales cleanly. */
+  #side .card > h2::before { content:''; display:inline-block; width:0; height:0; margin:0 9px 3px 1px;
+    border-left:6px solid transparent; border-right:6px solid transparent; border-top:9px solid var(--acc);
+    vertical-align:middle; transition:transform .15s ease; }
+  #side .card.collapsed > h2 { margin-bottom:-2px; }
+  #side .card.collapsed > h2::before { transform:rotate(-90deg); }
+  #side .card.collapsed > :not(h2) { display:none; }
   label { display:flex; justify-content:space-between; align-items:center;
-          gap:8px; margin:6px 0; font-size:13px; }
-  label .i { color:var(--mut); cursor:help; font-size:11px; border:1px solid var(--line);
+          gap:8px; margin:8px 0; font-size:13px; }
+  label:has(input[type=range]) { margin:10px 0; }   /* sliders get a touch more room */
+  .i { color:var(--mut); cursor:help; font-size:11px; text-transform:none; border:1px solid var(--line);
+       display:inline-block; vertical-align:middle; font-style:normal; font-weight:400; font-family:system-ui,Segoe UI,sans-serif;
              border-radius:50%; width:15px; height:15px; text-align:center; line-height:13px; }
   input,select { background:var(--bg); color:var(--fg); border:2px solid var(--line);
                  border-radius:2px; padding:4px 6px; width:120px; font:inherit; }
@@ -56,6 +77,22 @@
   input[type=checkbox]:hover { border-color:var(--acc); }
   input[type=checkbox]:checked { border-color:#9a6a12; background-color:var(--acc);
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23241a02' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-6.5'/%3E%3C/svg%3E"); }
+  /* themed range sliders: dark track, gold left-fill (JS-painted for WebKit; native on Firefox
+     via ::-moz-range-progress), gold knob with a black border */
+  input[type=range]{ -webkit-appearance:none; appearance:none; width:100%; height:6px; padding:0;
+    border:1px solid #000; border-radius:3px; background:#2a2620; cursor:pointer; vertical-align:middle; }
+  input[type=range]::-webkit-slider-runnable-track{ height:6px; border-radius:3px; background:transparent; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:14px; height:14px;
+    margin-top:-5px; border-radius:2px; background:var(--acc2); border:2px solid #000;
+    box-shadow:0 1px 2px rgba(0,0,0,.5); }
+  input[type=range]:hover::-webkit-slider-thumb{ background:#ffd24a; }
+  input[type=range]::-moz-range-track{ height:6px; border-radius:3px; background:#2a2620; border:1px solid #000; }
+  input[type=range]::-moz-range-progress{ height:6px; border-radius:3px; background:var(--acc2); }
+  input[type=range]::-moz-range-thumb{ width:14px; height:14px; border-radius:2px; background:var(--acc2); border:2px solid #000; }
+  /* a label holding a slider stacks: text + value on the top line, full-width slider below, so the
+     wording never gets squeezed into two lines by the slider sharing the flex row */
+  label:has(input[type=range]){ display:block; }
+  label:has(input[type=range]) input[type=range]{ display:block; width:100%; margin-top:6px; }
   .row { display:flex; gap:6px; }
   .row button { margin-top:0; }
   .chip { display:inline-block; padding:2px 7px; border-radius:2px; font-size:10px;
@@ -67,7 +104,7 @@
   #log { font:11px/1.4 ui-monospace,Consolas,monospace; color:var(--mut);
          white-space:pre-wrap; max-height:140px; overflow-y:auto; }
   .stat { font-size:12px; color:var(--mut); margin:2px 0; overflow-wrap:anywhere; }
-  .bar { height:5px; background:var(--panel); border-radius:3px; overflow:hidden; margin-top:3px; }
+  .bar { height:10px; background:#1c1916; border:1px solid var(--line); border-radius:2px; overflow:hidden; margin-top:4px; }
   .bar > i { display:block; height:100%; background:var(--run); width:0; transition:width .3s ease; }
   .bar > i.ok { background:var(--ok); } .bar > i.bad { background:var(--bad); }
   /* live per-worker rows (Workers card, near the log) */
@@ -90,10 +127,10 @@
   .wrow > span:last-child { flex:0 0 auto; }
   .wrow button { width:auto; margin:0; padding:2px 7px; font-size:11px; }
   .xbtn { background:var(--bad); color:#fff; }
-  #coordbox { position:fixed; left:10px; bottom:10px; z-index:600; pointer-events:none;
+  #coordbox { position:fixed; left:310px; bottom:10px; z-index:600; pointer-events:none;
               background:rgba(20,18,13,.82); color:var(--fg); border:1px solid var(--line);
               border-radius:5px; padding:4px 9px; font:11px/1.3 ui-monospace,Consolas,monospace; }
-  #credit { position:fixed; left:10px; bottom:40px; z-index:600;
+  #credit { position:fixed; left:310px; bottom:40px; z-index:600;
             background:rgba(20,18,13,.82); color:var(--mut); border:1px solid var(--line);
             border-radius:5px; padding:3px 8px; font:10.5px/1.3 ui-monospace,Consolas,monospace; }
   #credit a { color:var(--acc2); text-decoration:none; }
@@ -126,37 +163,61 @@
     box-shadow: inset 0 2px 0 rgba(255,235,170,.28); }
   .mb-ghost { background:var(--panel); color:var(--fg); border:2px solid var(--line); box-shadow:none; }
   .mb-gold:hover { filter:brightness(1.07); } .mb-ghost:hover { color:var(--acc2); border-color:var(--acc); }
+  /* paint-cells toggle: a triangle button under the draw toolbar. Gold + white triangle when ON. */
+  .leaflet-bar a.meld-brush-btn { font:700 16px/26px system-ui,sans-serif; color:#1a1712; text-align:center; }
+  .leaflet-bar a.meld-brush-btn.meld-brush-on { background:#e3a417; color:#fff; }
+  .leaflet-bar a.meld-brush-btn.meld-brush-on:hover { background:#e3a417; }
 </style>
 </head>
 <body>
 <div id="app">
+  <div id="sideL">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
+      <a href="https://meldmc.com" target="_blank" rel="noopener" title="meldmc.com" class="logo" style="margin:0">
+        <img src="assets/meld_icon.png" alt="Meld" style="height:40px;width:auto;display:block;cursor:pointer"/></a>
+      <button id="btnRecommend" class="sec" style="width:auto;margin:0;padding:5px 8px;font-size:11px;white-space:nowrap" title="Check this PC (CPU, RAM, save-disk speed) and recommend the best cell size + worker count.">⚡ Recommend</button>
+    </div>
+    <div class="sub" style="font-size:10px;line-height:1.3;margin:0 0 10px">From a city block to a whole continent, in Minecraft.</div>
+    <div class="sub" style="margin:0 0 12px">Live status</div>
+    <div class="card">
+      <h2>System</h2>
+      <div class="stat">CPU <span id="statCpu" style="float:right;color:var(--fg)">–</span></div>
+      <div class="bar"><i id="statCpuBar" style="width:0%"></i></div>
+      <div class="stat" style="margin-top:7px">RAM <span id="statRam" style="float:right;color:var(--fg)">–</span></div>
+      <div class="bar"><i id="statRamBar" style="width:0%"></i></div>
+      <div class="stat" style="margin-top:7px">Disk <span id="statDisk" style="float:right;color:var(--fg)">–</span></div>
+      <div class="bar"><i id="statDiskBar" style="width:0%"></i></div>
+      <div class="stat" id="statDiskWarn" style="display:none;color:var(--bad);margin-top:5px"></div>
+      <canvas id="statHist" height="46" style="width:100%;height:46px;display:block;margin-top:9px;background:#1c1916;border:1px solid var(--line);border-radius:2px"></canvas>
+      <div class="stat" style="font-size:10px;margin-top:3px;color:var(--mut)">
+        <span style="color:var(--acc)">●</span> CPU
+        <span style="color:var(--ok);margin-left:8px">●</span> RAM
+        <span style="float:right">history</span></div>
+    </div>
+    <div class="card">
+      <h2>Build</h2>
+      <div class="report">
+        <div><span id="estSize" class="big">, </span> <span class="lbl">estimated size</span></div>
+        <div class="stat" id="estSub"></div>
+        <div class="stat" id="diskLine"></div>
+        <div class="stat" id="useLine"></div>
+        <div class="stat" id="prefetchLine" style="display:none;color:var(--acc2)"></div>
+        <div class="stat" id="runLine" style="margin-top:6px"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Workers <span id="workersCount" class="chip un" style="float:right">idle</span></h2>
+      <div id="workersState"><div class="stat">Idle. Start a generation to see live workers here.</div></div>
+    </div>
+    <div class="card adv">
+      <h2>Log <button id="btnPopLog" class="sec" style="width:auto;margin:0;padding:2px 8px;font-size:11px;float:right">Pop out</button></h2>
+      <div id="log"></div>
+    </div>
+  </div>
   <div id="map"></div>
   <div id="coordbox">move the mouse over the map</div>
   <div id="credit">Arnis by <a href="https://github.com/louis-e/arnis" target="_blank" rel="noopener">louis-e</a> · Meld by <a href="https://github.com/Teddy563/meld" target="_blank" rel="noopener">Teddy563</a></div>
   <div id="side">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
-      <a href="https://meldmc.com" target="_blank" rel="noopener" title="meldmc.com" style="line-height:0">
-        <img src="assets/meld_icon.png" alt="Meld" style="height:40px;width:auto;display:block;cursor:pointer"/></a>
-      <div style="display:flex;gap:6px">
-        <button id="btnRecommend" class="sec" style="width:auto;margin:0;padding:5px 9px;font-size:12px" title="Check this PC (CPU, RAM, save-disk speed) and recommend the best cell size + worker count.">⚡ Recommend</button>
-      </div>
-    </div>
-    <div class="sub">From a city block to a whole continent, in Minecraft.</div>
-
-    <div class="card">
-      <h2>World</h2>
-      <label>Name
-        <input id="worldName" type="text" style="width:160px" placeholder="Meld World"></label>
-      <button class="sec" id="btnName">Save name</button>
-      <label style="margin-top:8px">Save location (worlds folder)
-        <span class="i" title="The FOLDER that holds your worlds, each world is a subfolder named by the World Name above. Point it at .minecraft/saves to keep several (Meld World, Meld World 2, …) in one place. Blank = the project folder.">i</span></label>
-      <input id="masterDir" type="text" style="width:100%" placeholder="paste a path, or Browse…">
-      <button class="sec" id="btnBrowse">Browse…</button>
-      <label style="margin-top:8px">Prune subregion after merge
-        <span class="i" title="Delete each per-cell Arnis subregion once it merges into the master world, avoids doubling storage. Merged content stays in the master.">i</span>
-        <input id="prune" type="checkbox"></label>
-    </div>
-
     <div class="card">
       <h2>Generate</h2>
       <div class="legend">
@@ -165,13 +226,6 @@
         <span><i class="dot" style="background:var(--run)"></i>running</span>
         <span><i class="dot" style="background:var(--ok)"></i>merged</span>
         <span><i class="dot" style="background:var(--bad)"></i>failed</span>
-      </div>
-      <div class="report">
-        <div><span id="estSize" class="big">, </span> <span class="lbl">estimated size</span></div>
-        <div class="stat" id="estSub"></div>
-        <div class="stat" id="diskLine"></div>
-        <div class="stat" id="useLine"></div>
-        <div class="stat" id="runLine" style="margin-top:6px"></div>
       </div>
       <button id="btnGen" title="Generates only the cells that aren't merged yet, safe to re-run after a stop or crash. Set cell size + workers in Settings below.">Generate &amp; merge</button>
       <button id="btnResume" class="sec" title="Re-queue every cell that isn't merged (failed, drift, interrupted). Crash / overnight recovery.">Resume unfinished</button>
@@ -184,30 +238,18 @@
     </div>
 
     <div class="card">
-      <h2>Selection</h2>
-      <input id="search" placeholder="Search place (e.g. Bavaria)" style="width:100%"/>
-      <button class="sec" id="btnSearch">Search</button>
-      <div class="stat" id="selVal">Draw a rectangle on the map, or search.</div>
-    </div>
-
-    <div class="card adv">
-      <h2>Elevation lock <span id="elevState" class="chip un">none</span></h2>
-      <div class="stat" id="elevVal">, </div>
-      <button class="sec" id="btnSurvey">Survey selection</button>
-      <div class="row" style="margin-top:6px">
-        <input id="emin" placeholder="min m" style="width:50%"/>
-        <input id="emax" placeholder="max m" style="width:50%"/>
-      </div>
-      <button class="sec" id="btnManual">Set range manually</button>
-    </div>
-
-    <div class="card">
       <h2>Settings</h2>
       <label>Scale <input id="scale" type="number" step="0.05" min="0.01"></label>
       <label>Cell size (regions)
-        <span class="i" title="Side length of each generation cell in 512-block regions (1-16). Smaller = smaller per-cell save burst, safer + lighter on disk. Default 4, sweet spot 4-6. Above 8 the save gets heavy (warns on Generate). Change this then Plan to re-split.">i</span>
-        <input id="size" type="number" min="1" max="16" step="1"></label>
-      <div class="stat" style="margin-top:-2px">1-16 · default 4, sweet spot 4-6. Bigger cells = heavier saves.</div>
+        <span class="i" title="Side length of each generation cell in 512-block regions. Powers of two only: 1, 2, 4, 8, 16. Default 4. 8 and 16 are for testing the new parallel/streaming engine (auto stream-to-disk so they don't run out of memory). Change this then Plan to re-split.">i</span>
+        <select id="size">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="4">4</option>
+          <option value="8">8 (test)</option>
+          <option value="16">16 (test)</option>
+        </select></label>
+      <div class="stat" style="margin-top:-2px">1 / 2 / 4 / 8 / 16 · default 4. 8 and 16 auto stream-to-disk (testing the parallel engine).</div>
       <label>Ground level <input id="ground" type="number" step="1"></label>
       <label>Road detail
         <span class="i" title="auto = compact below scale 0.7 (cleaner at coarse block size), clean at/above.">i</span>
@@ -216,9 +258,23 @@
         <span class="i" title="global = one locked range, no height cliffs across cells. local = per-cell auto-fit (will seam).">i</span>
         <select id="emode"><option>global</option><option>local</option></select></label>
       <label>Workers
-        <span class="i" title="Parallel Arnis runs (aim ~8, max 16). Generation is disk + RAM bound at the save phase, not CPU bound, so past ~8-12 the SSD saturates instead of going faster. Auto-clamped lower when Bake lighting is on or cells are big (heavy saves), and to 2 below scale 0.5.">i</span>
-        <input id="workers" type="number" min="1" max="16" step="1" list="workerpresets"></label>
-      <datalist id="workerpresets"><option value="4"></option><option value="8"></option><option value="12"></option><option value="16"></option></datalist>
+        <span class="i" title="Parallel Arnis runs (aim ~8, max 64). Generation is disk + RAM bound at the save phase, not CPU bound, so past ~8-12 the SSD often saturates instead of going faster. Push higher only on fast NVMe with lots of RAM. Auto-clamped to 2 below scale 0.5.">i</span>
+        <input id="workers" type="number" min="1" max="64" step="1" list="workerpresets"></label>
+      <datalist id="workerpresets"><option value="4"></option><option value="8"></option><option value="16"></option><option value="32"></option><option value="64"></option></datalist>
+      <label>CPU budget <span id="cpuPctVal" style="float:right;color:var(--acc2)">90%</span>
+        <span class="i" title="Share of CPU cores Meld hands to Arnis across all workers. Lower = quieter machine + headroom; higher = faster. Capped at 95% for safety so the OS + disk save phase never starve. Each worker still gets at least the min-threads floor.">i</span>
+        <input id="cpuPct" type="range" min="10" max="95" step="5" style="width:100%"></label>
+      <label>Threads / task <span id="minThrVal" style="float:right;color:var(--acc2)">2</span>
+        <span class="i" title="Minimum CPU threads each Arnis task (cell) gets for its in-process tile build. 1-2 keeps it tight; 4-8 makes each cell finish its CPU phase faster (often quicker overall) but oversubscribes if you also run many workers. The CPU budget above still caps the total.">i</span>
+        <input id="minThr" type="range" min="1" max="8" step="1" style="width:100%"></label>
+      <label>Stagger starts
+        <span class="i" title="Delay each worker's first cell so they don't all hit the network / CPU / disk at the same instant (smoother CPU, less spiky). Off = all start at once. The slider is the per-worker step in seconds.">i</span>
+        <input id="staggerOn" type="checkbox"></label>
+      <label id="staggerStepRow">Stagger step <span id="staggerSecVal" style="float:right;color:var(--acc2)">2s</span>
+        <input id="staggerSec" type="range" min="1" max="4" step="1" style="width:100%"></label>
+      <label id="staggerAdaptiveRow">Adaptive pacing
+        <span class="i" title="Pace worker starts from the measured average cell time so each worker hits the CPU as the previous one frees (keeps cores full, smoother). Off = fixed step from the slider. The slider is the floor either way.">i</span>
+        <input id="staggerAdaptive" type="checkbox"></label>
       <label>Seed
         <span class="i" title="Tile-invariant building seed. Same value for the whole project keeps buildings identical across seams.">i</span>
         <input id="seed" type="number" min="1" step="1"></label>
@@ -229,6 +285,12 @@
       <label>Terrain
         <span class="i" title="Generate real elevation/terrain (uses the elevation lock). Off = flat ground.">i</span>
         <input id="terrain" type="checkbox"></label>
+      <label>AWS-only elevation
+        <span class="i" title="Skip the regional high-res elevation providers (USGS, IGN, Japan GSI) and use only AWS Terrain Tiles. Recommended for big parallel runs: the regional providers rate-limit under many cells at once ('Elevation request retry' per tile, slow), and the terrain prefetch only warms AWS. Trades ~30m resolution for far fewer retries.">i</span>
+        <input id="awsonly" type="checkbox"></label>
+      <label>Buildings
+        <span class="i" title="Generate OSM buildings. Off = a roads + land-cover only world (roads, bridges, railways, water and terrain are still built).">i</span>
+        <input id="buildings" type="checkbox"></label>
       <label>Roofs
         <span class="i" title="Generate building roofs.">i</span>
         <input id="roof" type="checkbox"></label>
@@ -247,6 +309,12 @@
       <label>Bake lighting (LOD mods)
         <span class="i" title="Pre-bake per-chunk light so Voxy / Distant Horizons render distant chunks lit without visiting them (Arnis issue #1071). On by default; slower to generate and bigger region files.">i</span>
         <input id="bakelight" type="checkbox"></label>
+      <label>Stream to disk (big tiles)
+        <span class="i" title="Evict generated regions to disk during generation instead of holding the whole world in RAM (upstream Arnis --stream-to-disk). Needed for 8x8 / 16x16 test tiles without running out of memory. Ignored automatically if this arnis.exe doesn't support it yet.">i</span>
+        <input id="streamdisk" type="checkbox"></label>
+      <label>OSM tile size <span id="tileKmVal" style="float:right;color:var(--acc2)">Auto</span>
+        <span class="i" title="How big each shared OSM download tile is, measured as its real-world edge in km (the gray-blue dotted boxes on the map). This is real-world size, so it means the same thing at 1:1 or 1:10. Auto = download the whole selection in one query, or a few big tiles if it's huge — best for most cases. Bigger = fewer Overpass requests (less rate-limit risk); if a tile is too dense the server rejects it and Meld auto-splits it into quadrants, so it always completes. Tiles download 2 at a time (the Overpass per-IP allowance). Cells are never cut, so region files still generate exactly.">i</span>
+        <input id="tileKm" type="range" min="0" max="300" step="10" style="width:100%"></label>
       <button class="sec" id="btnSave">Save settings</button>
 
       <div style="border-top:1px solid var(--line);margin-top:10px;padding-top:8px">
@@ -267,6 +335,115 @@
       </div>
     </div>
 
+    <div class="card">
+      <h2>Project &amp; world <span class="i" title="Switch project workspaces (each = one world's settings, origin, grid). Below: the name and save location of the world this project builds.">i</span></h2>
+      <select id="projectSel" style="width:100%"></select>
+      <div class="row" style="margin-top:6px">
+        <button class="sec" id="btnProjectNew" style="padding:6px" title="Create a new project (a fresh world workspace). The current one stays intact.">＋ New project</button>
+        <button class="sec xbtn" id="btnProjectDelete" title="Delete this project's workspace (the saved Minecraft world on disk is kept)" style="width:auto;flex:0 0 auto;padding:6px 10px">🗑️</button>
+      </div>
+      <div style="border-top:1px solid var(--line);margin:10px 0 0;padding-top:9px"></div>
+      <label>Name
+        <span class="i" title="The world's display name (also the saves subfolder). Saves automatically when you click away or press Enter.">i</span>
+        <input id="worldName" type="text" style="width:160px" placeholder="Meld World"></label>
+      <label style="margin-top:8px">Save location (worlds folder)
+        <span class="i" title="The FOLDER that holds your worlds, each world is a subfolder named by the World Name above. Point it at .minecraft/saves to keep several (Meld World, Meld World 2, …) in one place. Blank = the project folder.">i</span></label>
+      <input id="masterDir" type="text" style="width:100%" placeholder="paste a path, or Browse…">
+      <button class="sec" id="btnBrowse">Browse…</button>
+      <label style="margin-top:8px">Prune subregion after merge
+        <span class="i" title="Delete each per-cell Arnis subregion once it merges into the master world, avoids doubling storage. Merged content stays in the master.">i</span>
+        <input id="prune" type="checkbox"></label>
+      <button class="sec" id="btnImport" style="margin-top:8px" title="Load a saved world's meld-world.json to reuse its exact origin, elevation lock, seed and look settings, for a new or continued world.">⤓ Import world settings (.json)</button>
+      <input id="importFile" type="file" accept="application/json,.json" style="display:none">
+      <div class="stat" id="importMsg" style="margin-top:4px"></div>
+    </div>
+
+    <div class="card">
+      <h2>Selection / search</h2>
+      <input id="search" placeholder="Search place (e.g. Bavaria)" style="width:100%"/>
+      <button class="sec" id="btnSearch">Search</button>
+      <div class="stat" style="margin-top:6px">When you draw a rectangle/polygon (or search a country):</div>
+      <div class="row" style="margin-top:4px">
+        <button class="sec" id="modeReplace" style="padding:6px" title="The shape becomes the whole selection (clears the current non-merged plan).">Replace</button>
+        <button class="sec" id="modeAdd" style="padding:6px" title="Add the shape's cells to the current plan (keeps what's there).">Add</button>
+        <button class="sec" id="modeRemove" style="padding:6px" title="Remove the shape's cells from the plan (merged cells are kept).">Remove</button>
+      </div>
+      <button class="sec" id="btnGrow" style="margin-top:6px" title="Add a ring of cells just OUTSIDE the current plan, following its shape. Great after a country/polygon search to extend tiles past the border. Click again to grow another ring.">➕ Grow edge (+1 ring)</button>
+      <div class="stat" id="selVal" style="margin-top:6px">Draw a rectangle/polygon on the map, or search.</div>
+    </div>
+
+    <div class="card">
+      <h2>Edit &amp; retry <span class="i" title="Tools that act on cells you've already planned: paint cells on/off, mark a clump to re-run, or regenerate just the cells inside your current selection. Kept separate from a full Generate.">i</span></h2>
+      <button id="btnEditCells" class="sec" title="Paint individual cells. When ON, drag across the map to ADD cells over empty ground, or drag over existing cells to REMOVE them (the first cell you touch decides add vs remove). Merged cells are left alone.">✏️ Edit cells: off</button>
+      <button id="btnRetrySelect" class="sec" title="Drag a square over the map to mark every cell inside it for re-run — they get a cyan fill + 🔁. A click toggles one cell; drag again over marked cells to unmark. The locked selection box can't move while this is on. Then hit Retry; marked cells switch to the normal build emoji as they run.">◉ Select to retry</button>
+      <button id="btnRetryQueued" class="sec" style="display:none" title="Re-run the cells you marked with Select to retry.">↻ Retry selected</button>
+      <button id="btnRedoSuspect" class="sec" style="display:none" title="Re-run only the cells flagged suspect (truncated terrain tiles / missing land cover). Fixes the localized cliffs without redoing the whole world; the redo pre-warms terrain so they cache cleanly.">↻ Redo suspect</button>
+      <button id="btnRedoRegion" class="sec" title="Re-run only the cells inside your current selection (draw a box/polygon first). Fix a localized area without redoing the whole world.">↻ Regenerate selected region</button>
+    </div>
+
+    <div class="card adv">
+      <h2>Elevation lock <span id="elevState" class="chip un">none</span></h2>
+      <div class="stat" id="elevVal">, </div>
+      <button class="sec" id="btnSurvey">Survey selection</button>
+      <div class="row" style="margin-top:6px">
+        <input id="emin" placeholder="min m" style="width:50%"/>
+        <input id="emax" placeholder="max m" style="width:50%"/>
+      </div>
+      <button class="sec" id="btnManual">Set range manually</button>
+    </div>
+
+    <div class="card">
+      <h2>Cache <button id="btnCacheRefresh" class="sec" style="width:auto;margin:0;padding:2px 8px;font-size:11px;float:right" title="Recompute cache sizes (terrain can be 500k files, takes a second)">↻ sizes</button></h2>
+      <div class="stat">Shared map data (OSM + terrain + land cover), reused by every world. Lives at:</div>
+      <div class="stat" id="cacheRoot" style="word-break:break-all;color:var(--mut);margin-bottom:6px">…</div>
+      <div class="stat">OSM <span id="cacheOsm" style="float:right;color:var(--fg)">–</span></div>
+      <div class="stat">Terrain <span id="cacheTerrain" style="float:right;color:var(--fg)">–</span></div>
+      <div class="stat">Land cover <span id="cacheLand" style="float:right;color:var(--fg)">–</span></div>
+      <div class="row" style="margin-top:7px">
+        <button class="sec" id="btnClearOsm" title="Delete cached OSM (re-downloads next run)">Clear OSM</button>
+        <button class="sec" id="btnClearTerrain" title="Delete the cached terrain tiles (re-downloads next run)">Clear terrain</button>
+      </div>
+      <button class="sec xbtn" id="btnClearAllCache" style="margin-top:6px" title="Delete ALL cached map data. Re-downloads as needed on the next run.">🗑️ Clear all cache</button>
+    </div>
+
+    <div class="card">
+      <h2>Data pack <span class="i" title="Download a whole region's elevation (and OSM) ONCE into the shared cache, so generation runs offline and is never rate-limited. Draw/search an area, then Download. Reused by every project. Height preview shows what's cached (red = missing).">i</span></h2>
+      <label style="margin-bottom:4px">Elevation detail
+        <span class="i" title="Terrarium zoom used for elevation download + in-game generation. Auto matches the zoom's pixel to your block size (the right detail, no waste): 1:1 scale -> z15, 1:10 -> z13. Lower zoom = far fewer tiles + dodges the z14/z15 no-data holes. z15 finest (~3.4m/px), z11 coarsest (~54m/px).">i</span>
+        <select id="elevZoom" style="width:170px">
+          <option value="auto">Auto (match scale)</option>
+          <option value="15">z15 — finest (~3.4 m/px)</option>
+          <option value="14">z14 — ~6.8 m/px</option>
+          <option value="13">z13 — ~13.5 m/px (light)</option>
+          <option value="12">z12 — ~27 m/px (lighter)</option>
+          <option value="11">z11 — ~54 m/px (coarse)</option>
+        </select></label>
+      <div class="stat" id="elevZoomNote" style="color:var(--mut);margin-bottom:4px"></div>
+      <div class="stat" id="dpCov" style="margin-bottom:4px">Draw or search an area, then check coverage.</div>
+      <div class="row">
+        <button class="sec" id="btnDpCoverage" title="Check how much of the selection's elevation is already cached.">Check coverage</button>
+        <button class="sec" id="btnDpBuild" title="Bulk-download the selection's missing elevation tiles into the global cache (one controlled downloader, not rate-limited).">⤓ Download elevation</button>
+      </div>
+      <div class="bar" id="dpBarWrap" style="display:none;margin-top:6px"><i id="dpBar" style="width:0%"></i></div>
+      <div class="stat" id="dpProg" style="display:none;margin-top:2px"></div>
+      <button class="sec" id="btnDpStop" style="display:none;margin-top:4px" title="Stop the running download (already-fetched tiles are kept).">Stop download</button>
+      <button class="sec" id="btnDpRefetch" style="margin-top:4px" title="Re-download EVERY elevation tile in the current map view, replacing stale/flat/wrong ones that still decode (so plain Download skips them). Zoom to a bad area first; this re-fetches only what's on screen.">↻ Re-fetch this view (fix flat tiles)</button>
+      <button class="sec" id="btnDpRepair" style="margin-top:4px" title="The AWS terrarium set has real GAPS at z14/z15 — it serves an all-black no-data tile there, which shows as dark bands here and flat dips in-game. This scans the SELECTION and rebuilds each hole by upsampling the deepest parent zoom that DOES have data. Fixes both the preview and in-game generation (Arnis reads the same files). It only touches holes — good tiles are left as-is, nothing is re-downloaded.">✦ Fix no-data holes (selection)</button>
+      <button class="sec" id="btnDpRepairAll" style="margin-top:4px" title="Same overzoom repair, but scans your ENTIRE elevation cache in one pass and fixes every no-data hole everywhere — no need to draw an area or click holes one by one. Only decodes the tiny uniform tiles (a hole is always tiny), so it's fast even over a whole country. Good tiles are untouched.">✦ Fix ALL holes (whole cache)</button>
+      <label style="margin-top:8px">Height preview
+        <span class="i" title="Overlay the cached elevation on the map (grayscale or hillshade). Red tiles = elevation NOT cached yet — exactly where a gap would be.">i</span>
+        <input id="dpPreview" type="checkbox"></label>
+      <label style="margin-top:2px">Preview style
+        <select id="dpPreviewMode" style="width:120px"><option value="grayscale">grayscale</option><option value="hillshade">hillshade</option></select></label>
+      <div style="border-top:1px solid var(--line);margin:9px 0 0;padding-top:8px"></div>
+      <div class="stat" style="margin-bottom:3px">Downloaded packs <button id="btnDpList" class="sec" style="width:auto;margin:0;padding:1px 7px;font-size:11px;float:right">↻</button></div>
+      <div id="dpList" class="stat" style="color:var(--mut)">…</div>
+      <label style="margin-top:8px">Import folder
+        <span class="i" title="Drop-in: point at a folder of pack files (z*_x*_y*.png tiles and/or osm_*.json) to import them into the cache — offline, no download.">i</span></label>
+      <input id="dpImportPath" type="text" style="width:100%" placeholder="paste a folder path">
+      <button class="sec" id="btnDpImport" style="margin-top:4px">⤓ Import pack folder</button>
+    </div>
+
     <div class="card adv">
       <h2>Subregions / worlds</h2>
       <div class="stat" id="masterInfo">, </div>
@@ -277,21 +454,17 @@
       </div>
     </div>
 
-    <div class="card adv">
-      <h2>Workers <span id="workersCount" class="chip un" style="float:right">idle</span></h2>
-      <div id="workersState"><div class="stat">Idle. Start a generation to see live workers here.</div></div>
-    </div>
 
-    <div class="card adv">
-      <h2>Log <button id="btnPopLog" class="sec" style="width:auto;margin:0;padding:2px 8px;font-size:11px;float:right">Pop out</button></h2>
-      <div id="log"></div>
-    </div>
     <div class="stat" style="text-align:center;opacity:.6;margin-top:2px">Not affiliated with Mojang AB or Minecraft. Built on the open source Arnis generator.</div>
   </div>
 </div>
 
 <script>
 const map = L.map('map').setView([46.0, 25.0], 6);
+// Cells render onto ONE shared canvas instead of one SVG node each, so thousands of
+// cells pan/zoom without lagging. Only the cells use it; the selection rectangle, draw
+// preview and combined border stay on the default SVG renderer (unchanged behaviour).
+const cellRenderer = L.canvas({ padding: 0.5 });
 // Default OpenStreetMap basemap (standard texture) in both themes. Dark mode only
 // dims the tiles via the .leaflet-tile CSS filter; the texture stays OSM.
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -314,34 +487,87 @@ map.on('mousemove', e => {
 let selection = null;          // {south,west,north,east}
 let drawLayer = null;
 let polyLayer = null;          // searched region's actual border polygon
+let _editableSel = null;       // the selection layer whose edit handles we lock in cell modes
 let pickingOrigin = false;     // true while "click map to set origin" is armed
 let cellLayers = {};           // cell_key -> L.rectangle
 let cellMarkers = {};          // cell_key -> L.marker (stage emoji)
+let _cellStatus = {};          // cell_key -> last drawn status (skip redundant restyles)
 let combinedBorder = [];       // bold double-line outline around the whole grid
 let plannedCells = [];         // last planned cell list (cell_key + bbox)
+let selectionPolygon = null;   // array of rings [[ [lat,lon],... ], ...] when shaped (not a box)
+let selectMode = 'replace';    // how a drawn/searched shape applies: replace | add | remove
+let editCells = false;         // when on, drag the map to add/remove individual cells
+let retrySelect = false;       // when on, drag to mark cells for retry (a separate clump)
+let RAM_GB = null;             // detected RAM, drives the worker-count warning threshold
 let projOrigin = null;         // {lat,lon} for recomputing cell geometry on refresh
 let projScale = 0.3;
 const drawnItems = new L.FeatureGroup().addTo(map);
 const prefetchGroup = L.layerGroup().addTo(map);   // cyan dashed OSM-download chunks
+const suspectGroup = L.layerGroup().addTo(map);    // amber rings on cells flagged suspect
+const retryGroup = L.layerGroup().addTo(map);      // blue dashed rings on cells queued for retry
+const _retryQueue = new Set();                     // cell_keys the user has marked to re-run
+let _retrySig = '';
+let _cellHealth = {};                              // cell_key -> {suspect, reasons}
+let _suspectSig = '';
+let _cellFail = {};                                // cell_key -> short reason a cell failed
+function cellTip(key) {                             // tooltip text: key + WHY it failed, if it did
+  const r = _cellFail[key];
+  return r ? `${key}\n⚠ ${r}` : key;
+}
 
 const drawControl = new L.Control.Draw({
   draw: { rectangle: { shapeOptions:{ color:'#d6ba58', weight:2, fillOpacity:0.06 } },
-          polygon:false, polyline:false, circle:false, marker:false, circlemarker:false },
+          polygon: { shapeOptions:{ color:'#d6ba58', weight:2, fillOpacity:0.06 }, allowIntersection:false, showArea:false },
+          polyline:false, circle:false, marker:false, circlemarker:false },
   edit: false,
 });
 map.addControl(drawControl);
 
-map.on(L.Draw.Event.CREATED, e => {
+// Paint-cells toggle: a triangle button under the draw toolbar. While ON, clicking
+// the map adds a cell and clicking a cell removes it (drives the same editCells mode).
+const BrushControl = L.Control.extend({
+  options: { position: 'topleft' },
+  onAdd: function () {
+    const bar = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+    const a = L.DomUtil.create('a', 'meld-brush-btn', bar);
+    a.id = 'brushBtn'; a.href = '#'; a.innerHTML = '&#9650;';   // ▲
+    a.title = 'Paint cells: toggle on, then click the map to add a cell or click a cell to remove it';
+    L.DomEvent.disableClickPropagation(bar);
+    L.DomEvent.on(a, 'click', L.DomEvent.stop);
+    L.DomEvent.on(a, 'click', () => setEditCells(!editCells));
+    return bar;
+  },
+});
+map.addControl(new BrushControl());
+
+map.on(L.Draw.Event.CREATED, async e => {
   if (polyLayer) { map.removeLayer(polyLayer); polyLayer = null; }
-  if (drawLayer) drawnItems.removeLayer(drawLayer);
-  drawLayer = e.layer; drawnItems.addLayer(drawLayer);
-  attachEditing(drawLayer);   // movable + resizable
-  const b = drawLayer.getBounds();
-  selection = { south:b.getSouth(), west:b.getWest(), north:b.getNorth(), east:b.getEast() };
-  saveSelection();
-  onSelectionChanged();   // recenter + re-tile + survey
-  document.getElementById('selVal').textContent =
-    `S${selection.south.toFixed(4)} W${selection.west.toFixed(4)} N${selection.north.toFixed(4)} E${selection.east.toFixed(4)}`;
+  const layer = e.layer;
+  const b = layer.getBounds();
+  const bbox = { south:b.getSouth(), west:b.getWest(), north:b.getNorth(), east:b.getEast() };
+  // Polygon -> one ring of [lat,lon]; rectangle -> null (tiled by bbox).
+  let rings = null;
+  if (e.layerType === 'polygon') {
+    const ll = (layer.getLatLngs()[0]) || [];
+    rings = [ ll.map(p => [p.lat, p.lng]) ];
+  }
+  if (selectMode === 'replace') {
+    // Replace: this shape becomes THE selection (clears the non-merged plan, recenters).
+    if (drawLayer) drawnItems.removeLayer(drawLayer);
+    drawLayer = layer; drawnItems.addLayer(drawLayer);
+    selection = bbox; selectionPolygon = rings;
+    attachEditing(drawLayer);
+    saveSelection();
+    onSelectionChanged();
+    document.getElementById('selVal').textContent = rings
+      ? `polygon · ${rings[0].length} points`
+      : `S${bbox.south.toFixed(4)} W${bbox.west.toFixed(4)} N${bbox.north.toFixed(4)} E${bbox.east.toFixed(4)}`;
+  } else {
+    // Add / Remove: fold this shape's cells into the existing plan (no clear).
+    drawnItems.addLayer(layer);
+    await applyShape(bbox, rings, selectMode);
+    drawnItems.removeLayer(layer);   // outline consumed; the cells show the area now
+  }
 });
 
 const $ = id => document.getElementById(id);
@@ -424,7 +650,7 @@ function emojisVisible() {
 // One box = one Overpass request (whole selection first; splits into quadrants only
 // if the endpoint rejects it). Colour tracks each chunk's state.
 const PF_STYLE = {
-  planned:     { color:'#38bdf8', weight:2, dashArray:'7 6', fillColor:'#38bdf8', fillOpacity:0.05 },
+  planned:     { color:'#9db4cf', weight:1.5, dashArray:'2 5', fillColor:'#9db4cf', fillOpacity:0.04 },
   downloading: { color:'#22d3ee', weight:3, dashArray:'4 5', fillColor:'#22d3ee', fillOpacity:0.10 },
   cached:      { color:'#5eead4', weight:2, dashArray:'7 6', fillColor:'#5eead4', fillOpacity:0.06 },
   done:        { color:'#38bdf8', weight:2, dashArray:'7 6', fillColor:'#38bdf8', fillOpacity:0.06 },
@@ -438,7 +664,13 @@ function _chunkLabel(c) {
   const n = (c.cells || []).length;
   return `OSM ${kmW.toFixed(1)}×${kmH.toFixed(1)} km · ${n} cell${n === 1 ? '' : 's'} · ${c.state}`;
 }
+let _pfRenderSig = '';
 function renderPrefetch(chunks) {
+  // Only rebuild the OSM boxes when they actually changed (otherwise the overlay
+  // flickers every 1.5s poll while prefetch is active).
+  const sig = JSON.stringify((chunks || []).map(c => [c && c.id, c && c.state, c && c.bbox]));
+  if (sig === _pfRenderSig) return;
+  _pfRenderSig = sig;
   prefetchGroup.clearLayers();
   for (const c of (chunks || [])) {
     if (!c || !c.bbox) continue;
@@ -455,7 +687,7 @@ let _pfPreviewSig = '';
 async function updatePrefetchPreview(force) {
   try {
     const r = await api('/api/prefetch/plan');
-    if (!r.enabled) { prefetchGroup.clearLayers(); return; }
+    if (!r.enabled) { renderPrefetch([]); return; }
     const sig = JSON.stringify((r.chunks || []).map(c => c.bbox));
     if (!force && sig === _pfPreviewSig) return;
     _pfPreviewSig = sig;
@@ -466,6 +698,55 @@ async function updatePrefetchPreview(force) {
 // Draw / recolor / re-emoji every cell in the grid; prune cells no longer present.
 let _overlaySig = '';
 let _lastGrid = {};
+// Big plans (countries = thousands of cells) materialise their rectangles in BATCHES
+// across animation frames, so the UI never freezes: the outline + first tiles show
+// instantly and the rest stream in. DRAW_BATCH cells per frame.
+let _drawQueue = [];
+let _drawSet = new Set();
+let _drawRaf = null;
+const DRAW_BATCH = 60;
+
+function _createCellRect(key, st) {
+  let bb; try { bb = cellBboxFromKey(key, projOrigin, projScale); } catch (e) { return false; }
+  const col = STATUS_COLOR[st] || '#6f6553';
+  const rect = L.rectangle([[bb.south, bb.west], [bb.north, bb.east]],
+    { renderer: cellRenderer, color: col, weight: 1, fillColor: col, fillOpacity: 0.16 }).addTo(map);
+  rect.bindTooltip(cellTip(key), { sticky: true });
+  rect.on('click', (e) => {                 // click a cell to regenerate (paint modes handle their own drag)
+    if (pickingOrigin || editCells || retrySelect) return;
+    // Height preview on -> let the click fall through to the map handler (tile info popup), don't regen.
+    if ($('dpPreview') && $('dpPreview').checked) return;
+    L.DomEvent.stopPropagation(e);
+    regenCell(key);
+  });
+  cellLayers[key] = rect;
+  _cellStatus[key] = st;
+  return true;
+}
+function _applyEmoji(key, st, showEmoji) {
+  const rect = cellLayers[key];
+  const show = showEmoji && rect && (STATUS_EMOJI[st] || '') !== '';
+  if (show) {
+    if (!cellMarkers[key]) cellMarkers[key] = L.marker(rect.getBounds().getCenter(),
+      { icon: emojiIcon(st), interactive: false }).addTo(map);
+    else cellMarkers[key].setIcon(emojiIcon(st));
+  } else if (cellMarkers[key]) { map.removeLayer(cellMarkers[key]); delete cellMarkers[key]; }
+}
+function _drainDraw() {
+  _drawRaf = null;
+  const showEmoji = emojisVisible();
+  let n = 0;
+  while (_drawQueue.length && n < DRAW_BATCH) {
+    const key = _drawQueue.shift(); _drawSet.delete(key);
+    if (cellLayers[key]) continue;            // already created on a later pass
+    const st = _lastGrid[key];
+    if (st === undefined) continue;           // removed before we drew it
+    if (_createCellRect(key, st)) { _applyEmoji(key, st, showEmoji); n++; }
+  }
+  if (_drawQueue.length) _drawRaf = requestAnimationFrame(_drainDraw);
+  else drawCombinedBorder(_lastGrid);         // tighten the outline once all tiles are in
+}
+
 function ensureCells(grid) {
   grid = grid || {};
   _lastGrid = grid;
@@ -476,47 +757,38 @@ function ensureCells(grid) {
   if (sig !== _overlaySig) {
     for (const k of Object.keys(cellLayers)) { map.removeLayer(cellLayers[k]); delete cellLayers[k]; }
     for (const k of Object.keys(cellMarkers)) { map.removeLayer(cellMarkers[k]); delete cellMarkers[k]; }
+    _cellStatus = {};
+    _drawQueue = []; _drawSet.clear();
+    if (_drawRaf) { cancelAnimationFrame(_drawRaf); _drawRaf = null; }
+    _borderSig = '';
+    _suspectSig = '';   // suspect + retry rings move with the origin/scale; force a redraw
+    _retrySig = '';
     _overlaySig = sig;
   }
   if (projOrigin && projOrigin.lat != null) {
     const showEmoji = emojisVisible();   // hide all stage emojis when zoomed out
     for (const [key, st] of Object.entries(grid)) {
-      let rect = cellLayers[key];
-      const col = STATUS_COLOR[st] || '#6f6553';
+      const rect = cellLayers[key];
       if (!rect) {
-        let bb; try { bb = cellBboxFromKey(key, projOrigin, projScale); } catch (e) { continue; }
-        rect = L.rectangle([[bb.south, bb.west], [bb.north, bb.east]],
-          { color: col, weight: 1, fillColor: col, fillOpacity: 0.14 }).addTo(map);
-        rect.bindTooltip(key, { sticky: true });
-        rect.on('click', (e) => {                 // click a cell to regenerate it
-          if (pickingOrigin) return;
-          L.DomEvent.stopPropagation(e);
-          regenCell(key);
-        });
-        cellLayers[key] = rect;
+        if (!_drawSet.has(key)) { _drawSet.add(key); _drawQueue.push(key); }   // create in batches
+        continue;
       }
-      rect.setStyle({ color: col, fillColor: col });
-      // Marker (stage emoji) is decoupled from the rectangle: shown only when it has a
-      // glyph AND passes decimation (or is an active cell), so emojis never pile up.
-      const show = showEmoji && (STATUS_EMOJI[st] || '') !== '';
-      if (show) {
-        if (!cellMarkers[key]) {
-          cellMarkers[key] = L.marker(rect.getBounds().getCenter(),
-            { icon: emojiIcon(st), interactive: false }).addTo(map);
-        } else {
-          cellMarkers[key].setIcon(emojiIcon(st));
-        }
-      } else if (cellMarkers[key]) {
-        map.removeLayer(cellMarkers[key]); delete cellMarkers[key];
-      }
+      // Only restyle when the status actually changed (skips ~all work on a steady poll).
+      const col = STATUS_COLOR[st] || '#6f6553';
+      if (_cellStatus[key] !== st) { rect.setStyle({ color: col, fillColor: col }); _cellStatus[key] = st; }
+      _applyEmoji(key, st, showEmoji);
     }
+    if (_drawQueue.length && !_drawRaf) _drawRaf = requestAnimationFrame(_drainDraw);
   }
   for (const key of Object.keys(cellLayers)) {
     if (!(key in grid)) {
       map.removeLayer(cellLayers[key]); delete cellLayers[key];
+      delete _cellStatus[key];
       if (cellMarkers[key]) { map.removeLayer(cellMarkers[key]); delete cellMarkers[key]; }
     }
   }
+  // Forget queued cells that were removed before we drew them.
+  if (_drawQueue.length) { _drawQueue = _drawQueue.filter(k => k in grid); _drawSet = new Set(_drawQueue); }
   drawCombinedBorder(grid);
   updateStats(grid);
 }
@@ -526,11 +798,14 @@ map.on('zoomend', () => ensureCells(_lastGrid));
 // Bold double line around the union of all cells (the whole generated area).
 // Two stacked rectangles: a thick brass stroke split by a thin dark line down
 // its centre = a clean double rail, fitting the Meld gold palette.
+let _borderSig = '';
 function drawCombinedBorder(grid) {
-  combinedBorder.forEach(l => map.removeLayer(l));
-  combinedBorder = [];
   const keys = Object.keys(grid || {});
-  if (!keys.length || !projOrigin || projOrigin.lat == null) return;
+  if (!keys.length || !projOrigin || projOrigin.lat == null) {
+    if (combinedBorder.length) { combinedBorder.forEach(l => map.removeLayer(l)); combinedBorder = []; }
+    _borderSig = '';
+    return;
+  }
   let s = 1e9, w = 1e9, n = -1e9, e = -1e9;
   for (const k of keys) {
     let bb; try { bb = cellBboxFromKey(k, projOrigin, projScale); } catch (_) { continue; }
@@ -538,6 +813,11 @@ function drawCombinedBorder(grid) {
     n = Math.max(n, bb.north); e = Math.max(e, bb.east);
   }
   if (s > n || w > e) return;
+  // Only redraw when the extent actually changed, otherwise the border flickers every poll.
+  const sig = `${s.toFixed(6)}|${w.toFixed(6)}|${n.toFixed(6)}|${e.toFixed(6)}`;
+  if (sig === _borderSig && combinedBorder.length) return;
+  _borderSig = sig;
+  combinedBorder.forEach(l => map.removeLayer(l));
   const bounds = [[s, w], [n, e]];
   const outer = L.rectangle(bounds, { color:'#e0bd55', weight:6, opacity:.95, fill:false, interactive:false });
   const inner = L.rectangle(bounds, { color:'#1a1712', weight:2, opacity:1,  fill:false, interactive:false });
@@ -547,25 +827,64 @@ function drawCombinedBorder(grid) {
 
 // Coordinates + world size, like the original Meld. Each cell owns size*size
 // regions (512 blocks each). Rough size estimate ~4 MB / generated region.
-function fmtMB(mb) { return mb >= 1024 ? (mb / 1024).toFixed(1) + ' GB' : Math.round(mb) + ' MB'; }
+function fmtMB(mb) {
+  const gb = mb / 1024;
+  if (gb >= 1000) return (gb / 1000).toFixed(2) + ' TB';   // decimal TB (1920 GB -> 1.92 TB)
+  return gb >= 1 ? gb.toFixed(1) + ' GB' : Math.round(mb) + ' MB';
+}
+// Cell size is restricted to powers of two (1,2,4,8,16). snapSize coerces any stored/typed
+// value to the nearest allowed one, so legacy sizes (e.g. 6) and the <select> stay consistent.
+const SIZES = [1, 2, 4, 8, 16];
+const snapSize = n => { n = parseInt(n) || 4; return SIZES.reduce((a, b) => Math.abs(b - n) <= Math.abs(a - n) ? b : a); };
 function fmtTime(s) {
   s = Math.max(0, Math.floor(s));
   const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
   return (h ? String(h).padStart(2, '0') + ':' : '') + String(m).padStart(2, '0') + ':' + String(x).padStart(2, '0');
 }
+function fmtDur(s) {
+  s = Math.max(0, Math.round(s));
+  if (s < 90) return s + 's';
+  const m = Math.round(s / 60);
+  if (m < 60) return m + ' min';
+  const h = Math.floor(m / 60), mm = m % 60;
+  return h + 'h' + (mm ? ' ' + mm + 'm' : '');
+}
+// Build-time estimate. Recalibrated 2026-06-15 against a measured Bucharest run
+// (9,408 regions / 188 cells, 8 workers, bake on => ~30 min real = ~0.19 s/region).
+// Two cost terms: (a) per-REGION block-build, scaled by worker count; (b) a per-CELL
+// fixed overhead (Overture fetch + elevation/land-cover prep + spin-up) that does NOT
+// shrink with region count and is the reason many small cells run slower than the
+// region count alone suggests. Both are divided by the effective worker parallelism.
+function estBuildSeconds(todoRegions, todoCells, workers, bake) {
+  if (todoRegions <= 0) return 0;
+  const w = Math.max(1, Math.min(64, workers || 4));
+  const wf = Math.sqrt(12 / Math.max(6, Math.min(16, w)));   // mild: 8-16 workers ~ same
+  const perRegion = 0.13 * wf * (bake ? 1 : 0.82);           // ~0.19 s/region @ 8w, bake on
+  const cellOverhead = (todoCells || 0) * 8 / Math.max(1, Math.min(16, w)); // fetch+prep per cell, shared across workers
+  return 120 + todoRegions * perRegion + cellOverhead;        // +120 spin-up/prefetch
+}
 function updateStats(grid) {
   const keys = Object.keys(grid || {});
   if (!keys.length) { $('estSize').textContent = ', '; $('estSub').textContent = 'draw or search an area'; return; }
-  let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9, regions = 0;
+  let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9, regions = 0, todo = 0, todoCells = 0;
   for (const k of keys) {
     const p = k.split(','), rx = +p[0], rz = +p[1], sz = +p[2];
     regions += sz * sz;
+    if (grid[k] !== 'merged') { todo += sz * sz; todoCells += 1; }   // only unbuilt cells cost time
     minX = Math.min(minX, rx * sz); maxX = Math.max(maxX, rx * sz + sz);
     minZ = Math.min(minZ, rz * sz); maxZ = Math.max(maxZ, rz * sz + sz);
   }
   const wBlk = (maxX - minX) * 512, hBlk = (maxZ - minZ) * 512;
+  const sc = projScale || 1.0;                       // real-world size scales with the scale setting
+  const kmW = wBlk / sc / 1000, kmH = hBlk / sc / 1000;
+  const km = v => v >= 10 ? Math.round(v) : v.toFixed(1);
+  const workers = parseInt($('workers').value) || 4;
+  const bake = $('bakelight') ? $('bakelight').checked : true;
+  const timeStr = todo > 0 ? `~${fmtDur(estBuildSeconds(todo, todoCells, workers, bake))} @ ${workers}w` : 'all merged';
   $('estSize').textContent = '~' + fmtMB(regions * 4);
-  $('estSub').textContent = `${keys.length} cells · ${regions} regions · ${wBlk}×${hBlk} blocks`;
+  $('estSub').innerHTML =
+    `${keys.length} cells · ${regions.toLocaleString()} regions · ${wBlk.toLocaleString()}×${hBlk.toLocaleString()} blocks`
+    + `<br>${km(kmW)}×${km(kmH)} km · build ${timeStr}`;
 }
 
 // Live elapsed timer + final report (server /api/status .run).
@@ -578,9 +897,16 @@ function renderRun() {
   if (_run.active) e += (Date.now() - _runAt) / 1000;
   if (_run.active) {
     _runWasActive = true;
-    const pct = _run.total ? Math.round((_run.done + _run.failed) / _run.total * 100) : 0;
-    el.innerHTML = `⏱ <b>${fmtTime(e)}</b> elapsed · ${_run.done}/${_run.total} done`
-      + `<div class="bar"><i style="width:${pct}%"></i></div>`;
+    if (_run.phase === 'prefetch') {
+      // Prefetch (OSM + terrain warm-up) is counted in the elapsed timer — it costs real
+      // wall time before any cell builds. Indeterminate (faded) bar until cells start.
+      el.innerHTML = `⏱ <b>${fmtTime(e)}</b> elapsed · <span style="color:var(--acc2)">prefetching OSM / terrain…</span>`
+        + `<div class="bar"><i style="width:100%;opacity:.35"></i></div>`;
+    } else {
+      const pct = _run.total ? Math.round((_run.done + _run.failed) / _run.total * 100) : 0;
+      el.innerHTML = `⏱ <b>${fmtTime(e)}</b> elapsed · ${_run.done}/${_run.total} done`
+        + `<div class="bar"><i style="width:${pct}%"></i></div>`;
+    }
   } else {
     const act = _run.actual_mb != null ? fmtMB(_run.actual_mb) : ', ';
     el.innerHTML = `✓ Done in <b>${fmtTime(e)}</b> · ${_run.done} merged`
@@ -593,6 +919,75 @@ function renderRun() {
       showRunDone(_run, e);
     }
   }
+}
+// History sparkline (CPU gold, RAM green) under the System bars — see spikes over time. Each
+// /api/status poll pushes one sample; newest is right-aligned, oldest scrolls off the left.
+const _statHist = { cpu: [], ram: [] };
+const _STAT_HIST_MAX = 90;
+function pushStatHist(cpu, ram) {
+  if (cpu != null) _statHist.cpu.push(Math.max(0, Math.min(100, cpu)));
+  if (ram != null) _statHist.ram.push(Math.max(0, Math.min(100, ram)));
+  while (_statHist.cpu.length > _STAT_HIST_MAX) _statHist.cpu.shift();
+  while (_statHist.ram.length > _STAT_HIST_MAX) _statHist.ram.shift();
+  drawStatHist();
+}
+function drawStatHist() {
+  const cv = $('statHist'); if (!cv || !cv.getContext) return;
+  const cssW = cv.clientWidth || 240, cssH = 46, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(cssW * dpr) || cv.height !== Math.round(cssH * dpr)) {
+    cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);
+  }
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+  ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
+  for (let g = 1; g < 4; g++) { const y = cssH - (g / 4) * cssH; ctx.beginPath(); ctx.moveTo(0, y + .5); ctx.lineTo(cssW, y + .5); ctx.stroke(); }
+  const step = cssW / (_STAT_HIST_MAX - 1);
+  const draw = (arr, stroke, fill) => {
+    if (!arr.length) return;
+    const x = i => cssW - (arr.length - 1 - i) * step, y = v => cssH - (v / 100) * (cssH - 2) - 1;
+    ctx.beginPath();
+    arr.forEach((v, i) => i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)));
+    ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke();
+    ctx.lineTo(x(arr.length - 1), cssH); ctx.lineTo(x(0), cssH); ctx.closePath();
+    ctx.fillStyle = fill; ctx.fill();
+  };
+  draw(_statHist.ram, '#86b45a', 'rgba(134,180,90,.12)');
+  draw(_statHist.cpu, '#e3a417', 'rgba(227,164,23,.15)');
+}
+
+// Live CPU / RAM / disk gauges in the left rail's System card. Fed by /api/status .stats.
+// Low-disk warning fires when free space is under 5 GB or under ~1.2x the current build's
+// estimated size — whichever is larger (so a big planned build warns even with 50 GB free).
+function renderStats(st) {
+  if (!st || !$('statCpu')) return;
+  const setBar = (id, pct, bad) => {
+    const el = $(id); if (!el) return;
+    el.style.width = Math.max(0, Math.min(100, pct || 0)) + '%';
+    el.style.background = bad ? 'var(--bad)' : (pct >= 90 ? 'var(--acc2)' : 'var(--acc)');
+  };
+  if (st.cpu_pct != null) { $('statCpu').textContent = st.cpu_pct + '%'; setBar('statCpuBar', st.cpu_pct); }
+  if (st.ram_total_gb) {
+    const used = st.ram_used_gb != null ? st.ram_used_gb : 0;
+    const pct = Math.round(used / st.ram_total_gb * 100);
+    $('statRam').textContent = `${used} / ${st.ram_total_gb} GB`;
+    setBar('statRamBar', pct, pct >= 92);
+  }
+  if (st.disk_total_gb) {
+    const used = st.disk_total_gb - (st.disk_free_gb || 0);
+    const pct = Math.round(used / st.disk_total_gb * 100);
+    $('statDisk').textContent = `${st.disk_free_gb} GB free${st.drive ? ' · ' + st.drive : ''}`;
+    const needGb = (_run && _run.est_mb ? _run.est_mb / 1024 : 0);
+    const low = st.disk_free_gb != null && (st.disk_free_gb < 5 || (needGb && st.disk_free_gb < needGb * 1.2));
+    setBar('statDiskBar', pct, low);
+    const w = $('statDiskWarn');
+    if (low) {
+      w.style.display = '';
+      w.textContent = `⚠ Low disk: ${st.disk_free_gb} GB free`
+        + (needGb ? ` · this build needs ~${needGb.toFixed(1)} GB` : '');
+    } else { w.style.display = 'none'; }
+  }
+  const ramPctH = st.ram_total_gb ? Math.round((st.ram_used_gb || 0) / st.ram_total_gb * 100) : null;
+  pushStatHist(st.cpu_pct, ramPctH);
 }
 function showRunDone(run, elapsed) {
   const size = run.actual_mb != null ? fmtMB(run.actual_mb) : fmtMB(run.est_mb || 0);
@@ -648,7 +1043,7 @@ async function onSelectionChanged() {
   let size;
   if (merged && gridded) {
     size = gridded;
-    $('size').value = gridded;
+    $('size').value = snapSize(gridded);
   } else {
     size = parseInt($('size').value) || gridded || 4;
   }
@@ -669,7 +1064,7 @@ async function onSelectionChanged() {
   // Planned cells ALWAYS reflect the CURRENT selection (clear planned, keep
   // merged). So what you see tiled is exactly what you drew.
   await api('/api/grid/clear', { keep_merged: true });
-  const r = await api('/api/grid', { bbox: selection, size });
+  const r = await api('/api/grid', { bbox: selection, size, polygons: selectionPolygon || undefined });
   if (r.ok) plannedCells = r.cells;
   await refreshState();
   if (r.ok) $('selVal').textContent = `${r.count} cells (size ${size})`;
@@ -686,15 +1081,87 @@ async function autoSurvey() {
   $('btnSurvey').textContent = 'Survey selection'; $('btnSurvey').disabled = false;
   refreshState();
 }
+
+// GeoJSON (from a country search) -> array of [lat,lon] rings. Handles Polygon and
+// MultiPolygon (island nations) so the country tiles by its real shape, not a square.
+function ringsFromGeojson(gj) {
+  if (!gj) return null;
+  const toRing = coords => coords.map(c => [c[1], c[0]]);   // [lon,lat] -> [lat,lon]
+  if (gj.type === 'Polygon') return [toRing(gj.coordinates[0])];
+  if (gj.type === 'MultiPolygon') return gj.coordinates.map(poly => toRing(poly[0]));
+  return null;
+}
+
+// Apply a shape (bbox + optional rings) to the plan WITHOUT clearing it: add or
+// remove its cells. Sets the origin once (first shape) so everything aligns to one grid.
+async function applyShape(bbox, rings, mode) {
+  const seq = ++_selSeq;
+  const st = await api('/api/state');
+  const grid = st.grid || {};
+  const merged = Object.values(grid).includes('merged');
+  const noOrigin = !st.origin || st.origin.lat == null;
+  if (noOrigin && !merged && mode !== 'remove') {     // anchor the grid on the first add
+    const c = selCenter(bbox);
+    await api('/api/origin', { lat: c.lat, lon: c.lon, force: true });
+    await refreshState();
+  }
+  if (seq !== _selSeq) return;
+  const size = Math.max(1, Math.min(16, gridCellSize(grid) || parseInt($('size').value) || 4));
+  const r = await api('/api/grid', { bbox, polygons: rings || undefined, size, mode });
+  if (r && r.ok) {
+    if (mode === 'remove') {
+      const rm = new Set(r.removed || []);
+      plannedCells = plannedCells.filter(c => !rm.has(c.cell_key));
+    } else {
+      const have = new Set(plannedCells.map(c => c.cell_key));
+      for (const c of (r.cells || [])) if (!have.has(c.cell_key)) plannedCells.push(c);
+    }
+  }
+  await refreshState();
+  $('selVal').textContent = r && r.ok
+    ? `${mode === 'remove' ? 'removed' : 'added'} ${mode === 'remove' ? (r.removed||[]).length : (r.count||0)} cells`
+    : 'shape failed';
+  // Survey once (first add) to lock the global elevation.
+  if (mode !== 'remove') {
+    const st2 = await api('/api/state');
+    if (!st2.elevation || !st2.elevation.locked) { selection = bbox; autoSurvey(); }
+  }
+}
+
+// Selection mode: Replace (one shape = the plan), Add, or Remove (shapes fold in/out).
+function setSelectMode(m) {
+  selectMode = (m === 'add' || m === 'remove') ? m : 'replace';
+  for (const [id, val] of [['modeReplace','replace'],['modeAdd','add'],['modeRemove','remove']]) {
+    const b = $(id); if (!b) continue;
+    const on = selectMode === val;
+    b.style.borderColor = on ? 'var(--acc)' : '';
+    b.style.color = on ? 'var(--acc2)' : '';
+  }
+}
 // Make a drawn/searched rectangle movable + resizable; re-run the sequence on edit.
 function attachEditing(layer) {
-  try { layer.editing.enable(); } catch (e) {}
-  layer.on('edit', () => {
+  _editableSel = layer;
+  try { layer.editing.enable(); } catch (e) {}   // corner resize handles + center move marker
+  const isRect = layer instanceof L.Rectangle;   // L.Rectangle extends L.Polygon
+  const apply = () => {
     const b = layer.getBounds();
     selection = { south:b.getSouth(), west:b.getWest(), north:b.getNorth(), east:b.getEast() };
+    if (isRect) {
+      selectionPolygon = null;                    // a resized/moved box is a plain rectangle now
+    } else if (layer.getLatLngs) {                // polygon: follow the dragged vertices
+      const ll = (layer.getLatLngs()[0]) || [];
+      if (ll.length >= 3) selectionPolygon = [ ll.map(p => [p.lat, p.lng]) ];
+    }
     saveSelection();
     onSelectionChanged();
-  });
+  };
+  layer.on('edit', apply);   // fires on release (not every mouse-move), so no re-tile spam
+}
+// Lock the selection box's drag/resize handles while a cell mode (edit / retry) is active, so
+// painting or square-selecting cells can never nudge the already-locked selection.
+function setSelectionEditable(on) {
+  if (!_editableSel) return;
+  try { on ? _editableSel.editing.enable() : _editableSel.editing.disable(); } catch (e) {}
 }
 
 // The grid itself is the source of truth for cell size: every cell key is
@@ -716,6 +1183,7 @@ function gridCellSize(grid) {
 
 async function refreshState() {
   const s = await api('/api/state');
+  if (s.ram_gb) RAM_GB = s.ram_gb;
   // origin (also feeds overlay geometry recompute)
   if (s.origin && s.origin.lat != null) {
     projOrigin = { lat: s.origin.lat, lon: s.origin.lon };
@@ -734,20 +1202,44 @@ async function refreshState() {
   const st = s.settings || {};
   projScale = parseFloat(st.scale) || 0.3;
   $('scale').value = st.scale;
-  if (document.activeElement !== $('size')) $('size').value = st.job_size_regions;
+  if (document.activeElement !== $('size')) $('size').value = snapSize(st.job_size_regions);
   $('ground').value = st.ground_level; $('road').value = st.road_detail_level;
   $('emode').value = st.elevation_mode;
+  if ($('elevZoom') && document.activeElement !== $('elevZoom')) {
+    $('elevZoom').value = st.elevation_zoom || 'auto'; refreshElevZoom();
+  }
   if (document.activeElement !== $('workers')) $('workers').value = st.max_workers;
+  if ($('cpuPct') && document.activeElement !== $('cpuPct')) {
+    const cp = Math.max(10, Math.min(95, parseInt(st.cpu_target_pct) || 90));
+    $('cpuPct').value = cp; $('cpuPctVal').textContent = cp + '%';
+  }
+  if ($('minThr') && document.activeElement !== $('minThr')) {
+    const mt = Math.max(1, Math.min(8, parseInt(st.min_threads_per_worker) || 2));
+    $('minThr').value = mt; $('minThrVal').textContent = mt;
+  }
+  if ($('staggerSec') && document.activeElement !== $('staggerSec')) {
+    const ss = Math.max(1, Math.min(4, parseInt(st.cpu_stagger_seconds) || 2));
+    $('staggerSec').value = ss; $('staggerSecVal').textContent = ss + 's';
+  }
+  if ($('staggerOn')) $('staggerOn').checked = st.cpu_stagger_enabled !== false;
+  if ($('staggerAdaptive')) $('staggerAdaptive').checked = st.cpu_stagger_adaptive !== false;
+  if (typeof syncStaggerStep === 'function') syncStaggerStep();
+  if ($('tileKm') && document.activeElement !== $('tileKm')) {
+    const km2 = parseInt(st.prefetch_tile_km2) || 0;                 // stored as area; slider is edge km
+    const e = km2 > 0 ? Math.max(10, Math.min(300, Math.round(Math.sqrt(km2)))) : 0;
+    $('tileKm').value = e; $('tileKmVal').textContent = e ? e + ' km' : 'Auto';
+  }
+  if (typeof paintAllRanges === 'function') paintAllRanges();   // repaint fills after programmatic value sets
   if ($('useLine')) $('useLine').textContent =
     `Using ${st.max_workers} worker${st.max_workers == 1 ? '' : 's'} · cell size ${st.job_size_regions} regions`;
   $('seed').value = (s.elevation && s.elevation.seed) || 1;
   $('m3d').checked = !!st.generate_3d_models;
-  const ckmap = { terrain:'terrain', roof:'roof', interior:'interior',
+  const ckmap = { terrain:'terrain', buildings:'buildings', roof:'roof', interior:'interior',
                   landcover:'land_cover', fillground:'fill_ground', heightlimit:'disable_height_limit',
-                  bakelight:'bake_lighting' };
+                  bakelight:'bake_lighting', streamdisk:'stream_to_disk', awsonly:'aws_only_elevation' };
   for (const [id, key] of Object.entries(ckmap))
     if ($(id) && document.activeElement !== $(id)) $(id).checked = key === 'interior' || key === 'fill_ground'
-      || key === 'disable_height_limit' ? !!st[key] : st[key] !== false;
+      || key === 'disable_height_limit' || key === 'stream_to_disk' || key === 'aws_only_elevation' ? !!st[key] : st[key] !== false;
   if ($('prune')) $('prune').checked = st.prune_cell_after_merge !== false;
   if ($('masterDir') && document.activeElement !== $('masterDir')) $('masterDir').value = st.master_world_dir || '';
   // elevation
@@ -766,7 +1258,7 @@ async function refreshState() {
   // Override the size inputs from the grid's real cell size (keys carry it), so the
   // control always matches the cells on the map rather than a drifted saved setting.
   const gs = gridCellSize(s.grid);
-  if (gs && document.activeElement !== $('size')) $('size').value = gs;
+  if (gs && document.activeElement !== $('size')) $('size').value = snapSize(gs);
 }
 
 // ── Recommend settings wizard: probe this PC + the save disk, suggest cell/workers ──
@@ -788,7 +1280,7 @@ $('btnRecommend').onclick = async () => {
     const apply = await _meldModal({ title: 'Recommended settings', html, buttons: [
       { label: 'Keep mine', value: false, kind: 'ghost' }, { label: 'Apply', value: true, kind: 'gold' }] });
     if (apply) {
-      $('size').value = r.rec_cell;
+      $('size').value = snapSize(r.rec_cell);
       $('workers').value = r.rec_workers;
       $('bakelight').checked = !!r.rec_bake;
       await api('/api/settings', {
@@ -800,9 +1292,48 @@ $('btnRecommend').onclick = async () => {
   finally { btn.textContent = old; btn.disabled = false; }
 };
 
-$('btnName').onclick = async () => {
+// World name autosaves on change (blur / Enter) — no Save button.
+if ($('worldName')) $('worldName').addEventListener('change', async () => {
   await api('/api/name', { name: $('worldName').value.trim() || 'Meld World' });
-  refreshState(); loadWorlds();
+  refreshState(); loadWorlds(); loadProjects();   // the project list shows the world name
+});
+
+// ── projects: list / switch / new / delete ──────────────────────────────────
+async function loadProjects() {
+  let r; try { r = await api('/api/projects'); } catch (e) { return; }
+  const sel = $('projectSel'); if (!sel) return;
+  sel.innerHTML = (r.projects || []).map(p => {
+    const tag = p.merged ? ` · ${p.merged} merged` : (p.cells ? ` · ${p.cells} planned` : '');
+    return `<option value="${p.slug}"${p.active ? ' selected' : ''}>${p.name}${tag}</option>`;
+  }).join('');
+}
+$('projectSel').addEventListener('change', async () => {
+  const r = await api('/api/projects/switch', { slug: $('projectSel').value });
+  if (!r.ok) { modalInfo('Meld', r.error || 'cannot switch projects'); loadProjects(); return; }
+  location.reload();   // full reload loads the switched project's state cleanly
+});
+$('btnProjectNew').onclick = async () => {
+  if (!(await modalConfirm('New project', 'Create a new project (a fresh world workspace)? The current one stays saved and you can switch back.', 'New project'))) return;
+  const r = await api('/api/projects/new', {});
+  if (!r.ok) { modalInfo('Meld', r.error || 'failed'); return; }
+  location.reload();
+};
+$('btnProjectDelete').onclick = async () => {
+  const sel = $('projectSel'); const slug = sel.value;
+  const name = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : slug;
+  if (!(await modalConfirm('Delete project', `Delete the workspace for "${name}"? The saved Minecraft world on disk is KEPT, only Meld's project state (plan, logs, cache) is removed.`, 'Delete'))) return;
+  let r = await api('/api/projects/delete', { slug });
+  if (!r.ok && /active/.test(r.error || '')) {
+    // deleting the active project: switch to another one first
+    const list = (await api('/api/projects')).projects || [];
+    const other = list.find(p => p.slug !== slug);
+    if (!other) { modalInfo('Meld', 'This is your only project — create another first.'); return; }
+    await api('/api/projects/switch', { slug: other.slug });
+    r = await api('/api/projects/delete', { slug });
+    if (r.ok) { location.reload(); return; }
+  }
+  if (!r.ok) { modalInfo('Meld', r.error || 'failed'); return; }
+  loadProjects();
 };
 $('btnBrowse').onclick = async () => {
   $('btnBrowse').textContent = 'Opening…'; $('btnBrowse').disabled = true;
@@ -819,6 +1350,40 @@ $('btnBrowse').onclick = async () => {
 $('btnPopLog').onclick = () => window.open('/logs', 'meldlog', 'width=780,height=540');
 $('prune').addEventListener('change', async () => {
   await api('/api/settings', { prune_cell_after_merge: $('prune').checked });
+});
+
+// Import a saved world's meld-world.json: reuse its exact origin, elevation lock,
+// seed and look settings for a new world or to continue/extend that same one.
+$('btnImport').onclick = () => $('importFile').click();
+$('importFile').addEventListener('change', async (e) => {
+  const f = e.target.files && e.target.files[0];
+  e.target.value = '';                          // allow re-picking the same file later
+  if (!f) return;
+  let meta;
+  try { meta = JSON.parse(await f.text()); }
+  catch (err) { modalInfo('Import failed', 'That file is not valid JSON.'); return; }
+  if (!meta || !(meta.origin || meta.elevation || meta.settings)) {
+    modalInfo('Import failed', 'Not a Meld world file (expected origin, elevation or settings).'); return;
+  }
+  const o = meta.origin || {}, ev = meta.elevation || {}, st = meta.settings || {};
+  const summary =
+      `Apply settings from "${meta.name || 'this world'}"?\n\n`
+    + `Origin: ${o.lat != null ? o.lat.toFixed(5) + ', ' + o.lon.toFixed(5) : 'none'}\n`
+    + `Elevation: ${ev.min_m != null ? ev.min_m + ' to ' + ev.max_m + ' m' : 'none'}  ·  seed ${ev.seed != null ? ev.seed : '?'}\n`
+    + `Cell size ${st.job_size_regions != null ? st.job_size_regions : '?'}  ·  scale ${st.scale != null ? st.scale : '?'}\n\n`
+    + `Overwrites the current origin, elevation lock and look settings. Your save location and worker count are kept.`;
+  if (!(await modalConfirm('Import world settings', summary, 'Apply'))) return;
+  const applyName = await modalConfirm('World name',
+      `Also set the world name to "${meta.name || 'Meld World'}"?\n\n`
+    + `Yes = continue/extend that same world (point Save location at it too).\n`
+    + `No = keep your current name (fresh world, identical terrain).`,
+      'Use that name', 'Keep mine');
+  const r = await api('/api/world/load-meta', { meta, apply_name: applyName });
+  if (!r.ok) { $('importMsg').textContent = r.error || 'import failed'; modalInfo('Import failed', r.error || 'Could not apply.'); return; }
+  const applied = (r.applied || []).join(', ') || 'nothing';
+  $('importMsg').textContent = 'Imported: ' + applied;
+  await refreshState(); loadWorlds();
+  modalInfo('Imported', 'Applied: ' + applied + '.\n\nNow draw or keep a selection and hit Plan to tile at the imported settings.');
 });
 
 async function loadWorlds() {
@@ -868,21 +1433,30 @@ $('btnSearch').onclick = async () => {
   } catch (e) { modalInfo('Meld', 'search error: ' + e.message); return; }
   if (!Array.isArray(arr) || !arr.length) { modalInfo('Meld', 'not found'); return; }
   const p = arr[0], bb = p.boundingbox.map(Number); // [south,north,west,east]
-  selection = { south:bb[0], north:bb[1], west:bb[2], east:bb[3] };
-  saveSelection();
-  if (drawLayer) drawnItems.removeLayer(drawLayer);
-  drawLayer = L.rectangle([[selection.south,selection.west],[selection.north,selection.east]],
-    { color:'#d6ba58', weight:1, dashArray:'5 4', fillOpacity:0.03 });
-  drawnItems.addLayer(drawLayer);
-  attachEditing(drawLayer);
-  // Highlight the actual region border (the polygon), not just the bbox.
+  const bbox = { south:bb[0], north:bb[1], west:bb[2], east:bb[3] };
+  // Tile by the country's REAL outline (polygon), not its bounding square.
+  const rings = ringsFromGeojson(p.geojson);
+  // Draw the actual border for reference.
   if (polyLayer) { map.removeLayer(polyLayer); polyLayer = null; }
   if (p.geojson && p.geojson.type !== 'Point') {
     polyLayer = L.geoJSON(p.geojson, { style: { color:'#f4d36a', weight:3, fill:false } }).addTo(map);
   }
-  map.fitBounds([[selection.south,selection.west],[selection.north,selection.east]]);
-  onSelectionChanged();   // set origin (once) + auto-apply cells
-  $('selVal').textContent = `${p.display_name}`;
+  map.fitBounds([[bbox.south,bbox.west],[bbox.north,bbox.east]]);
+  if (selectMode === 'replace') {
+    selection = bbox; selectionPolygon = rings;
+    // Editable bounding box so you can resize the corners / drag the centre after a
+    // search; tiling follows the country polygon until you drag (then it becomes a box).
+    if (drawLayer) drawnItems.removeLayer(drawLayer);
+    drawLayer = L.rectangle([[bbox.south, bbox.west], [bbox.north, bbox.east]],
+      { color:'#d6ba58', weight:2, dashArray:'5 4', fillOpacity:0.04 });
+    drawnItems.addLayer(drawLayer);
+    attachEditing(drawLayer);
+    saveSelection();
+    onSelectionChanged();   // set origin (once) + tile the polygon
+  } else {
+    await applyShape(bbox, rings, selectMode);   // add/remove the country's cells
+  }
+  $('selVal').textContent = `${p.display_name}${rings ? ' · polygon' : ''}`;
 };
 
 $('btnSurvey').onclick = async () => {
@@ -911,47 +1485,130 @@ $('btnSave').onclick = async () => {
     elevation_mode: $('emode').value,
     max_workers: num($('workers').value, 4),
     seed: num($('seed').value, 1),
-    terrain: $('terrain').checked, roof: $('roof').checked, interior: $('interior').checked,
+    terrain: $('terrain').checked, buildings: $('buildings').checked, aws_only_elevation: $('awsonly').checked,
+    roof: $('roof').checked, interior: $('interior').checked,
     land_cover: $('landcover').checked, fill_ground: $('fillground').checked,
     disable_height_limit: $('heightlimit').checked, generate_3d_models: $('m3d').checked,
-    bake_lighting: $('bakelight').checked,
+    bake_lighting: $('bakelight').checked, stream_to_disk: $('streamdisk').checked,
   });
   refreshState();
 };
 $('m3d').addEventListener('change', () => api('/api/settings', { generate_3d_models: $('m3d').checked }));
 // Arnis toggles auto-save on change (so they apply even without clicking Save).
-[['terrain','terrain'],['roof','roof'],['interior','interior'],['landcover','land_cover'],
+[['terrain','terrain'],['buildings','buildings'],['awsonly','aws_only_elevation'],['roof','roof'],['interior','interior'],['landcover','land_cover'],
  ['fillground','fill_ground'],['heightlimit','disable_height_limit'],
- ['bakelight','bake_lighting']].forEach(([id, key]) =>
+ ['bakelight','bake_lighting'],['streamdisk','stream_to_disk']].forEach(([id, key]) =>
   $(id).addEventListener('change', () => api('/api/settings', { [key]: $(id).checked })));
 
-// Above this, the save phase (disk + RAM) can overload. Warn before accepting.
-const HEAVY = 8;
-function heavyWarn(label, n) {
-  return `${label} = ${n} is above ${HEAVY}.\n\n` +
-    `Generation is limited by the SAVE phase (disk write + a RAM burst as the world is ` +
-    `serialised), NOT by CPU. Past ~8 concurrent heavy saves even a good NVMe SSD hits ` +
-    `100% active and workers can be killed mid-save (out of memory), so those cells fail.\n\n` +
-    `Safer: workers <= 8 and cell size <= 6, or smaller cells. Bake lighting makes saves ` +
-    `heavier still.\n\nContinue anyway and accept the risk?`;
+// Numeric / select settings ALSO auto-save on change (no need to hit Save). Scale change
+// re-tiles (cell geometry depends on scale), so refreshState redraws + re-estimates.
+const numOr = (v, d) => { const n = parseFloat(v); return isNaN(n) ? d : n; };
+$('scale').addEventListener('change', async () => {
+  await api('/api/settings', { scale: numOr($('scale').value, 1.0) });
+  await refreshState();
+  if (selection) onSelectionChanged();   // re-tile at the new scale
+});
+$('ground').addEventListener('change', () => api('/api/settings', { ground_level: numOr($('ground').value, -56) }));
+$('road').addEventListener('change', () => api('/api/settings', { road_detail_level: $('road').value }));
+$('emode').addEventListener('change', () => api('/api/settings', { elevation_mode: $('emode').value }));
+$('seed').addEventListener('change', () => { api('/api/settings', { seed: parseInt($('seed').value) || 1 }); refreshState(); });
+
+// Worker count is bound by RAM at the save phase, not CPU. Safe ceiling scales with RAM:
+// 32 GB -> 16, 64 GB -> 32, 128 GB -> 64. We WARN (not block) above it. Hard cap is 64.
+function ramWorkerMax() {
+  const r = RAM_GB || 0;
+  if (r >= 96) return 64;     // ~128 GB
+  if (r >= 48) return 32;     // ~64 GB
+  return 16;                  // ~32 GB or unknown
+}
+function ramWorkerWarn(n) {
+  const m = ramWorkerMax(), r = RAM_GB ? Math.round(RAM_GB) + ' GB' : 'your RAM';
+  return `${n} workers is above the safe max for ${r} (~${m}).\n\n` +
+    `Generation is bound by the SAVE phase (disk write + a RAM burst), not CPU, so too many ` +
+    `parallel saves can run out of memory and kill workers mid-save, failing those cells.\n\n` +
+    `Guide: 32 GB -> 16 workers, 64 GB -> 32, 128 GB -> 64.\n\nUse ${n} anyway?`;
 }
 
-// Workers: clamp 1-16 and PERSIST on change (remembered across refreshes). Changing this
+// Workers: clamp 1-64 and PERSIST on change (remembered across refreshes). Changing this
 // LIVE during a run resizes the pool: raising spawns workers immediately, lowering lets the
-// extra workers finish their current cell then stop (no mid-save kill). Warns above 8.
+// extra workers finish their current cell then stop (no mid-save kill). Warns above the RAM max.
 const saveWorkers = async () => {
   let n = parseInt($('workers').value);
   if (isNaN(n)) return;
-  n = Math.max(1, Math.min(16, n));
-  if (n > HEAVY && !(await modalConfirm('Heavy save warning', heavyWarn('Workers', n), 'Use ' + n, 'Back to 8'))) n = HEAVY;   // declined risk -> safe ceiling
+  n = Math.max(1, Math.min(64, n));
+  const m = ramWorkerMax();
+  if (n > m && !(await modalConfirm('Workers above your RAM', ramWorkerWarn(n), 'Use ' + n, 'Back to ' + m))) n = m;
   $('workers').value = n;
   api('/api/settings', { max_workers: n });
 };
 $('workers').addEventListener('change', saveWorkers);
 
-// Cell size lives only in Settings now. Clamp to 1-16 and PERSIST on change so the
-// chosen size survives refreshes and New world.
-const clampSize = v => { const n = parseInt(v); return isNaN(n) ? '' : Math.max(1, Math.min(16, n)); };
+// CPU budget slider: live label + persist (server clamps 10-95). _runner already reads
+// cpu_target_pct for RAYON_NUM_THREADS, so this takes effect on the next cells.
+if ($('cpuPct')) {
+  $('cpuPct').addEventListener('input', () => { $('cpuPctVal').textContent = $('cpuPct').value + '%'; });
+  $('cpuPct').addEventListener('change', () => api('/api/settings', { cpu_target_pct: parseInt($('cpuPct').value) || 90 }));
+}
+if ($('minThr')) {
+  $('minThr').addEventListener('input', () => { $('minThrVal').textContent = $('minThr').value; });
+  $('minThr').addEventListener('change', () => api('/api/settings', { min_threads_per_worker: parseInt($('minThr').value) || 2 }));
+}
+if ($('staggerSec')) {
+  $('staggerSec').addEventListener('input', () => { $('staggerSecVal').textContent = $('staggerSec').value + 's'; });
+  $('staggerSec').addEventListener('change', () => api('/api/settings', { cpu_stagger_seconds: parseInt($('staggerSec').value) || 2 }));
+}
+if ($('tileKm')) {
+  $('tileKm').addEventListener('input', () => { const v = parseInt($('tileKm').value) || 0; $('tileKmVal').textContent = v ? v + ' km' : 'Auto'; });
+  // Re-preview the tile grid live so the gray-blue dotted boxes resize as the slider moves.
+  $('tileKm').addEventListener('change', async () => { const v = parseInt($('tileKm').value) || 0; await api('/api/settings', { prefetch_tile_km2: v > 0 ? v * v : 0 }); updatePrefetchPreview(true); });
+}
+
+// Paint each range slider with a gold left-fill on the dark track. WebKit has no native progress
+// fill, so we set a linear-gradient on the input background (the track pseudo is transparent);
+// Firefox uses ::-moz-range-progress and ignores this. Generic over every slider, present + future.
+function paintRange(el){
+  const min = +el.min || 0, max = +el.max || 0, v = +el.value || 0;
+  const pct = max > min ? Math.max(0, Math.min(100, (v - min) / (max - min) * 100)) : 0;
+  el.style.background = `linear-gradient(90deg, var(--acc2) 0 ${pct}%, #2a2620 ${pct}% 100%)`;
+}
+function paintAllRanges(){ document.querySelectorAll('input[type=range]').forEach(paintRange); }
+document.querySelectorAll('input[type=range]').forEach(el => el.addEventListener('input', () => paintRange(el)));
+paintAllRanges();
+
+// Collapsible #side sections — independent open/close (multiple open at once), persisted to
+// localStorage. Default-collapse the bulky/secondary ones; clicks on header controls don't toggle.
+(function initSections(){
+  const DEF_COLLAPSED = ['edit-retry','settings','cache','elevation-lock','subregions-worlds'];
+  document.querySelectorAll('#side .card').forEach(card => {
+    const h2 = card.querySelector(':scope > h2'); if (!h2) return;
+    const label = ((h2.firstChild && h2.firstChild.textContent) || h2.textContent).trim();
+    const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const key = 'meld.sec.' + slug;
+    const saved = localStorage.getItem(key);
+    if (saved) card.classList.toggle('collapsed', saved === 'collapsed');
+    else if (DEF_COLLAPSED.includes(slug)) card.classList.add('collapsed');
+    h2.addEventListener('click', e => {
+      if (e.target.closest('button, a, input, select')) return;   // header controls keep working
+      card.classList.toggle('collapsed');
+      localStorage.setItem(key, card.classList.contains('collapsed') ? 'collapsed' : 'open');
+    });
+  });
+})();
+
+// Stagger step + adaptive pacing only make sense when stagger is on — hide them otherwise.
+function syncStaggerStep() {
+  const on = $('staggerOn') && $('staggerOn').checked;
+  for (const id of ['staggerStepRow', 'staggerAdaptiveRow']) { const r = $(id); if (r) r.style.display = on ? '' : 'none'; }
+}
+if ($('staggerOn'))
+  $('staggerOn').addEventListener('change', () => { api('/api/settings', { cpu_stagger_enabled: $('staggerOn').checked }); syncStaggerStep(); });
+if ($('staggerAdaptive'))
+  $('staggerAdaptive').addEventListener('change', () => api('/api/settings', { cpu_stagger_adaptive: $('staggerAdaptive').checked }));
+syncStaggerStep();
+
+// Cell size lives only in Settings now. Clamp to 1-6 (bigger cells = much slower
+// saves) and PERSIST on change so the chosen size survives refreshes and New world.
+const clampSize = v => { const n = parseInt(v); return isNaN(n) ? '' : snapSize(n); };
 const saveSize = () => {
   const n = clampSize($('size').value);
   if (n === '') return;
@@ -975,7 +1632,7 @@ $('btnPlan').onclick = async () => {
   await api('/api/settings', { job_size_regions: size });
   // revert any previous (non-merged) plan, then re-split at the new size
   await api('/api/grid/clear', { keep_merged: true });
-  const r = await api('/api/grid', { bbox: selection, size });
+  const r = await api('/api/grid', { bbox: selection, size, polygons: selectionPolygon || undefined });
   if (!r.ok) { modalInfo('Meld', r.error); return; }
   plannedCells = r.cells;
   await refreshState();   // redraws overlay (+emoji) from the new grid
@@ -986,6 +1643,7 @@ $('btnClear').onclick = async () => {
   if (!(await modalConfirm('Clear plan', 'Clear the plan? Removes planned cells (merged cells are kept).', 'Clear'))) return;
   const r = await api('/api/grid/clear', { keep_merged: true });
   plannedCells = [];
+  _retryQueue.clear(); renderRetryQueue();   // clearing the plan clears any retry marks too
   await refreshState();   // ensureCells prunes the removed overlays
   const keptN = (r.kept || []).length;
   $('selVal').textContent = `plan cleared (${(r.removed || []).length} removed`
@@ -1007,7 +1665,7 @@ $('btnRecenter').onclick = async () => {
   const c = selCenter(selection);
   await api('/api/origin', { lat: c.lat, lon: c.lon, force: true });
   await api('/api/grid/clear', { keep_merged: true });   // re-tile around the new center
-  const r = await api('/api/grid', { bbox: selection, size });
+  const r = await api('/api/grid', { bbox: selection, size, polygons: selectionPolygon || undefined });
   if (r.ok) plannedCells = r.cells;
   await refreshState();
 };
@@ -1022,7 +1680,7 @@ $('btnPickOrigin').onclick = () => {
     if (selection) {   // re-tile the current selection around the new origin
       const size = parseInt($('size').value) || 4;
       await api('/api/grid/clear', { keep_merged: true });
-      const r = await api('/api/grid', { bbox: selection, size });
+      const r = await api('/api/grid', { bbox: selection, size, polygons: selectionPolygon || undefined });
       if (r.ok) plannedCells = r.cells;
     }
     await refreshState();
@@ -1039,19 +1697,80 @@ $('btnGen').onclick = async () => {
   if (plannedCells.length) body = { cells: plannedCells };   // exact planned split
   else if (selection) body = { bbox: selection };
   else { modalInfo('Meld', 'plan a grid or select an area first'); return; }
-  // Risk gate: cell size or workers above 8 makes the save phase heavy (see heavyWarn).
-  const wk = parseInt($('workers').value) || 4, cs = parseInt($('size').value) || 4;
-  if (wk > HEAVY && !(await modalConfirm('Heavy save warning', heavyWarn('Workers', wk), 'Generate anyway'))) return;
-  if (cs > HEAVY && !(await modalConfirm('Heavy save warning', heavyWarn('Cell size', cs), 'Generate anyway'))) return;
-  const r = await api('/api/queue', body);
+  // Warn (do not block) if workers exceed the safe ceiling for this machine's RAM.
+  const wk = parseInt($('workers').value) || 4, m = ramWorkerMax();
+  if (wk > m && !(await modalConfirm('Workers above your RAM', ramWorkerWarn(wk), 'Generate anyway'))) return;
+  let r = await api('/api/queue', body);
+  // World guard: scale/origin differs from the existing world. Offer to force.
+  if (!r.ok && r.drift) {
+    if (!(await modalConfirm('Different scale / origin', r.error + '\n\nGenerate anyway (will not line up with the existing world)?', 'Force'))) return;
+    r = await api('/api/queue', { ...body, force: true });
+  }
   if (!r.ok) { modalInfo('Meld', r.error); return; }
   if (r.note) console.log(r.note);
+};
+
+// ── suspect cells + selective redo ──────────────────────────────────────────
+// Blue dashed ring over cells the user has marked for retry — distinct from the amber
+// suspect ring and the gold queued fill, so a retry clump reads at a glance.
+function renderRetryQueue() {
+  const sig = [..._retryQueue].sort().join('|');
+  if (sig === _retrySig) return;
+  _retrySig = sig;
+  retryGroup.clearLayers();
+  const btn = $('btnRetryQueued');
+  if (btn) { btn.style.display = _retryQueue.size ? '' : 'none'; btn.textContent = `↻ Retry ${_retryQueue.size} selected`; }
+  if (!projOrigin || projOrigin.lat == null) return;
+  // Pending-retry cells: a cyan fill + a 🔁 glyph so the patch reads at a glance. Once Retry
+  // runs they leave the queue and the normal status emoji takes over (⏳ queued, 🛠️ building).
+  const showEmoji = emojisVisible();
+  for (const key of _retryQueue) {
+    let bb; try { bb = cellBboxFromKey(key, projOrigin, projScale); } catch (e) { continue; }
+    L.rectangle([[bb.south, bb.west], [bb.north, bb.east]],
+      { renderer: cellRenderer, color: '#38bdf8', weight: 2, fillColor: '#38bdf8', fillOpacity: 0.30, interactive: false })
+      .addTo(retryGroup);
+    if (showEmoji) L.marker([(bb.south + bb.north) / 2, (bb.west + bb.east) / 2],
+      { icon: L.divIcon({ className: 'cellemoji', iconSize: [26, 22], html: '<div>🔁</div>' }), interactive: false })
+      .addTo(retryGroup);
+  }
+}
+function renderSuspects(health) {
+  const sig = JSON.stringify(Object.keys(health || {}).sort());
+  if (sig === _suspectSig) return;   // only redraw when the suspect set changed
+  _suspectSig = sig;
+  suspectGroup.clearLayers();
+  if (!projOrigin || projOrigin.lat == null) return;
+  for (const key of Object.keys(health || {})) {
+    let bb; try { bb = cellBboxFromKey(key, projOrigin, projScale); } catch (e) { continue; }
+    L.rectangle([[bb.south, bb.west], [bb.north, bb.east]],
+      { renderer: cellRenderer, color: '#f59e0b', weight: 2, dashArray: '4 3', fill: false, interactive: false })
+      .addTo(suspectGroup);
+  }
+}
+$('btnRedoSuspect').onclick = async () => {
+  const n = Object.keys(_cellHealth || {}).length;
+  if (!n) { modalInfo('Meld', 'No suspect cells.'); return; }
+  if (!(await modalConfirm('Redo suspect cells', `Re-run ${n} suspect cell(s) (terrain-tile retries / missing land cover)? Terrain is pre-warmed so they cache cleanly, and they merge back seamlessly.`, 'Redo ' + n))) return;
+  const r = await api('/api/cell/regenerate-suspect', {});
+  if (!r.ok) { modalInfo('Meld', r.error || 'failed'); return; }
+  refreshState();
+};
+$('btnRedoRegion').onclick = async () => {
+  if (!selection && !selectionPolygon) { modalInfo('Meld', 'Draw a box or polygon over the area to redo first.'); return; }
+  if (!(await modalConfirm('Regenerate region', 'Re-run every merged cell inside your current selection? They merge back seamlessly.', 'Regenerate'))) return;
+  const r = await api('/api/cell/regenerate-region', { bbox: selection, polygons: selectionPolygon || undefined });
+  if (!r.ok) { modalInfo('Meld', r.error || 'failed'); return; }
+  if (!r.count) modalInfo('Meld', 'No cells inside that selection.');
+  refreshState();
 };
 
 $('btnStop').onclick = () => api('/api/stop', {});
 
 $('btnNewWorld').onclick = async () => {
-  if (!(await modalConfirm('New world', 'Start a new world? The current world stays saved in your worlds folder; the map clears for a fresh selection.', 'New world'))) return;
+  if (!(await modalConfirm('New world', 'Start a new world? This creates a NEW project (its own workspace). The current world stays saved and you can switch back to it from Projects.', 'New world'))) return;
+  // New world = new project, so the current world's plan/origin/grid are preserved.
+  const np = await api('/api/projects/new', {});
+  if (np && np.ok) { location.reload(); return; }
   const r = await api('/api/new-world', {});
   if (!r.ok) { modalInfo('Meld', r.error || 'failed'); return; }
   // wipe the map overlay + selection for a clean slate
@@ -1061,7 +1780,10 @@ $('btnNewWorld').onclick = async () => {
   if (drawLayer) { drawnItems.removeLayer(drawLayer); drawLayer = null; }
   if (polyLayer) { map.removeLayer(polyLayer); polyLayer = null; }
   combinedBorder.forEach(l => map.removeLayer(l)); combinedBorder = [];
-  selection = null; plannedCells = []; projOrigin = null; _overlaySig = '';
+  suspectGroup.clearLayers(); _cellHealth = {}; _suspectSig = '';
+  retryGroup.clearLayers(); _retryQueue.clear(); _retrySig = ''; setRetrySelect(false);
+  selection = null; selectionPolygon = null; plannedCells = []; projOrigin = null; _overlaySig = '';
+  setEditCells(false);
   localStorage.removeItem('meld-selection');
   await refreshState();
   $('selVal').textContent = `New world "${r.name}", draw an area to begin.`;
@@ -1073,6 +1795,168 @@ async function regenCell(key) {
   if (!r.ok) { modalInfo('Meld', r.error || 'failed'); return; }
   refreshState();
 }
+
+// ── Edit cells: add/remove individual cells by clicking the map ──────────────
+function setEditCells(on) {
+  editCells = !!on;
+  const b = $('btnEditCells');
+  if (b) {
+    b.textContent = '✏️ Edit cells: ' + (editCells ? 'ON' : 'off');
+    b.style.borderColor = editCells ? 'var(--acc)' : '';
+    b.style.color = editCells ? 'var(--acc2)' : '';
+  }
+  const tri = document.getElementById('brushBtn');   // the triangle map toggle
+  if (tri) tri.classList.toggle('meld-brush-on', editCells);
+  try { map.getContainer().style.cursor = editCells ? 'crosshair' : ''; } catch (e) {}
+  setSelectionEditable(!(editCells || retrySelect));   // lock the selection box while painting
+  if (editCells) $('selVal').textContent = 'Paint cells ON: click empty map to add a cell, click a cell to remove it.';
+}
+// latlon -> cell_key, using the SAME origin/scale as the overlay and the grid's
+// own cell size (so toggled cells line up with the existing tiles).
+function latlonToCellKey(lat, lon) {
+  if (!projOrigin || projOrigin.lat == null) return null;
+  const gsize = (typeof gridCellSize === 'function' && gridCellSize(_lastGrid)) || (parseInt($('size').value) || 4);
+  const size = snapSize(Math.max(1, Math.min(16, gsize)));   // was min(6) — clamped painted cells, misaligned 8/16
+  const dLat = size * 512 / projScale / 111320;
+  const dLon = size * 512 / projScale / (111320 * Math.cos(projOrigin.lat * Math.PI / 180));
+  const rx = Math.floor((lon - projOrigin.lon) / dLon);
+  const rz = Math.floor((lat - projOrigin.lat) / dLat);
+  return `${rx},${rz},${size}`;
+}
+async function toggleCellKey(key) {
+  const r = await api('/api/cell/toggle', { cell_key: key });
+  if (!r || !r.ok) return;
+  if (r.status === 'merged') { modalInfo('Meld', 'That cell is merged (has content). Use the subregion list to delete it.'); return; }
+  if (r.status === null) { delete _lastGrid[key]; plannedCells = plannedCells.filter(c => c.cell_key !== key); }
+  else { _lastGrid[key] = r.status; if (!plannedCells.some(c => c.cell_key === key)) plannedCells.push({ cell_key: key, bbox: {} }); }
+  ensureCells(_lastGrid);   // immediate redraw; the poll will reconcile too
+}
+$('btnEditCells').onclick = () => setEditCells(!editCells);
+
+// ── Retry-select mode: drag to mark a clump of cells for re-run ──────────────
+function setRetrySelect(on) {
+  retrySelect = !!on;
+  if (retrySelect && editCells) setEditCells(false);   // mutually exclusive paint modes
+  const b = $('btnRetrySelect');
+  if (b) {
+    b.textContent = retrySelect ? '◉ Selecting — drag a box' : '◉ Select to retry';
+    b.style.borderColor = retrySelect ? 'var(--acc)' : '';
+    b.style.color = retrySelect ? 'var(--acc2)' : '';
+  }
+  try { map.getContainer().style.cursor = (retrySelect || editCells) ? 'crosshair' : ''; } catch (e) {}
+  setSelectionEditable(!(editCells || retrySelect));   // the locked selection box stays put
+  if (!retrySelect && _marq) { try { map.removeLayer(_marq.rect); } catch (e) {} _marq = null; map.dragging.enable(); }
+  if (retrySelect) $('selVal').textContent = 'Retry select ON: drag a square over the cells to mark them (🔁), then hit Retry. A click toggles one cell; drag again to unmark.';
+}
+
+// ── Cell modes: Edit = brush paint (add/remove), Retry = rubber-band square select ──
+// Edit: click+drag the map; the first cell under the cursor decides add vs remove, every
+// cell the drag passes is batched + persisted in one bulk write. Retry: drag a square and
+// every cell inside it toggles into the retry queue (a click toggles one). Neither moves the
+// locked selection box — its edit handles are disabled while either mode is on.
+let _painting = false, _paintOp = null, _paintBatch = null;
+let _marq = null;                                   // {start, rect} while dragging a retry box
+function _paintHit(key) {
+  if (!key || (_paintBatch && _paintBatch.has(key))) return;
+  const cur = _lastGrid[key];
+  if (_paintOp === 'add') {
+    if (cur) return;
+    _lastGrid[key] = 'planned';
+    if (!plannedCells.some(c => c.cell_key === key)) plannedCells.push({ cell_key: key, bbox: {} });
+  } else {
+    if (!cur || cur === 'merged') return;
+    delete _lastGrid[key];
+    plannedCells = plannedCells.filter(c => c.cell_key !== key);
+    _retryQueue.delete(key);
+  }
+  if (_paintBatch) _paintBatch.add(key);
+  ensureCells(_lastGrid);
+}
+function _toggleRetry(keys) {
+  if (!keys.length) return;
+  const allIn = keys.every(k => _retryQueue.has(k));   // whole patch already marked -> unmark it
+  keys.forEach(k => allIn ? _retryQueue.delete(k) : _retryQueue.add(k));
+  renderRetryQueue();
+}
+map.on('mousedown', (e) => {
+  if (pickingOrigin) return;
+  if (retrySelect) {                                // square rubber-band select for retry
+    _marq = { start: e.latlng, rect: L.rectangle([e.latlng, e.latlng],
+      { renderer: cellRenderer, color: '#38bdf8', weight: 1.5, dashArray: '4 4',
+        fillColor: '#38bdf8', fillOpacity: 0.10, interactive: false }).addTo(map) };
+    map.dragging.disable();
+    try { L.DomEvent.preventDefault(e.originalEvent); } catch (x) {}
+    return;
+  }
+  if (!editCells) return;
+  const key = latlonToCellKey(e.latlng.lat, e.latlng.lng);
+  if (!key) return;
+  const cur = _lastGrid[key];
+  if (cur === 'merged') return;                     // first cell merged -> leave it, allow pan
+  _paintOp = cur ? 'remove' : 'add';
+  _painting = true; _paintBatch = new Set();
+  map.dragging.disable();
+  _paintHit(key);
+});
+map.on('mousemove', (e) => {
+  if (_marq) { _marq.rect.setBounds(L.latLngBounds(_marq.start, e.latlng)); return; }
+  if (_painting) _paintHit(latlonToCellKey(e.latlng.lat, e.latlng.lng));
+});
+function _endMarquee() {
+  if (!_marq) return;
+  const start = _marq.start, b = _marq.rect.getBounds();
+  map.removeLayer(_marq.rect); _marq = null; map.dragging.enable();
+  if (!projOrigin || projOrigin.lat == null) return;
+  const tiny = (b.getNorth() - b.getSouth() < 1e-9) && (b.getEast() - b.getWest() < 1e-9);
+  if (tiny) {                                       // a click, not a drag -> toggle one cell
+    const k = latlonToCellKey(start.lat, start.lng);
+    if (k && _lastGrid[k]) _toggleRetry([k]);
+    return;
+  }
+  const inside = [];
+  for (const key of Object.keys(_lastGrid)) {        // every existing cell whose centre is in the box
+    let bb; try { bb = cellBboxFromKey(key, projOrigin, projScale); } catch (x) { continue; }
+    const cy = (bb.south + bb.north) / 2, cx = (bb.west + bb.east) / 2;
+    if (cy >= b.getSouth() && cy <= b.getNorth() && cx >= b.getWest() && cx <= b.getEast()) inside.push(key);
+  }
+  _toggleRetry(inside);
+}
+function _endPaint() {
+  if (_marq) { _endMarquee(); return; }
+  if (!_painting) return;
+  _painting = false; map.dragging.enable();
+  const keys = _paintBatch ? [..._paintBatch] : []; _paintBatch = null;
+  if (keys.length && (_paintOp === 'add' || _paintOp === 'remove'))
+    api('/api/cell/toggle-bulk', { cell_keys: keys, op: _paintOp });   // one atomic write
+  _paintOp = null;
+}
+map.on('mouseup', _endPaint);
+map.getContainer().addEventListener('mouseleave', _endPaint);
+
+if ($('btnRetrySelect')) $('btnRetrySelect').onclick = () => setRetrySelect(!retrySelect);
+if ($('btnRetryQueued')) $('btnRetryQueued').onclick = async () => {
+  const keys = [..._retryQueue];
+  if (!keys.length) return;
+  if (!(await modalConfirm('Retry selected cells', `Re-run ${keys.length} selected cell(s)? They are re-queued and merge back in place.`, 'Retry ' + keys.length))) return;
+  const r = await api('/api/cell/regenerate-cells', { cell_keys: keys });
+  if (!r || !r.ok) { modalInfo('Meld', (r && r.error) || 'failed'); return; }
+  _retryQueue.clear(); renderRetryQueue(); setRetrySelect(false); refreshState();
+};
+$('modeReplace').onclick = () => setSelectMode('replace');
+$('modeAdd').onclick = () => setSelectMode('add');
+$('modeRemove').onclick = () => setSelectMode('remove');
+setSelectMode('replace');   // initial highlight
+$('btnGrow').onclick = async () => {
+  const b = $('btnGrow'); const old = b.textContent; b.disabled = true; b.textContent = 'Growing…';
+  try {
+    const r = await api('/api/grid/grow', { rings: 1, diagonal: true });
+    if (!r || !r.ok) { modalInfo('Meld', (r && r.error) || 'nothing to grow yet'); return; }
+    const have = new Set(plannedCells.map(c => c.cell_key));
+    for (const c of (r.cells || [])) if (!have.has(c.cell_key)) plannedCells.push(c);
+    await refreshState();
+    $('selVal').textContent = `grew edge · +${r.count} cells`;
+  } finally { b.disabled = false; b.textContent = old; }
+};
 $('btnResume').onclick = async () => {
   const r = await api('/api/resume', {});
   if (!r.ok) { modalInfo('Meld', r.error || 'resume failed'); return; }
@@ -1086,6 +1970,7 @@ async function poll() {
     const s = await api('/api/status');
     ensureCells(s.grid || {});   // redraw + recolor + stage emoji (survives refresh)
     setRun(s.run);               // elapsed timer + final report
+    renderStats(s.stats);        // live CPU / RAM / disk gauges (left rail)
     const ws = (s.workers || []).filter(w => w.running || w.success != null);
     const nRun = ws.filter(w => w.running).length;
     $('workersCount').textContent = nRun ? `${nRun} running` : (ws.length ? 'done' : 'idle');
@@ -1103,14 +1988,41 @@ async function poll() {
     }).join('') : '<div class="stat">Idle. Start a generation to see live workers here.</div>';
     $('log').textContent = (s.log||[]).join('\n');
     $('log').scrollTop = $('log').scrollHeight;
+    // Failed-cell reasons: refresh tooltips so hovering a red cell shows WHY it failed.
+    _cellFail = s.cell_fail || {};
+    for (const k in _cellFail) if (cellLayers[k]) cellLayers[k].setTooltipContent(cellTip(k));
+    // Suspect cells: amber rings + the Redo-suspect button with a live count.
+    _cellHealth = s.cell_health || {};
+    renderSuspects(_cellHealth);
+    // Drop retry marks whose cell no longer exists (cleared / removed) so the blue ring + count
+    // don't become ghosts that outlive the cell.
+    for (const k of _retryQueue) if (!(s.grid && k in s.grid)) _retryQueue.delete(k);
+    renderRetryQueue();   // blue retry rings (client-side selection, survives polls)
+    const nSus = Object.keys(_cellHealth).length;
+    const bs = $('btnRedoSuspect');
+    if (bs) { bs.style.display = nSus ? '' : 'none'; bs.textContent = `↻ Redo suspect (${nSus})`; }
     // OSM prefetch overlay: live cyan chunks while downloading, hidden during
     // generation (cells take over), the planned download box while idle.
     const pf = s.prefetch || {};
+    // Two-phase prefetch progress line (OSM tiles, then terrain warm-up).
+    const pl = $('prefetchLine');
+    if (pl) {
+      if (pf.active && pf.phase === 'terrain') {
+        const t = pf.terrain || {};
+        pl.textContent = `Step 1/2  Prepare terrain  ${t.done || 0}/${t.total || 0} sweeps`
+          + (t.failed ? ` (${t.failed} tiles missed)` : '');
+        pl.style.display = '';
+      } else if (pf.active) {
+        const done = (pf.chunks || []).filter(c => c.state === 'done' || c.state === 'cached').length;
+        pl.textContent = `Step ?/2  Fetch OSM  ${done}/${(pf.chunks || []).length} tiles`;
+        pl.style.display = '';
+      } else { pl.style.display = 'none'; }
+    }
     if (pf.active) {
       renderPrefetch(pf.chunks);
       _pfPreviewSig = '';                          // force a preview refresh once it clears
     } else if (s.running || s.queue_size) {
-      prefetchGroup.clearLayers();
+      renderPrefetch([]);
     } else if (_pollN % 3 === 0) {
       updatePrefetchPreview(false);
     }
@@ -1121,35 +2033,307 @@ async function poll() {
 
 // Persist + restore the selection rectangle across refresh.
 function saveSelection() {
-  if (selection) localStorage.setItem('meld-selection', JSON.stringify(selection));
+  if (selection) localStorage.setItem('meld-selection',
+    JSON.stringify({ ...selection, polygon: selectionPolygon || null }));
 }
 function restoreSelection() {
   try {
     const s = JSON.parse(localStorage.getItem('meld-selection') || 'null');
     if (s && s.south != null) {
-      selection = s;
-      drawLayer = L.rectangle([[s.south, s.west], [s.north, s.east]],
-        { color: '#d6ba58', weight: 2, fillOpacity: 0.05 });
+      selection = { south: s.south, west: s.west, north: s.north, east: s.east };
+      // s.polygon is an array of rings (each ring an array of [lat,lon] pairs).
+      const isRings = Array.isArray(s.polygon) && s.polygon.length &&
+                      Array.isArray(s.polygon[0]) && Array.isArray(s.polygon[0][0]);
+      if (isRings) {
+        selectionPolygon = s.polygon;
+        drawLayer = L.polygon(s.polygon[0], { color: '#d6ba58', weight: 2, fillOpacity: 0.05 });
+        $('selVal').textContent = `restored polygon · ${s.polygon.length} ring(s)`;
+      } else {
+        selectionPolygon = null;
+        drawLayer = L.rectangle([[s.south, s.west], [s.north, s.east]],
+          { color: '#d6ba58', weight: 2, fillOpacity: 0.05 });
+        $('selVal').textContent = `restored selection · S${s.south.toFixed(3)} W${s.west.toFixed(3)}`;
+      }
       drawnItems.addLayer(drawLayer);
-      attachEditing(drawLayer);
-      $('selVal').textContent = `restored selection · S${s.south.toFixed(3)} W${s.west.toFixed(3)}`;
+      // Editing a restored MANY-vertex country polygon spawns a drag handle per vertex and freezes
+      // the page on load — so only attach editing to cheap rectangles. (Re-draw to edit a polygon.)
+      if (!isRings) attachEditing(drawLayer);
     }
   } catch (e) {}
 }
 
-restoreSelection();
-refreshState();
-poll();
-// After a page refresh: re-tile the planned cells to the restored selection so the
-// overlay always matches what's drawn. Skipped during an active generation.
-setTimeout(async () => {
-  if (!selection) return;
+// Restore the last selection box/polygon on load so a browser refresh or server restart KEEPS
+// your area. The grid cells already persist server-side; this re-draws the yellow selection and
+// repopulates selection/selectionPolygon so coverage / data-pack / regenerate work right away
+// without re-drawing. (New world / clear selection wipes the saved entry, so it stays clean then.)
+try { restoreSelection(); } catch (e) {}
+// ── Cache card: location + per-type sizes (loaded on demand; terrain can be 500k files) ──
+async function loadCache() {
   try {
-    const s = await api('/api/status');
-    if (s.running || s.queue_size) return;
-    onSelectionChanged();
+    const c = await api('/api/cache');
+    if (!c || !c.ok) return;
+    if ($('cacheRoot')) $('cacheRoot').textContent = c.root;
+    const fmt = t => `${fmtMB(t.mb)}${t.files ? ' · ' + t.files.toLocaleString() + ' files' : ''}`;
+    if ($('cacheOsm')) $('cacheOsm').textContent = fmt(c.osm);
+    if ($('cacheTerrain')) $('cacheTerrain').textContent = fmt(c.terrain);
+    if ($('cacheLand')) $('cacheLand').textContent = fmt(c.landcover);
   } catch (e) {}
-}, 900);
+}
+if ($('btnCacheRefresh')) $('btnCacheRefresh').onclick = () => {
+  ['cacheOsm', 'cacheTerrain', 'cacheLand'].forEach(id => { if ($(id)) $(id).textContent = '…'; });
+  loadCache();
+};
+async function clearCache(what, label) {
+  if (!(await modalConfirm('Clear cache', `Delete the ${label} cache? It re-downloads as needed on the next run.`, 'Clear ' + label))) return;
+  const r = await api('/api/cache/clear', { what });
+  if (!r || !r.ok) { modalInfo('Meld', (r && r.error) || 'failed'); return; }
+  modalInfo('Meld', `Freed ~${fmtMB(r.freed_mb)}.`);
+  loadCache();
+}
+if ($('btnClearOsm')) $('btnClearOsm').onclick = () => clearCache('osm', 'OSM');
+if ($('btnClearTerrain')) $('btnClearTerrain').onclick = () => clearCache('terrain', 'terrain');
+if ($('btnClearAllCache')) $('btnClearAllCache').onclick = () => clearCache('all', 'all');
+
+// ── Region data packs: bulk elevation download + coverage + height preview + import ──
+let terrainLayer = null;
+// api() does fetch().then(r=>r.json()); a 404 (route missing because the server wasn't restarted
+// after the data-pack update) returns an HTML page, so r.json() THROWS and the click dies
+// silently. Wrap it so any failure becomes a visible {ok:false,error} instead of a silent throw.
+async function _dpApi(url, body) {
+  try {
+    return await api(url, body);
+  } catch (e) {
+    return { ok: false, error: 'Data-pack API not reachable — restart the Meld server (stop it, then run python server.py).' };
+  }
+}
+function _dpSelection() {
+  if (selectionPolygon) return { polygons: selectionPolygon, bbox: selection || undefined };
+  if (selection) return { bbox: selection };
+  // Fallback: union bbox of the cells already on the map. Works after a page refresh, when the
+  // grid was restored from disk but the live selection/polygon vars are empty.
+  const keys = Object.keys(_lastGrid || {});
+  if (keys.length && projOrigin && projOrigin.lat != null) {
+    let s = 90, w = 180, n = -90, e = -180, any = false;
+    for (const k of keys) {
+      let bb; try { bb = cellBboxFromKey(k, projOrigin, projScale); } catch (_) { continue; }
+      s = Math.min(s, bb.south); w = Math.min(w, bb.west);
+      n = Math.max(n, bb.north); e = Math.max(e, bb.east); any = true;
+    }
+    if (any) return { bbox: { south: s, west: w, north: n, east: e } };
+  }
+  return null;
+}
+// Web-mercator tile (x,y,z) -> Leaflet bounds [[s,w],[n,e]] (for drawing missing-tile gaps).
+function _tileBounds(x, y, z) {
+  const n = Math.pow(2, z);
+  const lon1 = x / n * 360 - 180, lon2 = (x + 1) / n * 360 - 180;
+  const lat1 = Math.atan(Math.sinh(Math.PI * (1 - 2 * y / n))) * 180 / Math.PI;
+  const lat2 = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 1) / n))) * 180 / Math.PI;
+  return [[Math.min(lat1, lat2), Math.min(lon1, lon2)], [Math.max(lat1, lat2), Math.max(lon1, lon2)]];
+}
+const terrainMissGroup = L.layerGroup().addTo(map);   // red blocks = elevation tiles NOT cached
+function _drawMissing(missing) {
+  terrainMissGroup.clearLayers();
+  if (!missing || !missing.length) return;
+  // A z15 tile (~1.2 km) is sub-pixel at country zoom, so individual rects are invisible.
+  // Aggregate the missing tiles into coarse z11 buckets (~19 km) and draw THOSE — a visible red
+  // grid showing where the gaps are. (Zoom in for the per-tile grayscale/hillshade detail.)
+  const SH = 4, z = 15 - SH;                          // z11 buckets (16x16 z15 tiles each)
+  const seen = new Set(), cells = [];
+  for (const t of missing) {
+    const bx = t.x >> SH, by = t.y >> SH, k = bx + ',' + by;
+    if (seen.has(k)) continue;
+    seen.add(k); cells.push([bx, by]);
+    if (cells.length >= 12000) break;
+  }
+  for (const [bx, by] of cells) {
+    L.rectangle(_tileBounds(bx, by, z),
+      { renderer: cellRenderer, color: '#e0504a', weight: 0, fillColor: '#e0504a',
+        fillOpacity: 0.30, interactive: false }).addTo(terrainMissGroup);
+  }
+}
+async function dpCoverage() {
+  const sel = _dpSelection();
+  if (!sel) { $('dpCov').textContent = 'Draw or search an area first.'; return null; }
+  $('dpCov').textContent = 'Checking coverage…';
+  const r = await _dpApi('/api/datapack/coverage', sel);
+  if (!r || !r.ok) { $('dpCov').textContent = (r && r.error) || 'coverage failed'; return null; }
+  const e = r.elevation;
+  const gaps = e.missing && e.missing.length;
+  $('dpCov').innerHTML = `Elevation cached: <b style="color:${e.pct >= 100 ? 'var(--ok)' : 'var(--acc2)'}">${e.pct}%</b> (${e.cached}/${e.total} tiles)`
+    + (gaps ? ` · <span style="color:#e0504a">${gaps} gap${gaps === 1 ? '' : 's'}</span> shown red` : '');
+  _drawMissing(e.missing);
+  return r;
+}
+let _dpPoll = null;
+async function dpBuild() {
+  const sel = _dpSelection();
+  if (!sel) { $('dpCov').textContent = 'Draw or search an area first.'; return; }
+  $('dpCov').textContent = 'Starting download…';
+  const r = await _dpApi('/api/datapack/build', sel);
+  if (!r || !r.ok) { $('dpCov').textContent = (r && r.error) || 'build failed'; return; }
+  $('dpBarWrap').style.display = ''; $('dpProg').style.display = ''; $('btnDpStop').style.display = '';
+  if (_dpPoll) clearInterval(_dpPoll);
+  _dpPoll = setInterval(dpPollStatus, 1000); dpPollStatus();
+}
+async function dpRefetchView() {
+  if (map.getZoom() < 11) { $('dpCov').textContent = 'Zoom in to the bad area first (≥11) — re-fetch covers only the current view.'; return; }
+  const b = map.getBounds();
+  const bbox = { south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() };
+  $('dpCov').textContent = 'Re-fetching this view (force)…';
+  const r = await _dpApi('/api/datapack/build', { bbox, force: true, name: 'refetch-view' });
+  if (!r || !r.ok) { $('dpCov').textContent = (r && r.error) || 're-fetch failed'; return; }
+  $('dpBarWrap').style.display = ''; $('dpProg').style.display = ''; $('btnDpStop').style.display = '';
+  if (_dpPoll) clearInterval(_dpPoll);
+  _dpPoll = setInterval(dpPollStatus, 1000); dpPollStatus();
+}
+let _packZoom = 15;   // effective elevation zoom for this project (preview maxNativeZoom + tile-info)
+async function refreshElevZoom() {
+  const r = await _dpApi('/api/datapack/zoom');
+  if (!r || !r.ok) return;
+  _packZoom = r.effective;
+  const auto = (r.setting === 'auto' || !r.setting);
+  const ratio = r.scale ? `1:${Math.round(1 / r.scale)}` : '';
+  $('elevZoomNote').textContent = auto
+    ? `Auto → z${r.effective} for your ${ratio} scale (1 block ≈ ${Math.round(1 / r.scale)} m).`
+    : `Using z${r.effective}. Recommended for ${ratio}: z${r.recommended}.`;
+  if (terrainLayer) refreshTerrainLayer();   // re-key the preview to the new pack zoom
+}
+async function dpRepair() {
+  const sel = _dpSelection();
+  if (!sel) { $('dpCov').textContent = 'Draw or search an area first.'; return; }
+  $('dpCov').textContent = 'Scanning selection for no-data holes…';
+  const r = await _dpApi('/api/datapack/repair', sel);
+  if (!r || !r.ok) { $('dpCov').textContent = (r && r.error) || 'repair failed'; return; }
+  $('dpBarWrap').style.display = ''; $('dpProg').style.display = ''; $('btnDpStop').style.display = '';
+  if (_dpPoll) clearInterval(_dpPoll);
+  _dpPoll = setInterval(dpPollStatus, 1000); dpPollStatus();
+}
+async function dpRepairAll() {
+  const go = await modalConfirm('Fix ALL no-data holes',
+    'Scan your entire elevation cache and overzoom-fix every no-data hole (the dark bands / in-game dips). '
+    + 'It only rebuilds holes — good tiles are untouched and nothing is re-downloaded. On a whole country this '
+    + 'is fast (it only decodes the tiny uniform tiles). Continue?', 'Fix all', 'Cancel');
+  if (!go) return;
+  $('dpCov').textContent = 'Scanning the whole cache for no-data holes…';
+  const r = await _dpApi('/api/datapack/repair', { global: true });
+  if (!r || !r.ok) { $('dpCov').textContent = (r && r.error) || 'repair failed'; return; }
+  $('dpBarWrap').style.display = ''; $('dpProg').style.display = ''; $('btnDpStop').style.display = '';
+  if (_dpPoll) clearInterval(_dpPoll);
+  _dpPoll = setInterval(dpPollStatus, 1000); dpPollStatus();
+}
+// web-mercator lat/lng -> z15 tile, for the click-a-tile info popup
+function _lngLatToTile(lat, lng, z) {
+  const n = Math.pow(2, z);
+  const x = Math.floor((lng + 180) / 360 * n);
+  const y = Math.floor((1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2 * n);
+  return [Math.max(0, Math.min(n - 1, x)), Math.max(0, Math.min(n - 1, y))];
+}
+async function _showTileInfo(latlng) {
+  const [x, y] = _lngLatToTile(latlng.lat, latlng.lng, _packZoom);
+  const r = await _dpApi(`/api/datapack/tile-info?z=${_packZoom}&x=${x}&y=${y}`);
+  if (!r || !r.ok) { return; }
+  const b = r.bbox || {};
+  const status = !r.present
+    ? '<b style="color:#e0504a">MISSING (not cached)</b>'
+    : (r.flat ? '<b style="color:#e0a23a">FLAT / no-data hole</b>' : '<b style="color:#7ea958">cached · real terrain</b>');
+  const ht = (r.min_m == null) ? '—' : `${r.min_m} … ${r.max_m} m (avg ${r.mean_m})`;
+  const html = `
+    <div class="stat">Tile <b>z${r.z} / x${r.x} / y${r.y}</b></div>
+    <div class="stat">Status: ${status}</div>
+    <div class="stat">Height: ${ht}</div>
+    <div class="stat">Size: ${r.size_bytes ? (r.size_bytes / 1024).toFixed(1) + ' KB' : '—'}</div>
+    <div class="stat" style="color:var(--mut)">${b.south != null ? `S ${b.south.toFixed(4)}  W ${b.west.toFixed(4)} → N ${b.north.toFixed(4)}  E ${b.east.toFixed(4)}` : ''}</div>
+    ${(r.flat || !r.present) ? '<div class="stat" style="color:var(--mut);margin-top:6px">This is a real gap in the AWS terrarium set (it has no data here at z15). Use “Fix no-data holes” to rebuild it from a lower zoom that does.</div>' : ''}`;
+  const btns = (r.flat || !r.present)
+    ? [{ label: 'Fix this hole (overzoom)', value: 'fix', kind: 'gold' }, { label: 'Close', value: false, kind: 'ghost' }]
+    : [{ label: 'Close', value: true, kind: 'gold' }];
+  const v = await _meldModal({ title: 'Elevation tile', html, buttons: btns });
+  if (v === 'fix' && b.south != null) {
+    const bbox = { south: b.south, west: b.west, north: b.north, east: b.east };
+    const rr = await _dpApi('/api/datapack/repair', { bbox, name: 'repair-tile' });
+    if (rr && rr.ok) {
+      $('dpBarWrap').style.display = ''; $('dpProg').style.display = ''; $('btnDpStop').style.display = '';
+      if (_dpPoll) clearInterval(_dpPoll);
+      _dpPoll = setInterval(dpPollStatus, 1000); dpPollStatus();
+    }
+  }
+}
+// Click a tile while Height preview is on -> info popup (instead of regenerating a cell).
+// Suppressed during origin-pick / cell-edit / retry-select so those modes keep their own clicks.
+map.on('click', (e) => {
+  if (pickingOrigin || editCells || retrySelect) return;
+  if ($('dpPreview') && $('dpPreview').checked) _showTileInfo(e.latlng);
+});
+async function dpPollStatus() {
+  const s = await _dpApi('/api/datapack/status');
+  if (!s || s.error) {   // server unreachable mid-build -> stop polling + surface it
+    if (_dpPoll) { clearInterval(_dpPoll); _dpPoll = null; }
+    $('dpProg').textContent = (s && s.error) || 'status unreachable';
+    return;
+  }
+  const pct = s.total ? Math.round(100 * s.done_n / s.total) : (s.done ? 100 : 0);
+  $('dpBar').style.width = pct + '%';
+  $('dpProg').textContent = `${s.note || ''} · ${s.done_n}/${s.total} (${s.ok} new, ${s.absent} off-grid, ${s.fail} failed)`;
+  if (!s.active) {
+    if (_dpPoll) { clearInterval(_dpPoll); _dpPoll = null; }
+    $('btnDpStop').style.display = 'none';
+    dpCoverage(); loadDpList();
+    if (terrainLayer) refreshTerrainLayer();   // show the freshly-downloaded tiles
+  }
+}
+async function loadDpList() {
+  const r = await _dpApi('/api/datapack/list');
+  if (r && r.error && !r.packs) { $('dpList').textContent = r.error; return; }
+  const packs = (r && r.packs) || [];
+  $('dpList').innerHTML = packs.length ? packs.map(p => {
+    const e = p.elevation || {};
+    return `<div>${(p.name || p.region_id)} · <span style="color:${(e.pct || 0) >= 100 ? 'var(--ok)' : 'var(--acc2)'}">${e.pct || 0}%</span> (${e.cached || 0}/${e.total || 0})</div>`;
+  }).join('') : 'none yet';
+}
+async function dpImport() {
+  const folder = ($('dpImportPath').value || '').trim();
+  if (!folder) return;
+  const r = await _dpApi('/api/datapack/import', { folder });
+  $('dpList').textContent = (r && r.ok) ? `imported ${r.tiles} tiles + ${r.osm} osm` : ((r && r.error) || 'import failed');
+  loadDpList(); if (terrainLayer) refreshTerrainLayer();
+}
+function refreshTerrainLayer() {
+  if (!map.getPane('terrainPane')) { map.createPane('terrainPane'); map.getPane('terrainPane').style.zIndex = 350; }
+  if (terrainLayer) { map.removeLayer(terrainLayer); terrainLayer = null; }
+  const mode = $('dpPreviewMode').value || 'grayscale';
+  // Full-detail terrain down to a regional view. maxNativeZoom = the pack zoom (the finest real tiles
+  // we have); the browser stretches deeper map-zooms, so we never request a zoom past the pack data.
+  terrainLayer = L.tileLayer(`/api/terrain-tile/{z}/{x}/{y}.png?mode=${mode}&_=${Date.now()}`,
+    { maxNativeZoom: _packZoom, minZoom: 6, maxZoom: 19, opacity: 0.6, pane: 'terrainPane',
+      updateWhenIdle: true }).addTo(map);
+}
+function toggleTerrainPreview() {
+  if ($('dpPreview').checked) {
+    refreshTerrainLayer();
+    if (map.getZoom() < 6) $('dpCov').textContent = 'Height preview on — zoom in a little (≥6) to see the grayscale/hillshade terrain.';
+  } else if (terrainLayer) { map.removeLayer(terrainLayer); terrainLayer = null; }
+}
+if ($('btnDpCoverage')) $('btnDpCoverage').onclick = dpCoverage;
+if ($('btnDpBuild')) $('btnDpBuild').onclick = dpBuild;
+if ($('btnDpRefetch')) $('btnDpRefetch').onclick = dpRefetchView;
+if ($('btnDpRepair')) $('btnDpRepair').onclick = dpRepair;
+if ($('btnDpRepairAll')) $('btnDpRepairAll').onclick = dpRepairAll;
+if ($('elevZoom')) $('elevZoom').onchange = async () => {
+  await api('/api/settings', { elevation_zoom: $('elevZoom').value });
+  await refreshElevZoom();
+};
+if ($('btnDpStop')) $('btnDpStop').onclick = () => api('/api/datapack/stop', {});
+if ($('btnDpList')) $('btnDpList').onclick = loadDpList;
+if ($('btnDpImport')) $('btnDpImport').onclick = dpImport;
+if ($('dpPreview')) $('dpPreview').onchange = toggleTerrainPreview;
+if ($('dpPreviewMode')) $('dpPreviewMode').onchange = () => { if ($('dpPreview') && $('dpPreview').checked) refreshTerrainLayer(); };
+loadDpList();
+
+refreshState();
+loadProjects();
+loadCache();      // async; fills the Cache card sizes without blocking boot
+poll();
 </script>
 </body>
 </html>

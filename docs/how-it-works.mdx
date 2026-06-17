@@ -1,0 +1,107 @@
+---
+title: How Meld works
+slug: how-it-works
+description: The Meld pipeline explained. Origin, the global elevation lock, region aligned cells, map prefetch, parallel generation, the region perfect merge, and the drift guard. The core mental model.
+---
+
+# How Meld works
+
+This is the core mental model. Once you have it, every other guide is just detail. Meld takes one map selection and turns it into one seamless Minecraft world by tiling the area, building the tiles at the same time, and stitching them back together so the joins are invisible.
+
+## The big idea
+
+Arnis, the generator under Meld, builds one Minecraft world from one map box. It is great, but a single run can only cover so much, and it is single threaded so big areas are slow. Meld's job is to make a big area look like one Arnis run, only faster and seamless.
+
+The trick is that every separate Arnis run shares one ruler. They all measure from the same point (the origin), map height the same way (the elevation lock), and roll the same dice (the seed). When everyone agrees on those three things, the tiles line up block for block and the joins disappear.
+
+```
+map selection
+   |  pick one origin, lock one height range, pick one seed
+   v
+split into region aligned cells
+   |
+   v
+download the map data once, share it to every cell
+   |
+   v
+build many cells in parallel  (same origin + lock + seed)
+   |
+   v
+merge each cell into the master world (keep only what it owns)
+   |
+   v
+one Minecraft world, no cliffs, no seams
+```
+
+## Origin
+
+**Why.** If two runs measured from different starting points, their roads and rivers would slide a few blocks off each other at the join. One shared starting point fixes that.
+
+**The mechanism.** The origin is a single `(lat, lon)` anchor, snapped to a Minecraft region corner. Every block coordinate in the world is measured from it. Block `(0,0)` is the corner where four region files meet (`r.0.0`, `r.-1.0`, `r.0.-1`, `r.-1.-1`), not the center of a region. A region file `r.X.Z.mca` covers blocks `[X*512, X*512+512)`, so `region = floor(block / 512)`.
+
+**How to use it.** Meld sets the origin for you, centered on your first selection, and then freezes it once any cell is built so the grid can never shift under finished work. You can set it by hand in Settings (type a lat and lon, center on the selection, or click the map). Pasting the same origin into two projects makes them share the exact same grid, which is how you continue or extend an old world.
+
+## The elevation lock
+
+**Why.** If each cell picked its own height range, two cells next to each other would map the same hill to a different Minecraft Y, and the join would be a cliff.
+
+**The mechanism.** Before building, Meld runs a quick survey over the whole area and locks one `(min, max)` in metres. That single range is passed to every cell, so the same real world height always becomes the same in game height. The survey filters out junk readings (empty no-data pixels and wild spikes) so one bad pixel cannot flatten your world.
+
+**How to use it.** The survey runs on its own when you change the selection, and the Elevation lock card shows the locked range. If you have no connection, type a min and max by hand. There is a deeper guide on the whole elevation system in [Elevation](./elevation.mdx).
+
+## Cells and the grid
+
+**Why.** A clean merge needs the seams to land in clean spots. Meld makes every seam fall exactly on a region file boundary, so no region file is ever owned by two cells.
+
+**The mechanism.** The area is split into **cells**, each keyed `"rx,rz,size"`: integer cell indices from the origin and a side length in **regions** (512 blocks each). A size 4 cell is 4 by 4 regions, so 2048 blocks per side. Because a cell edge is always a multiple of `size * 512`, and that is a multiple of 512, every seam lands on a region file boundary. No region ever straddles two cells, which is the whole reason the merge is clean.
+
+**How to use it.** Hit Plan to tile the selection at the current cell size. You can hand edit the set of cells: paint cells on or off, grow the edge outward by a ring, or follow a real country outline. Bigger cells and how to choose them are covered in [Parallel generation](./parallel-generation.mdx).
+
+## The coordinate rule
+
+Under the hood, one rule is obeyed by the orchestrator, the merge, the map math, and the Arnis fork:
+
+```
+mpd_lat      = 111320                      // metres per degree latitude (constant)
+mpd_lon      = 111320 * cos(origin_lat)    // ONE project wide constant
+block_x(lon) = floor((lon - origin_lon) * mpd_lon * scale)
+block_z(lat) = floor((origin_lat - lat) * mpd_lat * scale)   // +Z is south
+```
+
+The key detail is that `mpd_lon` is anchored at the **origin** latitude, never the point's own latitude or an average of the two. An older version of the fork used an average latitude, so the same longitude mapped to a slightly different block X depending on how far north you were. That sheared each tile a little off the grid, and the shear grew with distance from the origin, leaving thin strips of flat grass at the seams. The fork now anchors at the origin latitude, so every cell agrees. The latitude axis never had this problem because it has no cosine factor.
+
+## Map prefetch
+
+**Why.** If every cell asked the public OpenStreetMap servers for its own data at the same time, they would trip the per address rate limit and most cells would stall waiting.
+
+**The mechanism.** Meld downloads the whole area's map data once, in a controlled way, then hands the same file to every cell so the cells make zero live requests. The download is tiled under a size budget so even a whole country fits what a public server will answer, and if a chunk gets rejected Meld splits it smaller and retries. Finished chunks are cached on disk and reused across projects. The same idea warms the elevation tiles up front too.
+
+**How to use it.** It is on by default and runs before generation. You can watch it on the map as it downloads. The deeper options (a custom server URL, offline packs) are in [The Arnis fork](./the-arnis-fork.mdx) and [Elevation](./elevation.mdx).
+
+## Parallel generate
+
+**Why.** One Arnis run is single threaded and slow over a big area. Many runs at once finish the job several times faster.
+
+**The mechanism.** A bounded worker pool runs up to N Arnis processes at once, one per cell, each fed the same origin, seed, and height lock. It builds from the center outward in a spiral so the dense middle lands first, and it auto retries the kinds of failures that are just bad luck (a network blip, a rate limit, a memory spike) without retrying the kinds that would just fail again. The full story, including the CPU budget and stream to disk for huge cells, is in [Parallel generation](./parallel-generation.mdx).
+
+**How to use it.** Set the worker count in Settings (or use Recommend to fit your PC), then Generate and merge.
+
+## The merge
+
+**Why.** Each cell is built with a little extra overlap so its edges have neighbours to blend against. That overlap must be thrown away cleanly, or two cells would fight over the same region file.
+
+**The mechanism.** Each finished cell is merged into one master world by copying only the region files inside the rectangle that cell **owns** (worked out exactly from its cell key). The overlap, the seam buffer, is discarded. Before any file is touched, a read only pre flight checks that the cell actually covers its rectangle, so a merge that would go wrong simply does not start and the master is left untouched.
+
+**How to use it.** The merge happens on its own after each cell builds. Generate and merge is safe to re-run after a stop, because it skips cells that are already merged.
+
+## The drift guard
+
+**Why.** The one thing that would ruin a built world is a cell that used a different coordinate system or scale and dropped a cliff at every join. The drift guard makes that impossible to ship by accident.
+
+**The mechanism.** The merge refuses, loudly and without changing anything, if a cell's regions do not reach the rectangle they should (a sign the coordinate rule broke), if a cell produced no regions, if two cells would claim one region file, or if a run's scale or origin does not match what the master world recorded. A refused merge is better than a silent grass strip, because you find out right away.
+
+**How to use it.** It is automatic. If a build is refused, the message tells you the cause. When you genuinely mean to override a mismatch (for example a deliberate settings change), there is a Force option.
+
+---
+
+[Back to the docs hub](./index.md)

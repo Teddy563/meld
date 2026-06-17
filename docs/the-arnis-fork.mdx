@@ -1,0 +1,117 @@
+---
+title: The Arnis fork
+slug: the-arnis-fork
+description: What Meld's custom Arnis fork changes and the knobs you get. No buildings, road detail modes, automatic flat bridges, seam free rendering, offline elevation, and a custom Overpass URL.
+---
+
+# The Arnis fork
+
+Meld drives a custom fork of the open source [Arnis](https://github.com/Teddy563/arnis) generator. The fork keeps everything Arnis does and adds the pieces Meld needs to tile a world cleanly, plus a few quality knobs for downscaled worlds. You drive all of it from Settings; this page explains what each one does and how to use it.
+
+## What the fork is
+
+Arnis turns one OpenStreetMap box into one Minecraft world. The fork adds the ability for many separate runs to share one ruler (a master origin and a height lock), to render the same building the same way across a join, and to stay readable when you shrink a whole region onto fewer blocks. Meld builds the right command for the binary it finds, and only passes a flag if that binary advertises it, so an older binary never fails on an unknown flag.
+
+## Seam free rendering (master origin and seed)
+
+**Why.** When two cells are built side by side, two things can break the join. The coordinates can slide a few blocks off each other, and a building that straddles the join can get a different style in each cell.
+
+**The mechanism.** A shared master origin pins every cell's projection and its terrain and land cover grid to one global point, so cells line up block for block. It also fixes a tiny stretch in the old projection that slid terrain a few blocks off the roads. A shared seed makes the fork roll the same dice in every cell and read a building's true shape before it is clipped to the cell edge, so a building that crosses a join renders identically on both sides.
+
+**How to use it.** This is automatic. Meld passes the project origin and seed to every cell for you. The seed is editable in Settings if you want a different layout, but you rarely need to touch it. The reason this matters is covered in [How it works](./how-it-works.mdx).
+
+## No buildings
+
+**Why.** A roads and ground world is the ideal clean base layer, and it skips the heavier, more error prone building geometry.
+
+**The mechanism.** No buildings skips all OpenStreetMap buildings and the building like clutter around them (man made features, power, barriers, doors, advertising, historic, emergency, and tourism nodes). It deliberately keeps roads, bridges, rail, water, land cover, natural features, and terrain, and it keeps parking and some surface features, so you still get the street network and the shape of the land.
+
+**How to use it.** In Settings, turn the Buildings toggle off.
+
+## Road detail modes
+
+**Why.** At small scales, every footway, crosswalk, lane divider, and multi lane width gets squeezed onto the same blocks and turns into dotted checker noise, especially at intersections.
+
+**The mechanism.** There are three modes. **Max** renders every road exactly as upstream (the default look). **Clean** is a tidy pass for larger scales that caps lane dividers and twin center stripes and neatens dashes. **Compact** is vehicle roads only: it drops footways, paths, cycleways, steps, pedestrian areas, crossings, and similar, and caps lanes to two. The mode gates both the data query and what gets drawn, so compact also fetches less.
+
+**How to use it.** In Settings, set Road detail to auto, max, clean, or compact. On **Auto**, Meld picks compact below scale 0.7 and clean at or above it, which is the right choice for most builds.
+
+## Flat bridges at small scales
+
+**Why.** At a small scale, a tall arch bridge with support columns and clearance collapses into a tangle of blocks that reads as noise, and the arch overshoots a span that is now only a few blocks long.
+
+**The mechanism.** At scale 0.3 or smaller, every bridge becomes a flat one block deck that hugs the terrain instead of a rising arch, which keeps the road continuous and readable.
+
+**How to use it.** It is automatic. There is no separate toggle; it is triggered purely by a low scale (for example 0.1). Set your scale in Settings.
+
+## Offline elevation
+
+**Why.** A big parallel build should be able to run strictly from a pre warmed cache, so no single cell quietly hammers the elevation source and gets rate limited into broken tiles.
+
+**The mechanism.** In offline mode the fork serves cache hits as usual, but a cache miss or a corrupt tile returns an error instead of re-downloading, and the build falls back to flat ground there rather than touching the network. It pairs with the elevation packs, where you download a region's terrain once up front (see [Elevation](./elevation.mdx)).
+
+**How to use it.** Download or import a pack for your region first, and Meld runs the cells against that cache. The result is no rate limits and the ability to build with no connection.
+
+## Custom Overpass URL
+
+**Why.** Public map data mirrors rate limit per address, which slows or breaks a big parallel build. A private or self hosted endpoint has no such limit.
+
+**The mechanism.** The fork can point its map data fetch at one or more custom endpoints instead of the public pool, in priority order. Meld uses this for both the one time prefetch and any live per cell fetch, and a private endpoint also lets you raise the prefetch speed past the public limit.
+
+**How to use it.** In Settings, set the Overpass URL (you can give a comma separated list as fallbacks). Leave it blank to use the public servers.
+
+## Map data: offline and self-hosted
+
+This is the practical guide to where your OpenStreetMap data comes from, and how to stop Meld from calling the public servers. The short version: by default Meld uses the public Overpass endpoint, but you can point it at your own source or run fully from saved files.
+
+### What happens by default
+
+When you build, Meld fetches the OSM data for your whole selection **once** through Overpass and feeds that one copy to every cell (the shared prefetch). So it does not hit the API per cell, even on a big parallel build. But by default that one fetch goes to the public Overpass endpoint (Arnis ships with `api.arnismc.com` first, then the public overpass-api.de mirrors). That is the only thing that touches the public API.
+
+### Point at your own Overpass endpoint
+
+To stop using the public servers and use your own source, set a custom Overpass endpoint with the fork's `--overpass-url` flag (in Meld, the Overpass URL Setting). It takes a comma separated, priority ordered list that **replaces** the built in public mirrors. Once set, Meld queries your endpoint instead of `api.arnismc.com`, for both the one time prefetch and any live per cell fetch.
+
+### Use the latest full data offline (self-hosted Overpass)
+
+To build from a current full region with no public calls at all:
+
+1. Download a regional extract as an `.osm.pbf` from Geofabrik (download.geofabrik.de).
+2. Run a local Overpass API instance over that extract (for example via the official Overpass Docker image).
+3. Point `--overpass-url` at your local instance, for example `http://localhost:12345/api/interpreter`.
+
+Now the map data comes from your downloaded file, and nothing pings the public API. This does mean you have to host a local Overpass yourself, which is the heaviest part of the setup.
+
+### Save a fetch and reuse it (no second call)
+
+You can also fetch once and replay it. A run with `--download-only --save-json-file region.json` writes the OSM to a JSON file and exits. A later run reads it back with `--file region.json` and makes no Overpass call at all. The data pack folder import also accepts `osm_*.json` files dropped into the cache, so a saved fetch can travel between machines.
+
+### Coming soon: drop in a Geofabrik .osm.pbf
+
+**Planned, not yet available.** A one step import where you drop a Geofabrik `.osm.pbf` into Meld and it bakes the file for you, so you would not need to self host Overpass at all. This is not built yet, so for now use one of the options above. We will document it here once it ships.
+
+## Flag reference
+
+You do not pass these by hand; Meld builds the command from your Settings. They are listed here so you can see what each Setting maps to.
+
+| Flag | What it does |
+| --- | --- |
+| `--master-origin-lat / --master-origin-lng` | Anchor every cell to one global origin so tiles line up block for block. Set together. |
+| `--seed` (alias `--tile-invariant-rendering`) | Roll the same dice and read pre clip building shapes, so a building across a join looks identical on both sides. |
+| `--elevation-min / --elevation-max` | The global height lock in metres, so the same real height maps to the same Y everywhere. Needs `--terrain`. |
+| `--no-buildings` (alias `--no-structures`) | Skip buildings and building like clutter; keep roads, rail, water, land cover, terrain. |
+| `--road-detail max\|clean\|compact` | Road simplification. Meld auto picks compact below scale 0.7, clean at or above. |
+| `--scale` | Blocks per real metre (default 1.0). Below 1.0 downscales and triggers flat bridges and road simplification. |
+| `--overpass-url` | Replace the public map data mirrors (default starts with api.arnismc.com) with one or more custom endpoints, in priority order. See [Map data: offline and self-hosted](#map-data-offline-and-self-hosted). |
+| `--file`, `--save-json-file` | Read OSM from a saved JSON file, or save the fetched OSM to one. Pair `--download-only --save-json-file` then a later `--file` for a no Overpass replay. |
+| `--offline` (alias `--elevation-cache-only`) | Serve elevation only from cache; a miss errors instead of downloading. Pair with a pre warmed pack. |
+| `--download-only`, `--download-terrain-only` | Fetch the area's map data or terrain once and exit, so Meld can share it to every cell. |
+| `--terrain`, `--roof`, `--interior`, `--land-cover` | Real elevation, roofs, building interiors, and surface blocks from land cover. |
+| `--no-3d` | Emitted when 3D models are off (the default). Turn the 3D toggle on to fetch landmark models. |
+| `--fillground`, `--disable-height-limit` | Fill solid ground down to bedrock; extend the build height limit. |
+
+Meld also passes the chosen elevation detail to each cell so the whole world generates at the zoom your pack downloaded (see [Elevation](./elevation.mdx)), and a stream to disk signal for very large cells (see [Parallel generation](./parallel-generation.mdx)).
+
+---
+
+[Back to the docs hub](./index.md)

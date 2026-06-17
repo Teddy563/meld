@@ -1,0 +1,77 @@
+---
+title: Parallel generation
+slug: parallel-generation
+description: How Meld generates in parallel. Cells and the worker pool, the CPU budget and staggered starts, stream to disk for huge cells, auto retry, spiral build order, and why small cells can finish faster.
+---
+
+# Parallel generation
+
+This is how Meld goes big and stays fast. The area is split into cells, many cells build at the same time, and Meld manages the CPU, memory, and disk so a long country build runs smoothly instead of choking your machine.
+
+## Cells and the worker pool
+
+**Why.** One Arnis run is single threaded over a fixed box, so a big area is slow. Building many cells at once gives a several times speedup.
+
+**The mechanism.** Meld splits the selection into region aligned cells, then a bounded worker pool runs up to N Arnis processes at once, one per cell. The pool feeds jobs as workers free up and tracks each worker's current cell, percent, and message. Every cell is fed the same origin, seed, and height lock, so the tiles line up (the full reason is in [How it works](./how-it-works.mdx)).
+
+**How to use it.** Hit Plan to tile the selection, then Generate and merge. The Workers slider in Settings sets N (1 to 64, default 4); the UI warns above 8 because that is usually past the safe point. Changing the worker count mid run resizes the pool live. The left rail Workers card shows a row per worker so you can spot a slow or stuck cell at a glance.
+
+## CPU budget and threads
+
+**Why.** Generation is bound by the save phase, which is disk and memory, not raw CPU. If you let every worker grab all the cores, they fight each other and the machine sawtooths. But if a high worker count starves each cell down to a single thread, each cell gets slow.
+
+**The mechanism.** Meld divides a CPU budget across the workers and hands each one a share of threads, with a floor so no cell drops below a usable thread count. The budget is a percentage of your cores, so you can leave room for the rest of your system.
+
+**How to use it.** In Settings, set CPU budget percent (default 90) and the minimum threads per worker (default 2). Most people never touch these; Recommend sets sane values for your PC.
+
+## Staggered starts and adaptive pacing
+
+**Why.** If all the workers launch in lockstep, they all hit the same heavy phase (download, then build, then the big save burst) at the same moment, which spikes CPU and can run you out of memory mid save.
+
+**The mechanism.** Meld offsets each worker's first job by a small delay so they fall out of step and spread their heavy phases over time. The delay can be a fixed number of seconds, or adaptive, where Meld watches how long a cell actually takes and spaces starts to match.
+
+**How to use it.** In Settings, toggle Stagger starts and Adaptive pacing, and set the stagger step in seconds. The defaults are fine for most machines.
+
+## Stream to disk for huge cells
+
+**Why.** A very large cell (8 by 8 or 16 by 16 regions) held fully in memory would run you out of RAM before it finishes.
+
+**The mechanism.** For big cells, Meld tells Arnis to write finished regions out to disk as it goes instead of keeping the whole world in memory, so a huge cell finishes inside a bounded memory footprint. It is delivered as an environment signal, so an older Arnis binary that does not know about it just ignores it.
+
+**How to use it.** It turns on automatically for cell size 8 and up. You can force it on smaller cells with the Stream to disk toggle in Settings.
+
+## Auto retry
+
+**Why.** An unattended overnight build should survive a network blip or a brief rate limit without you having to babysit it, but it should not waste time retrying a failure that will just fail again the same way.
+
+**The mechanism.** Meld retries the transient failures (a network blip, a rate limit, a memory spike) up to a couple of times, and never retries the deterministic ones (a coordinate drift, a collision, a full disk, a crash), because those need a real fix. A failed cell records a short reason so you know what happened.
+
+**How to use it.** It is automatic. A red cell tells you the cause when you hover it (out of memory, disk full, rate limit, network timeout, or a crash). Resume unfinished re-queues every cell that is not merged yet, which is the crash and overnight recovery path.
+
+## Spiral build order
+
+**Why.** The center of your selection is usually the part you care about most, so it should land first.
+
+**The mechanism.** Meld builds cells from the center outward in a spiral, so the dense core of the world is ready before the edges, and you can open and walk the middle while the rim is still filling in.
+
+**How to use it.** It is automatic. You will see the cells on the map fill in from the middle out.
+
+## Why small cells can finish faster
+
+**Why.** It seems like a few big cells should beat many small ones, but the save phase (disk plus memory) is the bottleneck, and big cells make each save a heavier burst.
+
+**The mechanism.** A small cell builds and saves quickly, so the pool keeps every worker busy with a steady stream of light saves. A big cell holds more in memory and dumps a huge save burst at the end, which can stall the disk and starve the other workers, so a few big cells can actually finish later than more small ones. Cell sizes are 1, 2, 4, 8, and 16 regions; 4 is the default and the sweet spot for most builds, with 8 and 16 marked as testing for very large jobs where stream to disk carries them.
+
+**How to use it.** Set Cell size in Settings. Start at 4. Only reach for 8 or 16 on very large areas, and let Recommend weigh it against your disk and RAM.
+
+## Recommend settings
+
+**Why.** The right cell size and worker count depend on your CPU, your RAM, and how fast your save drive is, which is hard to guess.
+
+**The mechanism.** The Recommend button probes your machine (cores, memory, and save disk write speed) and suggests a cell size, worker count, and lighting setting, bounded by whichever resource is tightest, so it will not pick numbers that starve the disk bound save phase.
+
+**How to use it.** Click Recommend in the left rail, review the This PC and Recommended values, then Apply or keep your own.
+
+---
+
+[Back to the docs hub](./index.md)

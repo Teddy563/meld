@@ -12,7 +12,10 @@ src/coords.py and is matched by the Arnis fork's transform_point fix
 
 from __future__ import annotations
 
+import json
+import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -30,42 +33,240 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-from flask import Flask, request, jsonify, send_from_directory, abort
+from flask import Flask, request, jsonify, send_from_directory, abort, Response
 
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE_DIR))
 
 from src.project import Project, default_settings
-from src.grid import cells_for_bbox
+from src.grid import cells_for_bbox, cells_for_polygons, _point_in_poly
 from src.coords import expand_bbox_for_seam, cell_bbox, snap_to_region_grid
-from src.arnis_cmd import build_arnis_cmd, run_arnis, find_world_dir, clean_output_dir, parse_progress
-from src.prefetch import run_prefetch, preview_union
+from src.arnis_cmd import (build_arnis_cmd, run_arnis, find_world_dir, clean_output_dir,
+                           parse_progress, effective_elev_zoom)
+from src.prefetch import (run_prefetch, preview_clumps, run_terrain_prefetch,
+                          purge_small_tiles)
+from src import datapack as dp
 from src.merge import (merge_cell_into_master, strip_buffer_regions,
                         MeldCoordinateDriftError, MeldCollisionError)
 from src.survey import survey_elevation
 from src.workers import WorkerPool
 
+# psutil powers the live CPU/RAM gauges. Optional: Flask must boot without it (disk still
+# works via shutil, RAM via the ctypes fallback). Prime cpu_percent so the first poll isn't 0.
+try:
+    import psutil
+    psutil.cpu_percent(interval=None)
+except Exception:
+    psutil = None
+
 app = Flask(__name__)   # no static catch-all — assets served via /assets/<f> below
 
-PROJECT = Project(BASE_DIR / "projects" / "default")
+# ── projects ─────────────────────────────────────────────────────────────────
+# Each project is a self-contained folder under projects/<slug>/ (project.json, grid.json,
+# cells/, logs/, osm_cache/, cell_health.json). One project = one world's workspace, so you
+# can keep a small "test" project and a big "country" project side by side and switch between
+# them without losing either's settings/origin/grid/suspects.
+PROJECTS_ROOT = BASE_DIR / "projects"
+_ACTIVE_FILE = PROJECTS_ROOT / ".active"
+
+
+def _setup_shared_cache() -> None:
+    """Point ALL Arnis caches (OSM + terrain + land-cover) at one shared Meld-local folder so
+    they're visible and reused by every project/world, instead of hidden in AppData. Sets
+    ARNIS_CACHE_ROOT process-wide (every child arnis inherits it), and one-time MOVES any
+    existing AppData caches into the new root (same-drive only -> instant rename; cross-drive is
+    skipped so we never silently copy tens of GB)."""
+    from src.prefetch import meld_cache_root
+    root = meld_cache_root()
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        os.environ["ARNIS_CACHE_ROOT"] = str(root)
+    except Exception as ex:
+        log(f"[Cache] could not set up shared cache at {root}: {ex}")
+        return
+
+    # One-time migration only: a sentinel makes this idempotent so a re-import / second process
+    # can never re-run the move (and so it never fights a running generation after the first time).
+    sentinel = root / ".cache_migrated"
+    if sentinel.exists():
+        return
+    appdata = os.environ.get("LOCALAPPDATA")
+    if not appdata:
+        try: sentinel.write_text("")
+        except Exception: pass
+        return
+    same_drive = os.path.splitdrive(os.path.abspath(appdata))[0].lower() == \
+        os.path.splitdrive(os.path.abspath(root))[0].lower()
+    # (legacy AppData name) -> (new name under the Meld cache root)
+    moves = [("arnis-tile-cache", "arnis-tile-cache"),
+             ("arnis-landcover-cache", "arnis-landcover-cache"),
+             ("meld-osm-cache", "osm")]
+    for old_name, new_name in moves:
+        src = Path(appdata) / old_name
+        dst = root / new_name
+        if not src.exists() or dst.exists():
+            continue
+        if not same_drive:
+            log(f"[Cache] {old_name} is on a different drive than {root}; leaving it "
+                f"(set MELD_CACHE_DIR on the same drive to migrate, or it re-downloads).")
+            continue
+        try:
+            shutil.move(str(src), str(dst))   # same drive => atomic rename, instant even for 500k files
+            log(f"[Cache] moved {old_name} -> {dst}")
+        except Exception as ex:
+            log(f"[Cache] could not move {old_name} (left in place, will re-download): {ex}")
+    try:
+        sentinel.write_text("")   # done — never migrate again
+    except Exception:
+        pass
+
+
+def _slugify(name: str) -> str:
+    s = re.sub(r"[^A-Za-z0-9._-]+", "-", (name or "").strip()).strip("-._")
+    return (s or "world").lower()[:64]
+
+
+def _read_active_slug() -> str:
+    try:
+        s = _ACTIVE_FILE.read_text(encoding="utf-8").strip()
+        if s and (PROJECTS_ROOT / s / "project.json").exists():
+            return s
+    except Exception:
+        pass
+    return "default"
+
+
+def _write_active_slug(slug: str) -> None:
+    try:
+        PROJECTS_ROOT.mkdir(parents=True, exist_ok=True)
+        _ACTIVE_FILE.write_text(slug, encoding="utf-8")
+    except Exception:
+        pass
+
+
+ACTIVE_SLUG = _read_active_slug()
+PROJECT = Project(PROJECTS_ROOT / ACTIVE_SLUG)
 POOL = WorkerPool(max_workers=PROJECT.settings().get("max_workers", 4))
+POOL.stagger_seconds = (float(PROJECT.settings().get("cpu_stagger_seconds", 2) or 0)
+                        if PROJECT.settings().get("cpu_stagger_enabled", True) else 0.0)
+POOL.stagger_adaptive = bool(PROJECT.settings().get("cpu_stagger_adaptive", True))
 
 _LOG: list[str] = []
 
 # Generation run stats (for the live timer + final report).
 _RUN_LOCK = threading.Lock()
+# phase: idle | prefetch (OSM/terrain warm-up, counts toward elapsed) | generating
 _RUN = {"started": None, "ended": None, "total": 0, "done": 0, "failed": 0,
-        "est_regions": 0, "est_mb": 0, "actual_mb": None}
+        "est_regions": 0, "est_mb": 0, "actual_mb": None, "phase": "idle"}
 MB_PER_REGION = 4   # rough estimate for the size report
 
 # OSM prefetch state (for the live cyan-chunk overlay + status). Populated while a
 # selection's OSM is being downloaded once and shared to all cells (src/prefetch.py).
 _PREFETCH_LOCK = threading.Lock()
-_PREFETCH = {"active": False, "done": False, "chunks": [], "started": None, "note": ""}
+_PREFETCH = {"active": False, "done": False, "chunks": [], "started": None, "note": "",
+             # phase: idle | osm | terrain | generating. terrain = the elevation-tile warm-up.
+             "phase": "idle",
+             "terrain": {"done": 0, "total": 0, "ok": 0, "failed": 0}}
+
+# Region data-pack build progress (bulk elevation download). Separate from _PREFETCH so a pack
+# build never collides with a generation's per-run prefetch overlay.
+_DATAPACK_LOCK = threading.Lock()
+_DATAPACK = {"active": False, "done": False, "note": "", "total": 0, "done_n": 0,
+             "ok": 0, "absent": 0, "fail": 0, "region": None}
+_DATAPACK_STOP = {"flag": False}
 
 
 def _osm_cache_dir() -> Path:
-    return PROJECT.root / "osm_cache"
+    """GLOBAL OSM prefetch cache (shared across all projects/worlds) so a new world over an
+    already-fetched area reuses the verified OSM instead of re-downloading. Legacy per-project
+    files at projects/<slug>/osm_cache stay on disk but are no longer written to; they're
+    harmless (content-keyed names) and a re-fetch repopulates the global cache."""
+    from src.prefetch import meld_osm_cache_dir
+    return meld_osm_cache_dir()
+
+
+# Per-cell health: after a cell merges, its log is scanned for markers that predict a
+# visible artifact (truncated terrain-tile retries -> possible flat seam; ESA 404 ->
+# missing land cover). Suspect cells are ringed in the UI and can be redone in one click.
+_CELL_HEALTH_LOCK = threading.Lock()
+_CELL_HEALTH: dict[str, dict] = {}
+
+
+def _cell_health_path() -> Path:
+    return PROJECT.root / "cell_health.json"
+
+
+def _load_cell_health() -> None:
+    global _CELL_HEALTH
+    try:
+        _CELL_HEALTH = json.loads(_cell_health_path().read_text(encoding="utf-8"))
+    except Exception:
+        _CELL_HEALTH = {}
+
+
+def _save_cell_health() -> None:
+    try:
+        _cell_health_path().write_text(json.dumps(_CELL_HEALTH), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _scan_cell_health(cell_key: str, out: str) -> None:
+    """Scan a just-merged cell's log for artifact-predicting markers and record suspects."""
+    tag = (cell_key or "").replace(",", "_")
+    log_path = Path(out).parent.parent / "logs" / f"cell-{tag}.log"
+    reasons = []
+    try:
+        txt = log_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        txt = ""
+    if "is too small" in txt and "Re-downloading" in txt:
+        reasons.append("terrain-tile-retry")     # truncated AWS elevation tile -> possible flat seam
+    if "Failed to read ESA tile" in txt:          # the actual ESA WorldCover failure line (not the
+        reasons.append("landcover-404")           # always-printed "Fetching ... ESA" banner)
+    with _CELL_HEALTH_LOCK:
+        if reasons:
+            _CELL_HEALTH[cell_key] = {"suspect": True, "reasons": reasons}
+        else:
+            _CELL_HEALTH.pop(cell_key, None)
+        _save_cell_health()
+
+
+# Why a cell FAILED (distinct from the suspect markers above, which flag merged-but-risky cells).
+# Surfaced in /api/status so the UI tooltip can say WHY a red cell failed instead of nothing.
+_CELL_FAIL: dict = {}
+_FAIL_MARKERS = [
+    ("out of memory", "out of memory"), ("memoryerror", "out of memory"),
+    ("no space left", "disk full"), ("os error 112", "disk full"), ("not enough space", "disk full"),
+    ("rate limit", "Overpass rate limit"), ("too many requests", "Overpass rate limit"),
+    ("timed out", "network timeout"), ("timeout", "network timeout"),
+    ("panicked", "Arnis crashed (panic)"), ("failed to fetch", "data fetch failed"),
+    ("overpass", "Overpass error"), ("connection", "network error"),
+]
+
+
+def _record_fail(cell_key: str, reason: str, out: str | None = None) -> None:
+    """Store a concise failure reason. If `out` is given, scan the cell log tail for a more
+    specific cause (OOM / disk full / rate limit / panic / network) before the generic fallback."""
+    label = (reason or "failed").strip()
+    if out is not None:
+        tag = (cell_key or "").replace(",", "_")
+        try:
+            txt = (Path(out).parent.parent / "logs" / f"cell-{tag}.log").read_text(
+                encoding="utf-8", errors="replace")[-6000:].lower()
+            for marker, lab in _FAIL_MARKERS:
+                if marker in txt:
+                    label = lab
+                    break
+        except Exception:
+            pass
+    with _CELL_HEALTH_LOCK:
+        _CELL_FAIL[cell_key] = label[:120]
+
+
+def _clear_fail(cell_key: str) -> None:
+    with _CELL_HEALTH_LOCK:
+        _CELL_FAIL.pop(cell_key, None)
 
 
 def _prefetch_on_chunk(chunk: dict) -> None:
@@ -129,12 +330,377 @@ def _dir_size_mb(p: Path) -> float:
         return 0.0
 
 
+def _cache_targets() -> dict:
+    from src.prefetch import meld_cache_root
+    root = meld_cache_root()
+    return {"_root": root, "osm": root / "osm",
+            "terrain": root / "arnis-tile-cache", "landcover": root / "arnis-landcover-cache"}
+
+
+def _cache_info() -> dict:
+    """Location + per-type size/file-count of the shared Meld cache. Computed on demand (the
+    terrain dir can be 500k files, ~1-2s), NOT in the status poll."""
+    t = _cache_targets()
+    def info(p: Path) -> dict:
+        try:
+            files = sum(1 for f in p.rglob("*") if f.is_file()) if p.exists() else 0
+        except Exception:
+            files = 0
+        return {"mb": _dir_size_mb(p), "files": files}
+    return {"root": str(t["_root"]),
+            "osm": info(t["osm"]), "terrain": info(t["terrain"]), "landcover": info(t["landcover"])}
+
+
+@app.route("/api/cache", methods=["GET"])
+def api_cache():
+    """Where the shared cache lives + how big each part is (OSM / terrain / land-cover)."""
+    return jsonify({"ok": True, **_cache_info()})
+
+
+@app.route("/api/cache/clear", methods=["POST"])
+def api_cache_clear():
+    """Delete a cache type (osm | terrain | landcover | all). Refused while a generation runs
+    (a child arnis may be reading it). Tiles/OSM just re-download next time they're needed."""
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before clearing the cache"}), 409
+    what = (request.json or {}).get("what", "")
+    t = _cache_targets()
+    sel = [t["osm"], t["terrain"], t["landcover"]] if what == "all" else \
+        ([t[what]] if what in ("osm", "terrain", "landcover") else None)
+    if sel is None:
+        return jsonify({"ok": False, "error": "what must be osm | terrain | landcover | all"}), 400
+    freed = 0.0
+    for p in sel:
+        if p.exists():
+            freed += _dir_size_mb(p)
+            shutil.rmtree(p, ignore_errors=True)
+    log(f"[Cache] cleared {what}: freed ~{round(freed, 1)} MB")
+    return jsonify({"ok": True, "freed_mb": round(freed, 1)})
+
+
+# ── region data packs: bulk elevation download + coverage + preview + import ──────────────
+def _datapack_selection():
+    """Resolve the request's selection -> (bbox, rings, name). bbox derived from rings if absent."""
+    d = request.json or {}
+    bbox = d.get("bbox")
+    rings = d.get("polygons") or ([d.get("polygon")] if d.get("polygon") else None)
+    if not bbox and rings:
+        bbox = dp.rings_bbox(rings)
+    return bbox, rings, (d.get("name") or "").strip()
+
+
+def _pack_zoom(bbox: dict | None = None) -> int:
+    """The terrarium zoom the pack + preview + Arnis all use for the current project (auto = matched
+    to scale). Uses the selection's centre latitude when available, else the project origin, else 45."""
+    settings = PROJECT.settings()
+    lat = 45.0
+    try:
+        if bbox:
+            lat = (float(bbox["south"]) + float(bbox["north"])) / 2.0
+        else:
+            o = PROJECT.origin() or {}
+            if o.get("lat") is not None:
+                lat = float(o["lat"])
+    except (TypeError, ValueError, KeyError):
+        lat = 45.0
+    return effective_elev_zoom(settings, lat)
+
+
+@app.route("/api/datapack/coverage", methods=["POST"])
+def api_datapack_coverage():
+    """How much of the selection's elevation is already cached (covered% + missing tiles)."""
+    bbox, rings, _ = _datapack_selection()
+    if not bbox:
+        return jsonify({"ok": False, "error": "bbox or polygon required"}), 400
+    pz = _pack_zoom(bbox)
+    cov = dp.coverage_elevation(bbox, zoom=pz)
+    log(f"[Datapack] coverage: {cov['pct']}% ({cov['cached']}/{cov['total']} z{pz} elevation tiles, "
+        f"{len(cov['missing'])} missing)")
+    return jsonify({"ok": True, "elevation": cov, "bbox": bbox, "zoom": pz})
+
+
+@app.route("/api/datapack/build", methods=["POST"])
+def api_datapack_build():
+    """Bulk-download the selection's missing z15 elevation tiles into the global cache."""
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before building a data pack"}), 409
+    with _DATAPACK_LOCK:
+        if _DATAPACK["active"]:
+            return jsonify({"ok": False, "error": "a data pack build is already running"}), 409
+    bbox, rings, name = _datapack_selection()
+    if not bbox:
+        return jsonify({"ok": False, "error": "bbox or polygon required"}), 400
+    # force=true re-downloads EVERY tile in the bbox (not just the missing ones) to replace stale /
+    # flat / corrupt tiles that decode fine so coverage counts them as present. Use it on a small
+    # bbox (e.g. the current map view) over a bad area, not a whole country.
+    force = bool((request.json or {}).get("force"))
+    pz = _pack_zoom(bbox)
+    if force:
+        missing = dp.tiles_for_bbox(bbox, zoom=pz)
+    else:
+        cov = dp.coverage_elevation(bbox, zoom=pz)
+        missing = [(t["x"], t["y"]) for t in cov["missing"]]
+    rid = dp.region_id(bbox, name)
+    _DATAPACK_STOP["flag"] = False
+    verb = "re-fetching" if force else "downloading"
+    with _DATAPACK_LOCK:
+        _DATAPACK.update(active=True, done=False, note=f"{verb} {len(missing)} z{pz} elevation tiles…",
+                         total=len(missing), done_n=0, ok=0, absent=0, fail=0, region=name or rid)
+
+    _logged = [0]
+
+    def _prog(done_n, total, ok, skip, absent, fail):
+        with _DATAPACK_LOCK:
+            _DATAPACK.update(done_n=done_n, total=total, ok=ok, absent=absent, fail=fail)
+        # Log to the web LOG card on ~5% steps (and at the end) so progress is visible there too.
+        if total and (done_n - _logged[0] >= max(2000, total // 20) or done_n >= total):
+            _logged[0] = done_n
+            log(f"[Datapack] {done_n}/{total} tiles · {ok} new, {absent} off-grid, {fail} failed")
+
+    def _worker():
+        try:
+            conc = int(PROJECT.settings().get("datapack_tile_concurrency", 16) or 16)
+            log(f"[Datapack] {verb} {len(missing)} z{pz} elevation tiles ({conc} at a time)…")
+            res = dp.download_tiles(missing, _prog, zoom=pz, concurrency=conc, force=force,
+                                    should_stop=lambda: _DATAPACK_STOP["flag"])
+            cov2 = dp.coverage_elevation(bbox, zoom=pz)
+            dp.write_manifest(rid, name=name, bbox=bbox, cov=cov2, polygons=rings)
+            dp.clear_preview_cache()   # drop rendered overviews so re-fetched tiles show fresh
+            with _DATAPACK_LOCK:
+                _DATAPACK.update(active=False, done=True,
+                                 note=f"done: {cov2['cached']}/{cov2['total']} tiles cached ({cov2['pct']}%)")
+            log(f"[Datapack] {name or rid}: {res['ok']} new, {res['skip']} cached, "
+                f"{res['absent']} off-grid, {res['fail']} failed -> {cov2['pct']}% covered")
+        except Exception as ex:  # noqa: BLE001
+            with _DATAPACK_LOCK:
+                _DATAPACK.update(active=False, done=True, note=f"error: {ex}")
+            log(f"[Datapack] error: {ex}")
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return jsonify({"ok": True, "region_id": rid, "missing": len(missing),
+                    "total": (len(missing) if force else cov["total"])})
+
+
+@app.route("/api/datapack/tile-info")
+def api_datapack_tile_info():
+    """One tile's facts for the click popup: cached?, size, decoded height min/max/mean, flat/no-data,
+    lat/lon bbox. Lets you click a dark band and see whether it's a real hole."""
+    try:
+        z = int(request.args.get("z", _pack_zoom()))
+        x = int(request.args.get("x")); y = int(request.args.get("y"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "z, x, y required"}), 400
+    return jsonify({"ok": True, **dp.tile_info(x, y, z)})
+
+
+@app.route("/api/datapack/repair", methods=["POST"])
+def api_datapack_repair():
+    """Scan the selection's cached tiles and overzoom-fix any all-black no-data holes (the terrarium
+    z14/z15 gaps that show as dark bands + flat in-game dips). Doesn't re-download good tiles."""
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before repairing tiles"}), 409
+    with _DATAPACK_LOCK:
+        if _DATAPACK["active"]:
+            return jsonify({"ok": False, "error": "a data pack job is already running"}), 409
+    # global=true: scan EVERY cached z15 tile (one scandir) and fix every no-data hole anywhere in the
+    # cache in a single pass — no selection, no clicking holes. Otherwise repair the current selection.
+    is_global = bool((request.json or {}).get("global"))
+    if is_global:
+        pz = _pack_zoom()
+        tiles = sorted(dp._cached_xy(zoom=pz))
+        name = "repair-all"
+        if not tiles:
+            return jsonify({"ok": False, "error": "no cached tiles to repair"}), 400
+    else:
+        bbox, rings, name = _datapack_selection()
+        if not bbox:
+            return jsonify({"ok": False, "error": "bbox or polygon required"}), 400
+        pz = _pack_zoom(bbox)
+        tiles = dp.tiles_for_bbox(bbox, zoom=pz)
+    _DATAPACK_STOP["flag"] = False
+    scope = "whole cache" if is_global else "selection"
+    with _DATAPACK_LOCK:
+        _DATAPACK.update(active=True, done=False, note=f"scanning {len(tiles)} tiles ({scope}) for no-data holes…",
+                         total=len(tiles), done_n=0, ok=0, absent=0, fail=0, region=name or "repair")
+    _logged = [0]
+
+    def _prog(done_n, total, fixed, unfixable):
+        with _DATAPACK_LOCK:
+            _DATAPACK.update(done_n=done_n, total=total, ok=fixed, fail=unfixable)
+        if total and (done_n - _logged[0] >= max(2000, total // 20) or done_n >= total):
+            _logged[0] = done_n
+            log(f"[Datapack] repair {done_n}/{total} · {fixed} holes fixed, {unfixable} unfixable")
+
+    def _worker():
+        try:
+            conc = int(PROJECT.settings().get("datapack_tile_concurrency", 16) or 16)
+            log(f"[Datapack] repairing no-data holes across {len(tiles)} z{pz} tiles ({scope}, {conc} at a time)…")
+            res = dp.repair_nodata(tiles, _prog, zoom=pz, concurrency=conc,
+                                   should_stop=lambda: _DATAPACK_STOP["flag"])
+            dp.clear_preview_cache()   # re-render the fixed tiles
+            with _DATAPACK_LOCK:
+                _DATAPACK.update(active=False, done=True,
+                                 note=f"done: {res['fixed']} holes fixed, {res['unfixable']} unfixable")
+            log(f"[Datapack] repair done: {res['fixed']} holes fixed, {res['unfixable']} unfixable, "
+                f"{res['checked']} checked")
+        except Exception as ex:  # noqa: BLE001
+            with _DATAPACK_LOCK:
+                _DATAPACK.update(active=False, done=True, note=f"error: {ex}")
+            log(f"[Datapack] repair error: {ex}")
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return jsonify({"ok": True, "tiles": len(tiles)})
+
+
+@app.route("/api/datapack/status")
+def api_datapack_status():
+    with _DATAPACK_LOCK:
+        return jsonify({"ok": True, **_DATAPACK})
+
+
+@app.route("/api/datapack/stop", methods=["POST"])
+def api_datapack_stop():
+    _DATAPACK_STOP["flag"] = True
+    return jsonify({"ok": True})
+
+
+@app.route("/api/datapack/list")
+def api_datapack_list():
+    """Every downloaded pack + its live elevation coverage% (reused across all projects)."""
+    try:
+        return jsonify({"ok": True, "packs": dp.list_packs()})
+    except Exception as ex:  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(ex), "packs": []})
+
+
+@app.route("/api/datapack/import", methods=["POST"])
+def api_datapack_import():
+    """Drop-in: import an external folder of pack files (tiles + osm json) into the global cache."""
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before importing"}), 409
+    folder = ((request.json or {}).get("folder") or "").strip()
+    if not folder:
+        return jsonify({"ok": False, "error": "folder required"}), 400
+    res = dp.import_pack_folder(folder, log=log)
+    return jsonify(res), (200 if res.get("ok") else 400)
+
+
+@app.route("/api/terrain-tile/<int:z>/<int:x>/<int:y>.png")
+def api_terrain_tile(z, x, y):
+    """Decoded height preview tile (grayscale|hillshade). Native z15 + downsampled overviews z12-14
+    so it shows when zoomed out. Normalized by the GLOBAL elevation range (the project lock, or the
+    ?lo=&hi= override) so a flat tile reads as its true gray instead of solid black. Missing -> red."""
+    if z < dp.PREVIEW_MIN_ZOOM or z > dp.PACK_ZOOM:
+        return ("", 204)
+
+    def _f(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    lo = _f(request.args.get("lo"))
+    hi = _f(request.args.get("hi"))
+    if lo is None or hi is None:                      # default to the project's locked elevation range
+        ev = PROJECT.elevation() or {}
+        if ev.get("min_m") is not None and ev.get("max_m") is not None:
+            lo = float(ev["min_m"]) if lo is None else lo
+            hi = float(ev["max_m"]) if hi is None else hi
+    # Always normalize against a SINGLE global range, never per-tile — otherwise each tile uses its
+    # own min/max and adjacent tiles render at different brightness, which looks like stripes / a
+    # grid / black flat tiles even though the underlying data is continuous. Fall back to a wide
+    # fixed range when there's no elevation lock yet.
+    if lo is None:
+        lo = -100.0
+    if hi is None:
+        hi = 3000.0
+    try:
+        png = dp.render_tile(z, x, y, lo=lo, hi=hi, mode=request.args.get("mode", "grayscale"),
+                             pack_zoom=_pack_zoom())
+    except Exception:
+        return ("", 204)
+    return Response(png, mimetype="image/png")
+
+
+@app.route("/api/datapack/zoom")
+def api_datapack_zoom():
+    """The effective elevation zoom for the current project (auto = scale-matched) + the recommended
+    one, so the UI can label the dropdown and set the preview layer's maxNativeZoom."""
+    from src.coords import recommended_elev_zoom
+    s = PROJECT.settings()
+    o = PROJECT.origin() or {}
+    lat = float(o["lat"]) if o.get("lat") is not None else 45.0
+    scale = float(s.get("scale", 1.0) or 1.0)
+    return jsonify({"ok": True, "effective": effective_elev_zoom(s, lat),
+                    "recommended": recommended_elev_zoom(scale, lat),
+                    "setting": s.get("elevation_zoom", "auto"), "scale": scale})
+
+
+# ── world metadata sidecar ────────────────────────────────────────────────────
+# Saved INTO the world folder so the exact origin, elevation lock + seed, and the
+# generation settings travel with the world. Load it later (api/world/load-meta) to
+# regenerate or CONTINUE the same world with identical coordinates and terrain.
+WORLD_META_NAME = "meld-world.json"
+
+# Settings that define how the world LOOKS/tiles (reproducible). Host/run-specific
+# settings (where it saves, how many workers, prefetch/timeout) are intentionally
+# excluded so loading a world's meta never hijacks the current machine's setup.
+_META_SKIP_SETTINGS = {
+    "master_world_dir", "max_workers", "prefetch_enabled", "prefetch_margin_m",
+    "timeout", "overpass_url", "prune_cell_after_merge",
+}
+
+
+def _world_meta_dict() -> dict:
+    data = PROJECT.load()
+    return {
+        "meld_version": "1.0.0",
+        "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "name": data.get("name", "Meld World"),
+        "origin": data.get("origin", {}),                  # lat, lon, locked
+        "elevation": data.get("elevation", {}),            # min_m, max_m, seed, locked
+        "settings": PROJECT.settings(),                    # scale, cell size, ground level, etc.
+        "merged_cells": sorted(k for k, v in PROJECT.load_grid().items() if v == "merged"),
+    }
+
+
+def write_world_meta(world_path=None) -> Path | None:
+    """Write meld-world.json into the saved world folder (origin + elevation lock +
+    seed + settings). Best-effort: never raises into the merge/save path."""
+    try:
+        wp = Path(world_path) if world_path else master_world_path(create=True)
+        wp.mkdir(parents=True, exist_ok=True)
+        out = wp / WORLD_META_NAME
+        out.write_text(json.dumps(_world_meta_dict(), indent=2), encoding="utf-8")
+        return out
+    except Exception:
+        return None
+
+
+def read_world_meta(path):
+    """Read a meld-world.json given either the world folder or the json file path."""
+    try:
+        p = Path(path)
+        if p.is_dir():
+            p = p / WORLD_META_NAME
+        if not p.exists():
+            return None
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
 def log(msg: str) -> None:
     line = str(msg)
     _LOG.append(line)
     if len(_LOG) > 2000:
         del _LOG[:1000]
     print(line, flush=True)
+
+
+# Now that log() exists, point all Arnis caches at the shared Meld-local folder + migrate any
+# legacy AppData caches into it (runs once at startup, before any generation spawns a child).
+_setup_shared_cache()
 
 
 # Arnis prints hundreds of lines per cell (one per tile, per element). We can't
@@ -164,18 +730,42 @@ def _arnis_should_surface(text: str) -> bool:
 # ── arnis binary resolution ────────────────────────────────────────────────
 
 def resolve_arnis_exe() -> Path | None:
-    candidates = [
-        BASE_DIR / "arnis.exe",
-        BASE_DIR / "arnis",
-        BASE_DIR.parent / "arnis.exe",                       # the parent Meld project
-        BASE_DIR.parent / "arnis",
-        BASE_DIR.parent / "arnis-source" / "target" / "release" / "arnis.exe",
-        BASE_DIR.parent / "arnis-source" / "target" / "release" / "arnis",
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
+    """Find the Arnis binary next to Meld. Platform-aware: on Linux/macOS we look for `arnis`
+    (no extension) and NEVER pick up a stray Windows `arnis.exe`, which would die with
+    '[Errno 8] Exec format error'. On Windows we prefer `arnis.exe` then a bare `arnis`."""
+    roots = [BASE_DIR, BASE_DIR.parent,
+             BASE_DIR.parent / "arnis-source" / "target" / "release"]
+    if sys.platform == "win32":
+        names = ["arnis.exe", "arnis"]
+    else:
+        names = ["arnis"]                  # a .exe on Linux/macOS is the wrong arch — skip it
+    for root in roots:
+        for name in names:
+            c = root / name
+            if c.exists() and c.is_file():
+                return c
     return None
+
+
+_ARNIS_HELP_CACHE: dict = {}
+
+
+def _arnis_supports(flag: str) -> bool:
+    """Whether the arnis binary advertises `flag` in --help (cached per exe path). Lets Meld
+    pass new flags like --stream-to-disk only when the deployed binary actually has them, so an
+    older binary never dies on an unknown argument."""
+    exe = resolve_arnis_exe()
+    if not exe:
+        return False
+    key = str(exe)
+    if key not in _ARNIS_HELP_CACHE:
+        try:
+            out = subprocess.run([str(exe), "--help"], capture_output=True, text=True,
+                                 timeout=20, encoding="utf-8", errors="replace")
+            _ARNIS_HELP_CACHE[key] = (out.stdout or "") + (out.stderr or "")
+        except Exception:
+            _ARNIS_HELP_CACHE[key] = ""
+    return flag in _ARNIS_HELP_CACHE[key]
 
 
 # ── worker runner: generate one cell, then merge it ────────────────────────
@@ -191,7 +781,10 @@ def _runner(job: dict, state: dict) -> bool:
 
     exe = resolve_arnis_exe()
     if not exe:
-        state.update(message="Arnis binary not found — build arnis-source (cargo build --release).")
+        want = "arnis.exe" if sys.platform == "win32" else "arnis"
+        build = "cargo build --release" + ("" if sys.platform == "win32" else " --no-default-features")
+        state.update(message=f"Arnis binary not found. Put '{want}' next to server.py "
+                             f"(or in the parent folder), or build it: {build}.")
         log(state["message"])
         return False
 
@@ -207,9 +800,11 @@ def _runner(job: dict, state: dict) -> bool:
     # region-aligned cells that the canonical merge keeps cleanly. Falls back to the
     # passed bbox only for a bare bbox job with no cell_key.
     base_bbox = job["bbox"]
+    cell_size = 1   # regions per axis; >=2 makes Arnis take its in-process tile-parallel path
     parts = cell_key.split(",") if cell_key else []
     if len(parts) == 3 and origin.get("lat") is not None:
         rx, rz, size = int(parts[0]), int(parts[1]), int(parts[2])
+        cell_size = size
         base_bbox = cell_bbox(rx, rz, size, origin["lat"], origin["lon"], scale_f)
     arnis_bbox = expand_bbox_for_seam(base_bbox, seam, origin, scale_f)
 
@@ -254,7 +849,29 @@ def _runner(job: dict, state: dict) -> bool:
     def on_proc(p):
         state["process"] = p   # published so /api/stop can terminate this run
 
-    ok = run_arnis(cmd, cwd=str(BASE_DIR), on_line=on_line, on_proc=on_proc)
+    # Per-child env (merged Arnis reads these; an older binary ignores them):
+    #  - RAYON_NUM_THREADS: a size>=2 cell uses Arnis's in-process tile parallelism. We
+    #    divide a core budget across workers, BUT never collapse a worker to 1 thread:
+    #    workers are in different phases (fetch/prep/tiles/save) at any instant, so only a
+    #    fraction are CPU-bound at once. A per-worker floor (min_threads_per_worker, default
+    #    2) keeps each cell's tile parallelism alive — mild oversubscription that the OS
+    #    shares across phases, not thrash. cpu_target_pct is the budget (default 100% of
+    #    cores; set >100 to oversubscribe harder, <100 to leave headroom).
+    #  - ARNIS_STREAM_TO_DISK=1: region eviction so big test cells (8x8/16x16) don't OOM.
+    #    Env, not a CLI flag (upstream removed the flag). Forced for size>=8 or when the
+    #    user enables the setting; smaller cells let Arnis's own RAM heuristic decide.
+    cpu_pct = float(settings.get("cpu_target_pct", 100) or 100)
+    min_threads = max(1, int(settings.get("min_threads_per_worker", 2) or 1))
+    core_budget = max(1, int((os.cpu_count() or 4) * cpu_pct / 100.0))
+    rayon_threads = max(min_threads, core_budget // max(1, POOL.max_workers))
+    child_env = {"RAYON_NUM_THREADS": str(rayon_threads)}
+    if settings.get("stream_to_disk") or cell_size >= 8:
+        child_env["ARNIS_STREAM_TO_DISK"] = "1"
+    # Elevation source zoom: caps Arnis's terrain zoom so the whole world generates at the chosen
+    # detail (auto = scale-matched). Matches the zoom the data pack downloaded, so it's a cache hit.
+    child_env["ARNIS_ELEV_ZOOM"] = str(effective_elev_zoom(settings, float(origin.get("lat", 45.0))))
+
+    ok = run_arnis(cmd, cwd=str(BASE_DIR), on_line=on_line, on_proc=on_proc, env=child_env)
     if cell_log_fp is not None:
         try:
             cell_log_fp.write(f"\n=== arnis exit ok={ok} ===\n")
@@ -263,12 +880,14 @@ def _runner(job: dict, state: dict) -> bool:
             pass
     if not ok:
         PROJECT.set_cell_status(cell_key, "failed")
+        _record_fail(cell_key, "Arnis generation failed", out=out)
         state.update(message="Arnis generation failed.")
         return False
 
     world_dir = find_world_dir(out)
     if not world_dir:
         PROJECT.set_cell_status(cell_key, "failed")
+        _record_fail(cell_key, "no world produced", out=out)
         state.update(message="No world dir produced.")
         return False
 
@@ -296,21 +915,26 @@ def _runner(job: dict, state: dict) -> bool:
             f"-{res['regions_skipped']} seam, level.dat={res['level_dat']}")
     except MeldCoordinateDriftError as ex:
         PROJECT.set_cell_status(cell_key, "drift")
+        _record_fail(cell_key, "coordinate drift (scale/origin changed)")
         state.update(message=f"DRIFT GUARD: {ex}")
         log("ERROR " + str(ex))
         return False
     except MeldCollisionError as ex:
         PROJECT.set_cell_status(cell_key, "collision")
+        _record_fail(cell_key, "region collision (overlapping cells)")
         state.update(message=f"COLLISION: {ex}")
         log("ERROR " + str(ex))
         return False
     except Exception as ex:  # noqa: BLE001
         PROJECT.set_cell_status(cell_key, "failed")
+        _record_fail(cell_key, f"merge error: {ex}", out=out)
         state.update(message=f"Merge error: {ex}")
         log("ERROR " + str(ex))
         return False
 
     PROJECT.set_cell_status(cell_key, "merged")
+    _clear_fail(cell_key)              # succeeded — drop any prior failure reason
+    _scan_cell_health(cell_key, out)   # flag the cell if its log predicts an artifact
     # Prune the per-cell subregion world now that its canonical regions live in the
     # master world — avoids doubling storage. Toggle via settings.prune_cell_after_merge.
     if settings.get("prune_cell_after_merge", True):
@@ -328,11 +952,41 @@ def _runner(job: dict, state: dict) -> bool:
             log(f"  [Keep] {cell_key}: stripped {n} seam-buffer region files (canonical-only, drag-drop ready)")
         except Exception:
             pass
+    # Refresh the world's reproducibility sidecar so origin + elevation + seed +
+    # settings stay current with the latest merged state.
+    write_world_meta(Path(master))
     state.update(progress=100, message="Merged.")
     return True
 
 
+# A cell whose failure reason contains any of these is treated as TRANSIENT and auto-retried
+# (network blips, rate limits, transient OOM). Deterministic failures (drift / collision / disk
+# full / panic / merge error) are NOT retried — a retry would just fail the same way.
+_RETRYABLE_FAIL = ("timeout", "rate limit", "network", "fetch failed",
+                   "out of memory", "generation failed", "no world produced", "overpass")
+_MAX_CELL_RETRIES = 2
+
+
 def _on_complete(job, ok, err):
+    if not ok:
+        ck = job.get("cell_key")
+        with _CELL_HEALTH_LOCK:
+            reason = _CELL_FAIL.get(ck, "")
+        rlow = reason.lower()
+        status = PROJECT.load_grid().get(ck)
+        deterministic = (status in ("drift", "collision")
+                         or any(x in rlow for x in ("disk full", "panic", "merge error")))
+        transient = any(t in rlow for t in _RETRYABLE_FAIL)
+        retries = int(job.get("_retries", 0))
+        if (transient and not deterministic and retries < _MAX_CELL_RETRIES
+                and not getattr(POOL, "_stopped", False)):
+            job = {**job, "_retries": retries + 1}
+            PROJECT.set_cell_status(ck, "queued")
+            _clear_fail(ck)
+            log(f"[Retry] {ck} failed ({reason or 'transient'}) — retry {retries + 1}/{_MAX_CELL_RETRIES}")
+            POOL.submit(job)
+            return   # re-queued: don't count it done/failed yet (the retry will)
+
     with _RUN_LOCK:
         if ok:
             _RUN["done"] += 1
@@ -344,6 +998,8 @@ def _on_complete(job, ok, err):
                 _RUN["actual_mb"] = _dir_size_mb(master_world_path(create=False))
             except Exception:
                 _RUN["actual_mb"] = None
+            # Final snapshot of the world's origin/elevation/settings sidecar.
+            write_world_meta()
 
 
 POOL.configure(_runner, _on_complete)
@@ -391,6 +1047,7 @@ def api_state():
         "master_world": str(master_world_path(create=False)),   # the world subfolder
         "save_location": (PROJECT.settings().get("master_world_dir") or "").strip() or str(PROJECT.root),
         "world_icon": _world_icon_src() is not None,
+        "ram_gb": _total_ram_gb(),   # lets the UI set RAM-based worker warning thresholds
     })
 
 
@@ -403,6 +1060,7 @@ def api_name():
     if dat.exists():
         from src.level_dat import patch_level_name, gold_name
         patch_level_name(dat, gold_name(name))
+        write_world_meta()   # keep the sidecar's name in sync with the rename
     return jsonify({"ok": True, "name": name})
 
 
@@ -426,8 +1084,72 @@ def api_worlds():
         "exists": region_dir.exists(),
         "regions": len(list(region_dir.glob("*.mca"))) if region_dir.exists() else 0,
         "size_mb": _dir_size_mb(mp) if mp.exists() else 0.0,
+        "has_meta": (mp / WORLD_META_NAME).exists(),
     }
     return jsonify({"cells": cells, "master": master})
+
+
+@app.route("/api/world/meta")
+def api_world_meta():
+    """Read the meld-world.json sidecar for a world folder (defaults to the current
+    master world). Pass ?path=<world folder or json file> to read another world's."""
+    src = (request.args.get("path") or "").strip()
+    meta = read_world_meta(src) if src else read_world_meta(master_world_path(create=False))
+    if not meta:
+        return jsonify({"ok": False, "error": f"no {WORLD_META_NAME} found"}), 404
+    return jsonify({"ok": True, "meta": meta})
+
+
+@app.route("/api/world/load-meta", methods=["POST"])
+def api_world_load_meta():
+    """Load a saved world's origin + elevation lock + seed + settings into THIS
+    project, so you can regenerate or continue/extend that world with identical
+    coordinates and terrain. `path` = the world folder or its meld-world.json.
+
+    Save location and worker/prefetch settings are intentionally NOT applied, they
+    stay whatever this machine is set to. To extend the SAME world in place, point
+    the save location + world name at it first, then load-meta."""
+    d = request.json or {}
+    # Accept either the parsed JSON object directly (UI file upload) or a path on
+    # disk to a world folder / meld-world.json.
+    if isinstance(d.get("meta"), dict):
+        meta = d["meta"]
+    else:
+        src = (d.get("path") or "").strip()
+        if not src:
+            return jsonify({"ok": False, "error": "meta object or path required (world folder or meld-world.json)"}), 400
+        meta = read_world_meta(src)
+        if not meta:
+            return jsonify({"ok": False, "error": f"no {WORLD_META_NAME} found at {src}"}), 404
+    if not isinstance(meta, dict) or not (meta.get("origin") or meta.get("elevation") or meta.get("settings")):
+        return jsonify({"ok": False, "error": "not a Meld world file (need origin/elevation/settings)"}), 400
+
+    applied = []
+    o = meta.get("origin") or {}
+    if o.get("lat") is not None and o.get("lon") is not None:
+        PROJECT.set_origin(float(o["lat"]), float(o["lon"]), force=True)
+        applied.append("origin")
+
+    s = {k: v for k, v in (meta.get("settings") or {}).items() if k not in _META_SKIP_SETTINGS}
+    if s:
+        PROJECT.update_settings(s)
+        applied.append("settings")
+
+    ev = meta.get("elevation") or {}
+    if ev.get("min_m") is not None and ev.get("max_m") is not None:
+        PROJECT.set_elevation_lock(float(ev["min_m"]), float(ev["max_m"]), ev.get("seed"))
+        applied.append("elevation")
+    elif ev.get("seed") is not None:
+        PROJECT.set_seed(ev.get("seed"))
+        applied.append("seed")
+
+    if d.get("apply_name") and meta.get("name"):
+        PROJECT.set_name(meta["name"])
+        applied.append("name")
+
+    src_label = (d.get("path") or "").strip() or "imported file"
+    log(f"  [Load] applied {', '.join(applied) or 'nothing'} from {src_label}")
+    return jsonify({"ok": True, "applied": applied, "meta": meta})
 
 
 @app.route("/api/world/delete", methods=["POST"])
@@ -582,8 +1304,27 @@ def api_settings():
     # independently so editing the Seed field actually sticks.
     if "seed" in patch:
         PROJECT.set_seed(patch.pop("seed"))
+    # Guard rails: cell size 1-16 (snapped to a power of two on the UI), workers 1-64,
+    # CPU budget 10-95% (95 cap leaves the OS + disk-save phase headroom).
+    if patch.get("job_size_regions") is not None:
+        patch["job_size_regions"] = max(1, min(16, int(patch["job_size_regions"])))
+    if patch.get("max_workers") is not None:
+        patch["max_workers"] = max(1, min(64, int(patch["max_workers"])))
+    if patch.get("cpu_target_pct") is not None:
+        patch["cpu_target_pct"] = max(10, min(95, int(patch["cpu_target_pct"])))
+    if patch.get("min_threads_per_worker") is not None:
+        patch["min_threads_per_worker"] = max(1, min(8, int(patch["min_threads_per_worker"])))
+    if patch.get("cpu_stagger_seconds") is not None:
+        patch["cpu_stagger_seconds"] = max(1, min(4, int(round(float(patch["cpu_stagger_seconds"])))))
+    if patch.get("cpu_stagger_enabled") is not None:
+        patch["cpu_stagger_enabled"] = bool(patch["cpu_stagger_enabled"])
+    if patch.get("cpu_stagger_adaptive") is not None:
+        patch["cpu_stagger_adaptive"] = bool(patch["cpu_stagger_adaptive"])
     s = PROJECT.update_settings(patch)
     POOL.set_max_workers(int(s.get("max_workers") or 4))
+    # Stagger off => 0s (all workers start at once).
+    POOL.stagger_seconds = float(s.get("cpu_stagger_seconds", 2) or 0) if s.get("cpu_stagger_enabled", True) else 0.0
+    POOL.stagger_adaptive = bool(s.get("cpu_stagger_adaptive", True))
     return jsonify({**s, "seed": PROJECT.elevation().get("seed", 1)})
 
 
@@ -611,21 +1352,144 @@ def api_elevation_manual():
 
 @app.route("/api/grid", methods=["POST"])
 def api_grid():
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before changing the plan"}), 409
     d = request.json or {}
     bbox = d.get("bbox")
+    # Accept a single ring (`polygon`) or many rings (`polygons`, for multi-polygon
+    # countries / island nations). Cells are kept if inside ANY ring.
+    rings = d.get("polygons") or ([d.get("polygon")] if d.get("polygon") else None)
+    mode = (d.get("mode") or "add")   # add | replace (same as add here) | remove
     origin = PROJECT.origin()
     if origin.get("lat") is None:
         return jsonify({"ok": False, "error": "set origin first"}), 400
-    if not bbox:
-        return jsonify({"ok": False, "error": "bbox required"}), 400
+    has_rings = bool(rings) and any(r and len(r) >= 3 for r in rings)
+    if not bbox and not has_rings:
+        return jsonify({"ok": False, "error": "bbox or polygon required"}), 400
     settings = PROJECT.settings()
-    size = int(d.get("size") or settings.get("job_size_regions") or 4)
-    cells = cells_for_bbox(bbox, origin, float(settings.get("scale", 1.0)), size)
+    # Cell size is capped at 6: bigger cells write huge save bursts that are much
+    # slower (disk + RAM bound), so the grid never tiles above 6.
+    size = max(1, min(16, int(d.get("size") or settings.get("job_size_regions") or 4)))
+    scale = float(settings.get("scale", 1.0))
+    if has_rings:
+        cells = cells_for_polygons(rings, origin, scale, size)   # follow the drawn/searched shape
+    else:
+        cells = cells_for_bbox(bbox, origin, scale, size)
     grid = PROJECT.load_grid()
+    if mode == "remove":
+        removed = []
+        for c in cells:
+            k = c["cell_key"]
+            if grid.get(k) and grid[k] != "merged":   # never wipe merged content
+                grid.pop(k, None)
+                removed.append(k)
+        PROJECT.save_grid(grid)
+        return jsonify({"ok": True, "cells": cells, "count": len(cells), "removed": removed})
     for c in cells:
         grid.setdefault(c["cell_key"], "planned")
     PROJECT.save_grid(grid)
     return jsonify({"ok": True, "cells": cells, "count": len(cells)})
+
+
+def _run_active() -> bool:
+    """A generation (or its prefetch) is in flight. Editing the grid mid-run desyncs the
+    worker pool (the queue is separate from grid.json), so cell-edit routes refuse while True."""
+    return POOL.is_running() or bool(_PREFETCH.get("active"))
+
+
+def _valid_cell_key(k) -> bool:
+    """A cell key is exactly 'rx,rz,size' with integer parts and size in 1..16. Rejects the
+    'NaN,1,4' / '1.5,2,4' junk a client paint-at-edge or float can otherwise poison grid.json with
+    (which then crashes a later int() in grow / bbox / submit)."""
+    if not isinstance(k, str):
+        return False
+    parts = k.split(",")
+    if len(parts) != 3:
+        return False
+    try:
+        rx, rz, sz = int(parts[0]), int(parts[1]), int(parts[2])
+    except (TypeError, ValueError):
+        return False
+    return 1 <= sz <= 16
+
+
+@app.route("/api/cell/toggle", methods=["POST"])
+def api_cell_toggle():
+    """Add or remove ONE cell from the plan (cell-by-cell editing). Empty cell ->
+    planned; planned/queued/failed cell -> removed. Merged cells are left alone
+    (delete those via /api/world/delete, they hold real content)."""
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before editing cells"}), 409
+    d = request.json or {}
+    key = (d.get("cell_key") or "").strip()
+    if not _valid_cell_key(key):
+        return jsonify({"ok": False, "error": "cell_key required (rx,rz,size with integer parts)"}), 400
+    grid = PROJECT.load_grid()
+    cur = grid.get(key)
+    if cur == "merged":
+        return jsonify({"ok": True, "cell_key": key, "status": "merged", "changed": False})
+    if cur is None:
+        PROJECT.set_cell_status(key, "planned")
+        return jsonify({"ok": True, "cell_key": key, "status": "planned", "changed": True})
+    grid.pop(key, None)
+    PROJECT.save_grid(grid)
+    return jsonify({"ok": True, "cell_key": key, "status": None, "changed": True})
+
+
+@app.route("/api/cell/toggle-bulk", methods=["POST"])
+def api_cell_toggle_bulk():
+    """Paint-drag: add or remove MANY cells in ONE atomic grid write (so a drag doesn't fire
+    dozens of single toggles that hammer disk + race the worker pipeline). op='add' plans every
+    empty key; op='remove' drops every non-merged key. Merged cells are always left alone."""
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before editing cells"}), 409
+    d = request.json or {}
+    keys = [k.strip() for k in (d.get("cell_keys") or []) if _valid_cell_key((k or "").strip())]
+    op = d.get("op")
+    if op not in ("add", "remove") or not keys:
+        return jsonify({"ok": False, "error": "op (add|remove) + valid cell_keys required"}), 400
+    changed = PROJECT.bulk_set_cells(keys, op)
+    return jsonify({"ok": True, "op": op, "changed": changed})
+
+
+@app.route("/api/grid/grow", methods=["POST"])
+def api_grid_grow():
+    """Grow the plan outward by N ring(s) of cells: add every empty cell adjacent to a
+    cell already in the plan. Lets you extend tiles just OUTSIDE a country/polygon
+    selection (it follows the shape's outline). Neighbours are same-size."""
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before changing the plan"}), 409
+    d = request.json or {}
+    rings = max(1, min(20, int(d.get("rings") or 1)))
+    diagonal = bool(d.get("diagonal", True))
+    origin = PROJECT.origin()
+    if origin.get("lat") is None:
+        return jsonify({"ok": False, "error": "nothing to grow yet"}), 400
+    scale = float(PROJECT.settings().get("scale", 1.0))
+    offs = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    if diagonal:
+        offs += [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+    grid = PROJECT.load_grid()
+    if not grid:
+        return jsonify({"ok": False, "error": "plan a selection first, then grow it"}), 400
+    added: list[str] = []
+    for _ in range(rings):
+        frontier = set()
+        for k in list(grid.keys()):
+            try:
+                rx, rz, sz = (int(x) for x in k.split(","))
+            except ValueError:
+                continue
+            for dx, dz in offs:
+                nk = f"{rx + dx},{rz + dz},{sz}"
+                if nk not in grid and nk not in frontier:
+                    frontier.add(nk)
+        for nk in frontier:
+            grid[nk] = "planned"
+            added.append(nk)
+    PROJECT.save_grid(grid)
+    cells = [{"cell_key": k, "bbox": _bbox_from_cell_key(k, origin, scale)} for k in added]
+    return jsonify({"ok": True, "added": added, "count": len(added), "cells": cells})
 
 
 @app.route("/api/grid/clear", methods=["POST"])
@@ -633,6 +1497,8 @@ def api_grid_clear():
     """Revert the grid plan. Drops planned/queued/failed cells so the selection
     can be re-split at a different cell size. Keeps 'merged' cells by default
     (their content is already in the master world)."""
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before clearing the plan"}), 409
     d = request.json or {}
     keep_merged = d.get("keep_merged", True)
     grid = PROJECT.load_grid()
@@ -648,7 +1514,8 @@ def _bbox_from_cell_key(cell_key: str, origin: dict, scale: float) -> dict:
 
 
 def _submit_cells(cells: list[dict], osm_files: dict | None = None,
-                  settings: dict | None = None, origin: dict | None = None) -> list[str]:
+                  settings: dict | None = None, origin: dict | None = None,
+                  keep_started: bool = False) -> list[str]:
     """Submit a list of {cell_key, bbox} to the pool and (re)start the run clock.
     osm_files maps cell_key -> pre-fetched OSM json path (passed to Arnis as --file).
     settings/origin may be a snapshot taken before a prefetch, so the cells generate
@@ -660,12 +1527,28 @@ def _submit_cells(cells: list[dict], osm_files: dict | None = None,
     origin = origin if origin is not None else PROJECT.origin()
     elevation = PROJECT.elevation()
     world_name = PROJECT.load().get("name", "Meld World")
+    # Generate center-out (spiral): order cells by their ring distance from the selection
+    # center, tie-broken by angle, so the middle fills first and the build grows outward
+    # in concentric rings (nicer to watch + the dense city core lands first).
+    if cells:
+        rc = [tuple(int(x) for x in c["cell_key"].split(",")[:2]) for c in cells]
+        cx = sum(r[0] for r in rc) / len(rc)
+        cz = sum(r[1] for r in rc) / len(rc)
+        def _spiral_key(c):
+            rx, rz = (int(x) for x in c["cell_key"].split(",")[:2])
+            dx, dz = rx - cx, rz - cz
+            return (max(abs(dx), abs(dz)), math.atan2(dz, dx))   # Chebyshev ring, then angle
+        cells = sorted(cells, key=_spiral_key)
     # Set the run clock (incl. total) BEFORE submitting, so a fast cell completing can't
     # see total=0 in _on_complete and mark the run ended prematurely.
     est_regions = sum(int(c["cell_key"].split(",")[2]) ** 2 for c in cells)
     with _RUN_LOCK:
-        _RUN.update(started=time.time(), ended=None, total=len(cells), done=0, failed=0,
-                    est_regions=est_regions, est_mb=est_regions * MB_PER_REGION, actual_mb=None)
+        # keep_started: prefetch already started the clock, so the elapsed timer spans the
+        # OSM/terrain warm-up too (the prefetch DOES cost wall time). Otherwise start now.
+        started = _RUN.get("started") if (keep_started and _RUN.get("started")) else time.time()
+        _RUN.update(started=started, ended=None, total=len(cells), done=0, failed=0,
+                    est_regions=est_regions, est_mb=est_regions * MB_PER_REGION,
+                    actual_mb=None, phase="generating")
     queued = []
     for c in cells:
         ck = c["cell_key"]
@@ -691,29 +1574,72 @@ def _start_generation(cells: list[dict]) -> tuple[list[str], bool]:
     settings = PROJECT.settings()
     origin = PROJECT.origin()
     exe = resolve_arnis_exe()
+    # NOTE: stream-to-disk is delivered via the ARNIS_STREAM_TO_DISK env var in _runner
+    # (the merged Arnis dropped the CLI flag). The env var is harmless on a binary that
+    # doesn't support it, so no capability gate is needed here anymore.
     if not settings.get("prefetch_enabled", True) or not exe or not cells:
         return _submit_cells(cells, settings=settings, origin=origin), False
 
     # Mark the cells queued now so the grid/overlay shows them during the prefetch.
     for c in cells:
         PROJECT.set_cell_status(c["cell_key"], "queued")
+    # Start the run clock NOW (prefetch phase) so the elapsed counter includes the OSM +
+    # terrain warm-up, and the UI can show "Prefetching…" as the live phase.
+    est_regions = sum(int(c["cell_key"].split(",")[2]) ** 2 for c in cells)
+    with _RUN_LOCK:
+        _RUN.update(started=time.time(), ended=None, total=len(cells), done=0, failed=0,
+                    est_regions=est_regions, est_mb=est_regions * MB_PER_REGION,
+                    actual_mb=None, phase="prefetch")
     with _PREFETCH_LOCK:
-        _PREFETCH.update(active=True, done=False, chunks=[], started=time.time(),
+        _PREFETCH.update(active=True, done=False, chunks=[], started=time.time(), phase="osm",
+                         terrain={"done": 0, "total": 0, "ok": 0, "failed": 0},
                          note=f"prefetching OSM for {len(cells)} cell(s)…")
 
     def _worker():
+        # Phase 1: OSM (Overpass) — download once, share to every cell.
         try:
             osm_files = run_prefetch(cells, origin, settings, str(exe),
                                      _osm_cache_dir(), log, _prefetch_on_chunk)
         except Exception as ex:  # noqa: BLE001
             log(f"[Prefetch] error, falling back to live fetch: {ex}")
             osm_files = {}
+
+        # Phase 2: terrain — pre-warm the AWS elevation tiles serially (single process) so the
+        # parallel cells hit the cache instead of bursting S3 (the 757-byte truncation -> flat
+        # seams around the center). Best-effort; cells fetch live for any tile that misses.
+        if settings.get("terrain", True) and settings.get("prefetch_terrain", True):
+            with _PREFETCH_LOCK:
+                tiles = [c["bbox"] for c in _PREFETCH["chunks"]
+                         if c.get("bbox") and c.get("state") in ("done", "cached")]
+            if not tiles:
+                # OSM prefetch produced no usable chunks (e.g. it failed) — warm terrain over the
+                # whole selection anyway, so the parallel cells still hit the cache instead of
+                # bursting S3. Terrain zoom clamps to 15 for any bbox size, so one sweep is fine.
+                bs = [c["bbox"] for c in cells if c.get("bbox")]
+                if bs:
+                    tiles = [{"south": min(b["south"] for b in bs), "west": min(b["west"] for b in bs),
+                              "north": max(b["north"] for b in bs), "east": max(b["east"] for b in bs)}]
+            if tiles:
+                with _PREFETCH_LOCK:
+                    _PREFETCH.update(phase="terrain", note="warming terrain tiles…",
+                                     terrain={"done": 0, "total": len(tiles), "ok": 0, "failed": 0})
+                try:
+                    purge_small_tiles(log=log)   # drop legacy poisoned tiles first
+
+                    def _tp(done, total, ok, failed):
+                        with _PREFETCH_LOCK:
+                            _PREFETCH["terrain"].update(done=done, total=total, ok=ok, failed=failed)
+
+                    run_terrain_prefetch(tiles, str(exe), log, _tp)
+                except Exception as ex:  # noqa: BLE001
+                    log(f"[Terrain] prefetch error (cells will fetch live): {ex}")
+
         with _PREFETCH_LOCK:
-            _PREFETCH.update(active=False, done=True,
+            _PREFETCH.update(active=False, done=True, phase="generating",
                              note=f"{len(osm_files)}/{len(cells)} cells from cached OSM")
         log(f"[Prefetch] done — {len(osm_files)}/{len(cells)} cells share cached OSM; "
             f"starting generation")
-        _submit_cells(cells, osm_files, settings=settings, origin=origin)
+        _submit_cells(cells, osm_files, settings=settings, origin=origin, keep_started=True)
 
     threading.Thread(target=_worker, daemon=True).start()
     return [c["cell_key"] for c in cells], True
@@ -722,6 +1648,31 @@ def _start_generation(cells: list[dict]) -> tuple[list[str], bool]:
 def _elevation_gate_ok() -> bool:
     s = PROJECT.settings()
     return s.get("elevation_mode", "global") != "global" or PROJECT.elevation().get("locked")
+
+
+def _world_param_drift(settings: dict, origin: dict) -> str | None:
+    """If the master world already has merged cells, refuse a run whose scale/origin differ
+    from what the world was built at (mixing coordinate systems = cliffs at every join).
+    Compares against the world's meld-world.json sidecar. Returns an error string or None."""
+    grid = PROJECT.load_grid()
+    if not any(v == "merged" for v in grid.values()):
+        return None
+    meta = read_world_meta(master_world_path(create=False))
+    if not meta:
+        return None
+    ms = meta.get("settings") or {}
+    mo = meta.get("origin") or {}
+    cur_scale = float(settings.get("scale", 1.0) or 1.0)
+    meta_scale = float(ms.get("scale", cur_scale) or cur_scale)
+    if abs(cur_scale - meta_scale) > 1e-9:
+        return (f"This world was built at scale {meta_scale}; the current setting is {cur_scale}. "
+                f"Mixing scales creates cliffs. Start a New world, or set scale back to {meta_scale}.")
+    if mo.get("lat") is not None and origin.get("lat") is not None:
+        if (abs(float(mo["lat"]) - float(origin["lat"])) > 1e-6
+                or abs(float(mo["lon"]) - float(origin["lon"])) > 1e-6):
+            return ("This world was built at a different origin. Start a New world, or restore the "
+                    "original origin (Import world settings).")
+    return None
 
 
 @app.route("/api/queue", methods=["POST"])
@@ -737,11 +1688,17 @@ def api_queue():
                         "elevation lock — run the survey first or set a manual range, "
                         "or switch elevation_mode to 'local'."}), 400
 
-    # Worker cap: hard-capped at 16 (WorkerPool). The user owns the 8-16 range now — the UI
-    # warns above 8 about the heavy save phase (disk + RAM) and lets them accept the risk —
-    # so we do NOT silently reduce their choice here. The only forced clamp is the low-scale
-    # one: scale<0.5 means a huge per-region real area where >2 concurrent AWS-tile fetches
-    # corrupt elevation.
+    # World guard: refuse a scale/origin that differs from the existing master world.
+    d = request.json or {}
+    drift = _world_param_drift(settings, origin)
+    if drift and not d.get("force"):
+        return jsonify({"ok": False, "error": drift, "drift": True}), 409
+
+    # Worker cap: hard-capped at WorkerPool.MAX_WORKERS_HARD_CAP (64). The user owns the
+    # high range now — the UI warns above 8 about the heavy save phase (disk + RAM) and lets
+    # them accept the risk — so we do NOT silently reduce their choice here. The only forced
+    # clamp is the low-scale one: scale<0.5 means a huge per-region real area where >2
+    # concurrent AWS-tile fetches corrupt elevation.
     workers = min(WorkerPool.MAX_WORKERS_HARD_CAP, int(settings.get("max_workers") or 4))
     scale = float(settings.get("scale", 1.0) or 1.0)
     note = ""
@@ -804,6 +1761,223 @@ def api_resume():
     return jsonify({"ok": True, "queued": queued, "count": len(queued), "prefetching": prefetching})
 
 
+@app.route("/api/cell/regenerate-region", methods=["POST"])
+def api_cell_regenerate_region():
+    """Re-run only the cells whose CENTER falls inside a drawn rectangle/polygon. For fixing
+    a localized artifact without redoing the whole world. Reuses the world's origin/scale/lock
+    so redone cells line up; merge overwrites the cell's own regions safely."""
+    d = request.json or {}
+    bbox = d.get("bbox")
+    raw = d.get("polygons") or d.get("polygon")
+    origin = PROJECT.origin()
+    if origin.get("lat") is None:
+        return jsonify({"ok": False, "error": "no origin set"}), 400
+    scale = float(PROJECT.settings().get("scale", 1.0) or 1.0)
+    # normalize polygon input to a list of rings of (lat, lon)
+    rings = None
+    if raw and isinstance(raw[0], list) and raw[0] and isinstance(raw[0][0], list):
+        rings = [[(float(p[0]), float(p[1])) for p in r] for r in raw]
+    elif raw and isinstance(raw[0], list):
+        rings = [[(float(p[0]), float(p[1])) for p in raw]]
+    if not bbox and not rings:
+        return jsonify({"ok": False, "error": "bbox or polygon required"}), 400
+    grid = PROJECT.load_grid()
+    sel = []
+    for k in grid:
+        if len(k.split(",")) != 3:
+            continue
+        b = _bbox_from_cell_key(k, origin, scale)
+        clat = (b["south"] + b["north"]) / 2.0
+        clon = (b["west"] + b["east"]) / 2.0
+        if rings:
+            inside = any(_point_in_poly(clat, clon, r) for r in rings if len(r) >= 3)
+        else:
+            inside = bbox["south"] <= clat <= bbox["north"] and bbox["west"] <= clon <= bbox["east"]
+        if inside:
+            sel.append(k)
+    if not sel:
+        return jsonify({"ok": True, "queued": [], "count": 0, "note": "no cells in that region"})
+    cells = [{"cell_key": k, "bbox": _bbox_from_cell_key(k, origin, scale)} for k in sel]
+    queued, prefetching = _start_generation(cells)
+    return jsonify({"ok": True, "queued": queued, "count": len(queued), "prefetching": prefetching})
+
+
+@app.route("/api/cell/regenerate-suspect", methods=["POST"])
+def api_cell_regenerate_suspect():
+    """Re-run only the cells flagged suspect (terrain-tile retry / ESA 404). One-click fix for
+    the truncated-terrain artifacts; the redo runs the terrain prefetch so they cache cleanly."""
+    origin = PROJECT.origin()
+    if origin.get("lat") is None:
+        return jsonify({"ok": False, "error": "no origin set"}), 400
+    scale = float(PROJECT.settings().get("scale", 1.0) or 1.0)
+    grid = PROJECT.load_grid()
+    with _CELL_HEALTH_LOCK:
+        keys = [k for k, v in _CELL_HEALTH.items() if v.get("suspect") and k in grid]
+    if not keys:
+        return jsonify({"ok": True, "queued": [], "count": 0, "note": "no suspect cells"})
+    cells = [{"cell_key": k, "bbox": _bbox_from_cell_key(k, origin, scale)} for k in keys]
+    queued, prefetching = _start_generation(cells)
+    return jsonify({"ok": True, "queued": queued, "count": len(queued), "prefetching": prefetching})
+
+
+@app.route("/api/cell/regenerate-cells", methods=["POST"])
+def api_cell_regenerate_cells():
+    """Re-run an explicit list of cell_keys (the select-clump-to-retry flow). Only keys that
+    exist in the grid are re-queued; merged cells are re-run too (the user asked for them)."""
+    d = request.json or {}
+    origin = PROJECT.origin()
+    if origin.get("lat") is None:
+        return jsonify({"ok": False, "error": "no origin set"}), 400
+    scale = float(PROJECT.settings().get("scale", 1.0) or 1.0)
+    grid = PROJECT.load_grid()
+    keys = [k.strip() for k in (d.get("cell_keys") or [])
+            if isinstance(k, str) and k.strip() in grid]
+    if not keys:
+        return jsonify({"ok": True, "queued": [], "count": 0, "note": "no matching cells"})
+    cells = [{"cell_key": k, "bbox": _bbox_from_cell_key(k, origin, scale)} for k in keys]
+    queued, prefetching = _start_generation(cells)
+    return jsonify({"ok": True, "queued": queued, "count": len(queued), "prefetching": prefetching})
+
+
+# ── project switching (multiple worlds, swap between test + big) ─────────────
+def _switch_project(slug: str) -> dict:
+    global PROJECT, ACTIVE_SLUG
+    if POOL.is_running() or _PREFETCH.get("active"):
+        return {"ok": False, "error": "a generation is running — stop it before switching projects"}
+    root = PROJECTS_ROOT / slug
+    p = Project(root)
+    if not (root / "project.json").exists():
+        p.save(p.load())   # materialize defaults so the project is listable
+    PROJECT = p
+    ACTIVE_SLUG = slug
+    _write_active_slug(slug)
+    _load_cell_health()    # suspects are per-project
+    with _PREFETCH_LOCK:
+        _PREFETCH.update(active=False, done=False, chunks=[], phase="idle", note="",
+                         terrain={"done": 0, "total": 0, "ok": 0, "failed": 0})
+    with _RUN_LOCK:
+        _RUN.update(started=None, ended=None, total=0, done=0, failed=0,
+                    est_regions=0, est_mb=0, actual_mb=None, phase="idle")
+    return {"ok": True, "slug": slug}
+
+
+def _project_info(slug: str) -> dict:
+    root = PROJECTS_ROOT / slug
+    try:
+        data = json.loads((root / "project.json").read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    grid = {}
+    try:
+        grid = json.loads((root / "grid.json").read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    s = data.get("settings") or {}
+    return {
+        "slug": slug, "name": data.get("name", slug),
+        "save_location": (s.get("master_world_dir") or "").strip(),
+        "cells": len(grid), "merged": sum(1 for v in grid.values() if v == "merged"),
+        "scale": s.get("scale"), "active": slug == ACTIVE_SLUG,
+    }
+
+
+def _next_world_name() -> str:
+    names = set()
+    try:
+        for p in PROJECTS_ROOT.iterdir():
+            jf = p / "project.json"
+            if jf.exists():
+                try:
+                    names.add(json.loads(jf.read_text(encoding="utf-8")).get("name"))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    base, name, n = "Meld World", "Meld World", 2
+    while name in names:
+        name = f"{base} {n}"
+        n += 1
+    return name
+
+
+@app.route("/api/projects")
+def api_projects():
+    PROJECTS_ROOT.mkdir(parents=True, exist_ok=True)
+    slugs = sorted(p.name for p in PROJECTS_ROOT.iterdir()
+                   if p.is_dir() and (p / "project.json").exists())
+    if ACTIVE_SLUG not in slugs:
+        slugs.insert(0, ACTIVE_SLUG)
+    return jsonify({"active": ACTIVE_SLUG, "projects": [_project_info(s) for s in slugs]})
+
+
+@app.route("/api/projects/switch", methods=["POST"])
+def api_projects_switch():
+    d = request.json or {}
+    slug = _slugify(d.get("slug") or "")
+    if not (PROJECTS_ROOT / slug / "project.json").exists():
+        return jsonify({"ok": False, "error": "project not found"}), 404
+    res = _switch_project(slug)
+    return jsonify(res), (200 if res.get("ok") else 409)
+
+
+@app.route("/api/projects/new", methods=["POST"])
+def api_projects_new():
+    """Create a NEW project (a fresh world workspace) and switch to it. The current project
+    and its world stay intact, so you can swap back. Auto-named 'Meld World N' if no name."""
+    d = request.json or {}
+    name = (d.get("name") or "").strip() or _next_world_name()
+    base = _slugify(name)
+    slug, i = base, 2
+    while (PROJECTS_ROOT / slug / "project.json").exists():
+        slug = f"{base}-{i}"
+        i += 1
+    p = Project(PROJECTS_ROOT / slug)
+    data = p.load()
+    data["name"] = name
+    # Inherit the save location so new worlds land in the same folder by default.
+    cur_dir = (PROJECT.settings().get("master_world_dir") or "").strip()
+    if cur_dir and d.get("inherit_save_location", True):
+        data.setdefault("settings", {})["master_world_dir"] = cur_dir
+    p.save(data)
+    res = _switch_project(slug)
+    if not res.get("ok"):
+        return jsonify(res), 409
+    return jsonify({"ok": True, "slug": slug, "name": name})
+
+
+@app.route("/api/projects/rename", methods=["POST"])
+def api_projects_rename():
+    d = request.json or {}
+    slug = _slugify(d.get("slug") or ACTIVE_SLUG)
+    name = (d.get("name") or "").strip()
+    root = PROJECTS_ROOT / slug
+    if not (root / "project.json").exists() or not name:
+        return jsonify({"ok": False, "error": "project + name required"}), 400
+    p = Project(root)
+    data = p.load()
+    data["name"] = name
+    p.save(data)
+    return jsonify({"ok": True, "slug": slug, "name": name})
+
+
+@app.route("/api/projects/delete", methods=["POST"])
+def api_projects_delete():
+    """Remove a project's WORKSPACE (grid/logs/osm_cache/state). The saved Minecraft world on
+    disk is NOT touched. Cannot delete the active project or while a run is going."""
+    d = request.json or {}
+    slug = _slugify(d.get("slug") or "")
+    if slug == ACTIVE_SLUG:
+        return jsonify({"ok": False, "error": "cannot delete the active project — switch first"}), 409
+    if POOL.is_running():
+        return jsonify({"ok": False, "error": "a generation is running"}), 409
+    root = PROJECTS_ROOT / slug
+    if not (root / "project.json").exists():
+        return jsonify({"ok": False, "error": "project not found"}), 404
+    shutil.rmtree(root, ignore_errors=True)
+    return jsonify({"ok": True, "removed": slug,
+                    "note": "project workspace removed (the saved world on disk is kept)"})
+
+
 @app.route("/api/new-world", methods=["POST"])
 def api_new_world():
     """Start a fresh world (Arnis-style 'new world'). The current world stays saved
@@ -828,9 +2002,12 @@ def api_new_world():
     data["elevation"] = ev
     PROJECT.save(data)
     PROJECT.save_grid({})
+    with _CELL_HEALTH_LOCK:           # a fresh world has no suspect cells
+        _CELL_HEALTH.clear()
+        _save_cell_health()
     with _RUN_LOCK:
         _RUN.update(started=None, ended=None, total=0, done=0, failed=0,
-                    est_regions=0, est_mb=0, actual_mb=None)
+                    est_regions=0, est_mb=0, actual_mb=None, phase="idle")
     log(f"[New world] reset → '{name}'")
     return jsonify({"ok": True, "name": name})
 
@@ -857,24 +2034,32 @@ def api_status():
     run["active"] = bool(run["started"] and not run["ended"])
     with _PREFETCH_LOCK:
         prefetch = {"active": _PREFETCH["active"], "done": _PREFETCH["done"],
-                    "note": _PREFETCH["note"], "chunks": list(_PREFETCH["chunks"])}
+                    "note": _PREFETCH["note"], "chunks": list(_PREFETCH["chunks"]),
+                    "phase": _PREFETCH.get("phase", "idle"),
+                    "terrain": dict(_PREFETCH.get("terrain", {}))}
+    with _CELL_HEALTH_LOCK:
+        suspects = {k: v for k, v in _CELL_HEALTH.items() if v.get("suspect")}
+        cell_fail = dict(_CELL_FAIL)
     return jsonify({
         "workers": POOL.get_states(),
         "queue_size": POOL.queue_size(),
         "running": POOL.is_running(),
         "grid": PROJECT.load_grid(),
+        "cell_fail": cell_fail,
         "run": run,
         "prefetch": prefetch,
+        "cell_health": suspects,
+        "stats": _sys_stats(),
         "log": _LOG[-150:],
     })
 
 
 @app.route("/api/prefetch/plan")
 def api_prefetch_plan():
-    """Preview the OSM download footprint for the current plan: the single chunk Meld
-    will TRY first (whole selection + margin). Drawn as a cyan dashed box in the UI.
-    At run time this box may split into quadrants if the endpoint rejects it; the live
-    /api/status prefetch.chunks then reflect the real splits."""
+    """Preview the OSM download footprint for the current plan: the tiles Meld pre-splits the
+    selection into (each ≤ the km² budget), drawn as gray-blue dotted boxes in the UI. At run
+    time each tile downloads as one Overpass request; if one is still rejected or times out it
+    splits into quadrants, and the live /api/status prefetch.chunks reflect that."""
     origin = PROJECT.origin()
     settings = PROJECT.settings()
     if origin.get("lat") is None or not settings.get("prefetch_enabled", True):
@@ -883,8 +2068,39 @@ def api_prefetch_plan():
     grid = PROJECT.load_grid()
     cells = [{"cell_key": k, "bbox": _bbox_from_cell_key(k, origin, scale)}
              for k, v in grid.items() if v != "merged" and len(k.split(",")) == 3]
-    chunk = preview_union(cells, origin, settings)
-    return jsonify({"enabled": True, "chunks": [chunk] if chunk else []})
+    return jsonify({"enabled": True, "chunks": preview_clumps(cells, origin, settings)})
+
+
+def _save_drive_dir() -> str:
+    """The directory the worlds save to (custom master_world_dir, else the project root),
+    used to report free space on the RIGHT disk."""
+    return (PROJECT.settings().get("master_world_dir") or "").strip() or str(PROJECT.root)
+
+
+def _sys_stats() -> dict:
+    """Live CPU% / RAM / save-disk usage for the left-rail System card. cpu_percent(interval=None)
+    is non-blocking (returns the delta since the previous call, primed at import)."""
+    out = {"cpu_pct": None, "ram_used_gb": None, "ram_total_gb": None,
+           "disk_free_gb": None, "disk_total_gb": None, "drive": None}
+    try:
+        if psutil is not None:
+            out["cpu_pct"] = round(psutil.cpu_percent(interval=None))
+            vm = psutil.virtual_memory()
+            out["ram_used_gb"] = round(vm.used / 1e9, 1)
+            out["ram_total_gb"] = round(vm.total / 1e9, 1)
+        else:
+            out["ram_total_gb"] = _total_ram_gb()
+    except Exception:
+        pass
+    try:
+        d = _save_drive_dir()
+        du = shutil.disk_usage(d)                      # decimal GB to match how drives report
+        out["disk_free_gb"] = round(du.free / 1e9, 1)
+        out["disk_total_gb"] = round(du.total / 1e9, 1)
+        out["drive"] = os.path.splitdrive(os.path.abspath(d))[0] or d
+    except Exception:
+        pass
+    return out
 
 
 # ── recommend settings wizard: probe this PC + the save disk ────────────────────
@@ -942,7 +2158,7 @@ def api_recommend():
     """Probe CPU, RAM and the save-disk write speed, then recommend cell size + workers.
     Generation is bound by the save phase (disk write + a RAM burst), not CPU, so the
     recommendation is the min of the CPU/RAM/disk budgets, capped at the safe ceiling of 8
-    (the UI lets the user push to 16 manually, with a warning)."""
+    (the UI lets the user push up to 64 manually, with a warning)."""
     cores = os.cpu_count() or 4
     ram_gb = _total_ram_gb()
     save_dir = str(master_world_path(create=True).parent)
@@ -967,7 +2183,25 @@ def api_recommend():
 
 
 if __name__ == "__main__":
+    # Clean restart: drop any un-generated (non-merged) plan so the app does NOT
+    # auto-resume the last planning task on startup. The merged world (real content)
+    # is kept. Runs only on actual server start, never on `import server`.
+    try:
+        _g = PROJECT.load_grid()
+        _kept = {k: v for k, v in _g.items() if v == "merged"}
+        if len(_kept) != len(_g):
+            PROJECT.save_grid(_kept)
+            print(f"cleared {len(_g) - len(_kept)} un-generated planned cell(s) from the last session")
+    except Exception:
+        pass
+    _load_cell_health()   # restore suspect-cell flags so "Redo suspect" survives a restart
     port = int(os.environ.get("PORT", 5630))
     print(f"light-meld -> http://127.0.0.1:{port}")
-    print(f"arnis binary: {resolve_arnis_exe()}")
+    _exe = resolve_arnis_exe()
+    if _exe:
+        print(f"arnis binary: {_exe}")
+    else:
+        _want = "arnis.exe" if sys.platform == "win32" else "arnis"
+        print(f"arnis binary: NOT FOUND — put '{_want}' next to server.py. On Linux/macOS the "
+              f"file must be named 'arnis' (no .exe) and be the matching OS build.")
     app.run(host="127.0.0.1", port=port, threaded=True)

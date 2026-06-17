@@ -6,7 +6,7 @@ Turn an OpenStreetMap selection into one seamless Minecraft world. Meld tiles th
 every tile in parallel, and melds them with no height cliffs and no seams. From a city block to a
 whole continent.
 
-&nbsp;![version](https://img.shields.io/badge/version-1.0.0-blue)
+&nbsp;![version](https://img.shields.io/badge/version-1.1.0-blue)
 &nbsp;![Minecraft](https://img.shields.io/badge/Minecraft%20Java-1.21%2B-brightgreen)
 &nbsp;![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 &nbsp;![built on](https://img.shields.io/badge/built%20on-Arnis%20fork-orange)
@@ -19,18 +19,27 @@ Meld is a real world Minecraft world generator. You draw an area on a map, pick 
 Meld splits the selection into region aligned tiles, generates each tile in parallel with a custom
 [Arnis fork](https://github.com/Teddy563/arnis), and merges every tile into one master world. Every
 seam lands on a Minecraft region boundary, so the join is exact and the surface is about 99 percent
-seamless. Cities, regions, whole continents.
+seamless. Cities, regions, whole continents, built as one world.
 
 > Meld is an orchestrator, not a new generator. It drives [Arnis](https://github.com/louis-e/arnis)
 > to build the blocks, then handles the hard part: tiling, a shared OSM fetch, one global elevation
-> lock, and a region perfect merge. The win is scale on a single PC.
+> lock, and a region perfect merge. The win is scale and reliability on a single PC.
 
-On one machine (Intel Core Ultra 9 275HX, 32 GB, NVMe SSD) Meld built a **24576 x 24576** block
-world, 36 times the area of a single 4096 Arnis run, in **7 minutes 39 seconds**, about **23 times
-the throughput**. See the numbers in [Meld vs Arnis](https://meldmc.com/vs-arnismc).
+The headline is **scale**: build a whole city, country, or continent as one seamless world, with no
+seams and no height cliffs at the joins. On the same area Meld runs about **2x faster** than a single
+Arnis pass, because it builds the tiles in parallel rather than one after another. The ceiling on
+that speed is how fast your disk can save the regions, not your CPU. Meld 1.1.0 also closes the
+reliability gaps that show up at large scale: it repairs the elevation no-data holes that caused dark
+bands and in-game dips, smooths water artifacts, removes duplicate block entities on the parallel
+path, and fixes the crashes that big parallel runs could hit.
 
 **New here?** Read the [docs](https://meldmc.com/docs) or try the
 [live preview](https://meldmc.com/demo), an interactive, simulated copy of the app.
+
+**Docs.** The full guide lives at the [docs hub](https://meldmc.com/docs). In this repo, the
+[`docs/`](docs/) folder holds the per-release deep dives (start with
+[`docs/whats-new-1.1.0.mdx`](docs/whats-new-1.1.0.mdx)), and [RELEASE-NOTES.md](RELEASE-NOTES.md)
+has the highlights of each release.
 
 ---
 
@@ -43,6 +52,12 @@ the throughput**. See the numbers in [Meld vs Arnis](https://meldmc.com/vs-arnis
 | **Shared OSM prefetch** | The selection's OpenStreetMap data is downloaded once and reused by every cell, so parallel runs never hit the Overpass rate limit. |
 | **Parallel workers** | Builds many Arnis instances at once. Default 4, up to 16, with a one click **Recommend** that tunes cell size and workers to your CPU, RAM, and save disk. |
 | **One elevation lock** | A single global elevation range plus a tile invariant seed, so terrain height and building or scatter choices match on both sides of every border. |
+| **Region data packs** (1.1.0) | Download a whole region's elevation once into a shared cache, then generate offline with no rate limits. Check coverage, preview the height map, or import a folder of tiles. |
+| **Height preview** (1.1.0) | A grayscale or hillshade overlay of the cached elevation right on the map. Red means a tile is not cached yet. Click a tile to see its height range and status. |
+| **Elevation detail** (1.1.0) | Pick the terrarium zoom, or let Auto match it to your scale (1:1 picks the finest, 1:10 picks a lighter, lossless one). Lower zoom is far fewer tiles and dodges the no-data gaps. |
+| **No-data hole repair** (1.1.0) | The source data has gaps at the highest zooms that looked like dark bands and in-game dips. Meld rebuilds them from a lower zoom that has data, for one tile, a selection, or the whole cache. |
+| **No-buildings mode** (1.1.0) | A **Buildings** toggle for a roads and land-cover only world. Roads, bridges, railways, water, natural, and terrain all stay; building footprints are emptied so land cover fills in cleanly. |
+| **Road detail + flat bridges** (1.1.0) | A **Road detail** mode (max, clean, or compact) keeps roads legible at small scales by dropping footways, crossings, and lane clutter. At scale 0.3 or smaller, bridges become a flat one-block deck so tall arches do not collapse into noise. |
 | **LOD ready** | Chunk lighting is baked in, so distant chunks render lit in Distant Horizons and Voxy without flying the whole world first. |
 | **Resume and retry** | Re-run only unfinished cells after a stop, click one cell to regenerate it, and keep many worlds in your saves folder. |
 
@@ -59,8 +74,14 @@ python server.py        # then open http://127.0.0.1:5630
 
 Get the **generator**: use the bundled `arnis.exe`, or download the latest from the
 [Teddy563/arnis releases](https://github.com/Teddy563/arnis/releases) and drop the binary next to
-`server.py`. On macOS or Linux, build the fork (`cargo build --release`) and place the `arnis`
-binary there instead. Pillow is optional, only the automatic elevation survey needs it.
+`server.py`. Pillow is optional, only the automatic elevation survey needs it.
+
+> **Linux / macOS:** the binary must be named **`arnis`** (no `.exe`) and be the matching OS
+> build - Meld runs whatever it finds, and a Windows `.exe` here fails with `Exec format error`.
+> If you build the fork yourself, use **`cargo build --release --no-default-features`**: the
+> default `gui` feature pulls in Tauri/GTK/cairo system libraries (the `cairo-gobject` /
+> `PKG_CONFIG_PATH` error), and Meld only needs the headless CLI - `--no-default-features` skips
+> all of that and builds clean. Or just download the prebuilt Linux binary and rename it `arnis`.
 
 Then, in the app: draw an area, set the cell size in Settings, and hit **Generate and merge**.
 

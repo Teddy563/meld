@@ -23,6 +23,14 @@ def default_settings() -> dict:
         "ground_level": -56,
         "rotation": 0,
         "terrain": True,
+        # Skip regional hi-res elevation (USGS/IGN/GSI) -> AWS-only. Fewer per-tile retries on
+        # big parallel runs (the regional providers rate-limit under Meld's burst), at ~30m res.
+        "aws_only_elevation": False,
+        # Terrarium zoom used for elevation (pack download + Arnis generation). "auto" matches the
+        # zoom's pixel to the block size for this scale (the right detail with no waste): 1:1->z15,
+        # 1:10->z13, etc. Lower zoom = far fewer tiles + dodges the z14/z15 no-data holes. 11..15.
+        "elevation_zoom": "auto",
+        "buildings": True,   # off => roads + land cover only (roads/bridges/rails/water kept)
         "roof": True,
         "interior": False,
         "land_cover": True,
@@ -40,11 +48,46 @@ def default_settings() -> dict:
         "overpass_url": "",
         "timeout": 600,
         "max_workers": 4,   # sweet spot: ~4x speedup, safe save load. Up to 16 (8+ warns).
+        # CPU core budget Meld spreads across workers. Each child gets
+        # max(min_threads_per_worker, floor(cores*pct/100) / max_workers) rayon threads.
+        # 95 (slider max) = use nearly the whole machine; lower leaves headroom for the OS +
+        # disk-save phase. >100 (not reachable from the slider) oversubscribes. Default 90.
+        "cpu_target_pct": 90,
+        # Floor on rayon threads per worker, so a high worker count never starves each
+        # cell's in-process tile parallelism down to 1 thread. 2 is a good default.
+        "min_threads_per_worker": 2,
+        # Per-worker first-job start delay (seconds) to desync CPU phases. Small on
+        # purpose; big values just make generation look slow to start. Slider 1-4s.
+        "cpu_stagger_seconds": 2,
+        # Master toggle for the stagger. Off = all workers start at once (spikier CPU but
+        # nothing sits idle at launch).
+        "cpu_stagger_enabled": True,
+        # Adaptive: pace worker starts from the observed average cell time (so each worker
+        # enters the CPU phase as the previous frees). Off = fixed slider step.
+        "cpu_stagger_adaptive": True,
         # OSM prefetch: download the selection's OSM once (one serial request, split
         # into 4 only on failure) and feed every cell via --file, so parallel
         # generation never hits the Overpass rate limit. See src/prefetch.py.
         "prefetch_enabled": True,
         "prefetch_margin_m": 256,   # metres added around each chunk so border buildings stay whole
+        # Max real-world km² per shared OSM download tile (each tile = one Overpass query). 0 =
+        # AUTO: download the whole selection in one query, or a handful of big tiles if it's huge
+        # (cap ~30,000 km²), then auto-split any tile the server rejects. Because this is real-world
+        # area it behaves identically at 1:1 and 1:10. The UI slider sets it as a tile EDGE in km
+        # (stored here as edge²); raise it for fewer/bigger tiles, lower for a strict endpoint.
+        "prefetch_tile_km2": 0,
+        # How many OSM tiles download at once. 2 = the public Overpass per-IP slot allowance
+        # (halves prefetch time without tripping the rate limit). Capped at 4 for private endpoints.
+        "prefetch_concurrency": 2,
+        # Region data pack: how many elevation tiles the bulk downloader pulls at once. 16 keeps
+        # one controlled process well under any S3 throttle (vs the per-cell burst that flat-seams).
+        "datapack_tile_concurrency": 16,
+        # Pre-warm AWS terrain tiles once (serial, single process) before the parallel cells,
+        # so the cells hit the cache instead of bursting S3 (which truncates tiles -> flat seams).
+        "prefetch_terrain": True,
+        # Stream regions to disk during generation (upstream Arnis --stream-to-disk). Lets a
+        # single cell be 8x8/16x16 without OOM. Only used if the arnis binary supports the flag.
+        "stream_to_disk": False,
         # World management
         "prune_cell_after_merge": True,   # delete per-cell subregion after merge (saves storage)
         "master_world_dir": "",            # where the merged world lives ("" = <project>/Meld World)
@@ -196,3 +239,21 @@ class Project:
             grid = self._read(self.grid_path, {})
             grid[cell_key] = status
             self._write(self.grid_path, grid)
+
+    def bulk_set_cells(self, keys: list[str], op: str) -> int:
+        """Add ('add' -> 'planned') or remove ('remove') many cells in ONE locked write.
+        Merged cells are never touched. Returns the number actually changed."""
+        with _LOCK:
+            grid = self._read(self.grid_path, {})
+            n = 0
+            for k in keys:
+                cur = grid.get(k)
+                if cur == "merged":
+                    continue
+                if op == "add" and cur is None:
+                    grid[k] = "planned"; n += 1
+                elif op == "remove" and cur is not None:
+                    grid.pop(k, None); n += 1
+            if n:
+                self._write(self.grid_path, grid)
+            return n

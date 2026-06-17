@@ -28,6 +28,22 @@ import re
 import subprocess
 from pathlib import Path
 
+from .coords import recommended_elev_zoom, ELEV_ZOOM_MIN, ELEV_ZOOM_MAX
+
+
+def effective_elev_zoom(settings: dict, origin_lat: float = 45.0) -> int:
+    """Resolve the project's `elevation_zoom` setting to a concrete terrarium zoom for BOTH the data
+    pack (download/coverage/preview) and the Arnis run (via ARNIS_ELEV_ZOOM). "auto"/blank -> the
+    scale-matched recommendation; an explicit int is clamped to the valid [11,15] band."""
+    raw = (settings or {}).get("elevation_zoom", "auto")
+    scale = float((settings or {}).get("scale", 1.0) or 1.0)
+    if raw in (None, "", "auto", "Auto", "AUTO"):
+        return recommended_elev_zoom(scale, origin_lat)
+    try:
+        return max(ELEV_ZOOM_MIN, min(ELEV_ZOOM_MAX, int(raw)))
+    except (TypeError, ValueError):
+        return recommended_elev_zoom(scale, origin_lat)
+
 
 def build_arnis_cmd(arnis_exe: str, bbox: dict, output_path: str,
                     settings: dict, origin: dict, elevation: dict | None,
@@ -66,10 +82,17 @@ def build_arnis_cmd(arnis_exe: str, bbox: dict, output_path: str,
     cmd += ["--roof", "true" if settings.get("roof", True) else "false"]
     cmd += ["--interior", "true" if settings.get("interior", False) else "false"]
     cmd += ["--land-cover", "true" if settings.get("land_cover", True) else "false"]
+    # Skip OSM buildings (keeps roads, bridges, railways, land cover, water, terrain).
+    if not settings.get("buildings", True):
+        cmd.append("--no-buildings")
     if settings.get("fill_ground"):
         cmd.append("--fillground")
     if settings.get("disable_height_limit"):
         cmd.append("--disable-height-limit")
+    # NOTE: stream-to-disk is NOT a CLI flag in the merged Arnis (upstream removed the
+    # flag in eebecb5; it's now the ARNIS_STREAM_TO_DISK env var + a RAM heuristic).
+    # Meld sets that env per-cell in server._runner for big cells, so nothing is added
+    # to argv here. See run_arnis(env=...).
     # Bake chunk lighting so LOD mods (Voxy, Distant Horizons) render distant chunks
     # lit without visiting them (Arnis issue #1071). Default on.
     if settings.get("bake_lighting", True):
@@ -86,6 +109,13 @@ def build_arnis_cmd(arnis_exe: str, bbox: dict, output_path: str,
             and elevation.get("min_m") is not None and elevation.get("max_m") is not None):
         cmd += ["--elevation-min", str(elevation["min_m"])]
         cmd += ["--elevation-max", str(elevation["max_m"])]
+
+    # AWS-only elevation: skip the regional hi-res providers (USGS / IGN / GSI). Those are
+    # great single-shot but flaky under Meld's parallel burst (many cells hit them at once ->
+    # "Elevation request retry" per tile -> slow), and the terrain prefetch only warms AWS.
+    # On for big parallel runs trades ~30m AWS for far fewer retries.
+    if settings.get("terrain", True) and settings.get("aws_only_elevation"):
+        cmd.append("--aws-only-elevation")
 
     # Road detail — auto: compact below scale 0.7, clean at/above. max => omit.
     rd = (settings.get("road_detail_level") or "auto").strip().lower()
@@ -170,15 +200,22 @@ def parse_progress(line: str, current: int) -> int:
     return new
 
 
-def run_arnis(cmd: list[str], cwd: str, on_line=None, on_proc=None) -> bool:
+def run_arnis(cmd: list[str], cwd: str, on_line=None, on_proc=None,
+              env: dict | None = None) -> bool:
     """Run Arnis, streaming stdout line-by-line to on_line(text). Returns ok.
 
     on_proc(proc) is called once with the Popen handle so the caller can publish
     it (e.g. to worker state) for termination via /api/stop. It's cleared with
-    on_proc(None) before returning."""
+    on_proc(None) before returning.
+
+    env (optional) is overlaid on the inherited environment for THIS child only
+    (used to pin RAYON_NUM_THREADS so N parallel cells don't oversubscribe cores,
+    and ARNIS_STREAM_TO_DISK=1 for big cells). The post-merge Arnis reads both;
+    an older binary harmlessly ignores them."""
+    child_env = {**os.environ, **(env or {})}
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1, cwd=str(cwd), env={**os.environ},
+        text=True, bufsize=1, cwd=str(cwd), env=child_env,
     )
     if on_proc:
         on_proc(proc)

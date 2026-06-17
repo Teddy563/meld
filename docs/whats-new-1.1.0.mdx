@@ -1,0 +1,91 @@
+---
+title: What's new in Meld 1.1.0
+slug: whats-new-1-1-0
+description: Bigger builds, a live status rail, region data packs, a height preview, no-data hole repair, an elevation detail picker, and a shared cache reused by every world. A plain guide to what 1.1.0 added and why.
+---
+
+# What's new in Meld 1.1.0
+
+This release is about three things: go bigger, see more, and waste nothing. You can build much larger areas, watch your machine and your run while it happens, and download a region's terrain once so future builds are offline and never rate limited. Here is what we added and why it matters.
+
+A few of these are power-user features. Build a small area first to confirm your scale, elevation detail, and save location before you commit to a whole country. After you download or repair an elevation pack, restart the server and hard refresh the browser so the new tiles show.
+
+## Bigger builds
+
+We merged the latest engine into Meld's Arnis fork, so one cell can now hold a lot more.
+
+**Parallel cells in one process.** A big cell builds its tiles in parallel inside a single Arnis run, on top of Meld already running many cells at once. Why it matters: large areas finish much faster. How to use it: it is automatic. Big test cells go wide, small everyday cells keep the simple path.
+
+**Bigger cell sizes (up to 16).** Cell sizes are now 1, 2, 4, 8, and 16 regions, up from a cap of 6. Why it matters: fewer, larger cells for big jobs. How to use it: Settings, Cell size dropdown. The default is still 4, and 8 and 16 are marked as testing.
+
+**Stream to disk.** Big cells write finished regions to disk as they go instead of holding the whole world in memory. Why it matters: an 8x8 or 16x16 cell can finish without running out of RAM. How to use it: it turns on automatically for cell size 8 and up. You can also force it in Settings, Stream to disk.
+
+## Seeing your run
+
+A new status rail runs down the left side so you can watch everything at a glance, no log reading required.
+
+**System card.** Live CPU, RAM, and disk gauges, free space, a low-disk warning, and a small history graph. Why it matters: you can catch a low-disk problem before a build runs out of room mid save. How to use it: it is read only and updates on its own.
+
+**Build estimate card.** Estimated size on disk, cell and region counts, block and kilometre dimensions, predicted time, and a live timer with progress. Why it matters: you know how big and how long before you start. How to use it: it updates as you change the selection, cell size, or workers.
+
+**Workers card.** A live row per worker showing which cell it is building, a percent bar, and a status message. Why it matters: you can spot the slow or stuck cell right away. How to use it: it fills in during a run.
+
+**Log card.** A scrolling log with a Pop out button that opens it in its own window. Why it matters: a full-size log while you use the rest of the app. How to use it: read it in the left rail, or click Pop out.
+
+**Failed cells say why.** A red cell now tells you the cause when you hover it: out of memory, disk full, rate limit, network timeout, or a crash. Why it matters: you know what to fix instead of guessing. How to use it: hover a red cell on the map.
+
+## Region data packs
+
+Pull a whole region's elevation ahead of time so generation is a clean cache hit every time, never rate limited, and works with no connection.
+
+**Download elevation in bulk.** One careful downloader pulls a region's missing terrain tiles into the shared cache, checking each tile before it keeps it. Why it matters: many cells bursting the elevation server at once can return broken tiles that show up as flat seams. Pulling them in bulk first avoids that. How to use it: Data pack card, Download elevation.
+
+**Coverage check.** Shows how much of an area is already cached as a percent, plus the exact tiles still missing. Why it matters: you can tell at a glance whether an area is ready to build offline. How to use it: Data pack card, Check coverage. Downloaded packs list their live coverage too.
+
+**Work offline.** Once a region is packed, the whole build runs from disk with no network calls. Why it matters: no rate limits, and you can build on a machine with no connection. How to use it: download or import a pack first, then generate as normal. The first download still needs a connection.
+
+**Import a folder.** Drop in a folder of pack tiles (and shared OSM) from another machine and Meld adds them to the cache. Why it matters: share a pack or move it between PCs with no re-download. How to use it: Data pack card, set the Import folder path, then Import pack folder.
+
+## Height preview
+
+See the terrain that is cached before you build, right on the map.
+
+**A terrain overlay.** Cached elevation drawn over the map in grayscale or hillshade. Why it matters: you can see the shape of the land, and exactly where the gaps are, before you commit. How to use it: Data pack card, tick Height preview and pick a Preview style.
+
+**Red means not cached.** Missing tiles show as translucent red. Why it matters: red is a hole that would build as a flat dip in game, so you know what to download first. How to use it: just look for the red.
+
+**Zoom for the right view.** Zoom out for a wide regional view, zoom in for full detail. Why it matters: one overlay works from a continental view down to fine terrain. How to use it: pan and zoom the map as normal.
+
+**Click a tile for its info.** Click any tile to see its height range, file size, and status. Why it matters: it turns a vague dark band into a clear answer, real hole or just flat ground. How to use it: with Height preview on, click a tile to open its popup.
+
+## No-data holes and the fix
+
+The terrain source has real gaps at its highest zoom levels. Those gaps looked like dark bands in the preview and flat dips in game. Meld now repairs them.
+
+**What was wrong.** At the finest zooms the source sometimes serves an empty no-data tile, while the same spot has real data at a lower zoom. Why it matters: an empty tile becomes a flat dip in your world.
+
+**The fix (rebuild from a lower zoom).** Meld finds each hole and rebuilds it from the deepest zoom that does have data, then bakes the result into the cache so both the preview and Arnis read real terrain. Good tiles are left alone and nothing good is re-downloaded. How to use it: fix one tile from its popup, fix a drawn selection with Fix no-data holes, or fix the whole cache with Fix ALL holes. New downloads also self heal.
+
+## Elevation detail
+
+Pick how fine the terrain is, or let Meld match it to your scale.
+
+**One zoom drives everything.** A single Elevation detail setting controls the pack download, the coverage check, the preview, and the actual build, so they always agree and you get a clean cache hit. Why it matters: finer than one block buys nothing but multiplies tiles, and the lower zooms dodge the no-data holes. How to use it: Data pack card, Elevation detail dropdown (Auto, or z11 to z15).
+
+**Auto matches your scale.** Auto picks the right zoom for your scale: 1:1 picks the finest level, 1:10 picks a lighter one. Why it matters: the lighter level is far fewer tiles and still lossless against the roughly 30 metre source, and it avoids the holes. How to use it: leave Elevation detail on Auto.
+
+## No buildings, road detail, and flat bridges
+
+Three ways to get a cleaner base world, especially at small scales.
+
+**No buildings mode.** Skips all buildings and building-like clutter while keeping roads, bridges, rail, water, land cover, and terrain. Why it matters: a roads-and-ground world is a tidy base layer and skips the heavier building geometry. How to use it: the Buildings toggle in Settings (turn it off).
+
+**Road detail modes.** Three levels of road detail. Max is the full upstream look. Clean is a tidy pass for larger scales. Compact keeps vehicle roads only and drops footways, crossings, and lane clutter. Why it matters: at small scales, footways and lane markings stack into checkered noise. How to use it: Settings, Road detail. Auto picks compact below scale 0.7 and clean at or above it.
+
+**Flat bridges at small scales.** At scale 0.3 or smaller, bridges become a flat one-block deck that hugs the terrain. Why it matters: a tall arch bridge collapses into noise when the span is tiny. How to use it: it is automatic, triggered by a low scale (for example 0.1). There is no separate toggle.
+
+## One shared cache
+
+All of Meld's map caches now live in one visible folder reused by every world.
+
+**A single cache for everything.** OSM, terrain, and land cover all share one cache folder, reused across every project and world instead of being hidden away and re-downloaded each time. Why it matters: you download a tile once and every future build reuses it, and you can see and clear it. How to use it: it is set up automatically. The Cache card shows where it lives and the size of each type, with Clear buttons. Set `MELD_CACHE_DIR` to move it to another drive.
