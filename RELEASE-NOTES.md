@@ -2,6 +2,41 @@
 
 Short, human highlights for each Meld release. Full detail lives in [CHANGELOG.md](CHANGELOG.md).
 
+## v1.2.0
+
+**Offline, faster, cleaner.**
+
+1.1.0 made builds bigger; 1.2.0 makes them offline and fast. You can now bake a whole region's OSM
+once from a local Geofabrik `.pbf` and generate with zero Overpass calls, and the OSM cache is keyed
+to a fixed map grid so two overlapping selections reuse the same tiles instead of re-downloading. On
+the generation side, the biggest per-cell cost turned out to be a supplementary building fetch that
+ran on every cell even when you'd turned buildings off, that's gone for roads-only builds (a measured
+cell dropped from ~29s to ~4s), and each cell now reads its OSM straight from the shared tile cache
+with no merge step at all. Your drawn area is finally remembered across a restart, per world. And the diagonal
+water-and-sand "wedges" that sometimes slashed across otherwise-perfect terrain are fixed.
+
+Highlights:
+
+- **Build offline.** Drop Geofabrik `.osm.pbf` files in a folder, bake them once, and generate with
+  no Overpass, pair it with the elevation packs from 1.1.0 for a fully local region. New **OSM data
+  pack** card: check coverage, bake, scan folder, watch progress.
+- **OSM cache that reuses.** Map data is cached on a fixed grid, so a 90%-overlapping selection
+  downloads only the new edge, and an identical re-run downloads nothing.
+- **Much faster cells.** The Overture building fetch (about 93% of a cell's time) is skipped on
+  roads-only builds; with buildings on it now caches to disk and downloads once instead of per cell.
+  Each cell reads its OSM tiles directly with no merge step, the terrain warm is skipped when elevation
+  is already cached, and rate-limited tiles retry-and-cache instead of re-fetching every run.
+- **Your area is remembered.** The selection and cells save into each project and redraw on restart,
+  so there is no re-drawing the country after a server restart.
+- **No more water wedges.** Triangular water/sand bleed across terrain (from water polygons that
+  cross a cell edge) is fixed by clipping every water ring to the cell before it's filled.
+- **Detail + reliability.** Road-detail clean/compact modes, a custom Overpass URL, sub-world
+  operations, and disk-recovery of orphaned patches.
+
+> Setup: `pip install osmium` for `.pbf` baking. A region is fully offline once it's both elevation-
+> and OSM-packed. Restart the server after a bake. Buildings are off by default; turning them on
+> downloads Overture once per partition (slow the first time, cached after).
+
 ## v1.1.0
 
 **Go bigger, see more, waste nothing.**
@@ -49,7 +84,7 @@ Upgrade:
 
 - After you pull this release, restart the server and hard-refresh the browser so the new tiles and
   the new UI show.
-- The new `arnis.exe` (the Arnis fork at version 2.9.0) is bundled. If you keep your own binary, drop
+- The new `arnis.exe` (the Arnis fork at version 2.9.1) is bundled. If you keep your own binary, drop
   the matching build next to `server.py`.
 - A region data pack you already downloaded keeps working. Run Check coverage to confirm it before a
   big build.

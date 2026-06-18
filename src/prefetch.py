@@ -36,6 +36,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from . import osm_grid
 from .constants import METERS_PER_DEG_LAT
 from .coords import cell_bbox, expand_bbox_for_seam, mpd_lon
 
@@ -51,6 +52,9 @@ _MAX_PREFETCH_CONCURRENCY = 4
 # Strings in Arnis output that confirm a split-worthy failure (vs a hard network error).
 _SPLIT_MARKERS = ("rate limited", "timed out", "request timeout", "maxsize",
                   "too many", "timeout", "out of memory", "server overloaded")
+# TRANSIENT failures worth a retry-with-backoff (vs "area too big" / maxsize which need a smaller
+# bbox, not a retry). Retrying these lets a throttled tile succeed + cache, killing the per-run tail.
+_RETRY_MARKERS = ("rate limited", "timed out", "request timeout", "timeout", "server overloaded")
 # Tiling unit = REAL-WORLD km² (an Overpass query is real-world, so this is scale-independent:
 # Romania is the same area of OSM at 1:1 or 1:10). Auto downloads the WHOLE selection as ONE
 # query unless it exceeds this safe single-query cap, then quadrant-splits it — and the reactive
@@ -161,9 +165,13 @@ def _split_cells(cells: list[dict]) -> list[list[dict]]:
 
 
 def _download_one(exe: str, bbox: dict, out_json: Path, overpass_url: list[str],
-                  log) -> tuple[bool, str]:
+                  log, retries: int = 3) -> tuple[bool, str]:
     """Run `arnis --download-only` for one bbox. Returns (ok, reason).
-    ok=False with a split-worthy reason means the caller should subdivide."""
+
+    Retries a few times with backoff on TRANSIENT failures (rate-limited / timeout / overloaded), so a
+    throttled tile succeeds and gets CACHED instead of being re-fetched live on every future run (the
+    per-run gap tail). Non-transient reasons (area too big, hard exit) return immediately so the caller
+    can split or fall back to live. On success the tile is atomically published into the shared cache."""
     # Write to a per-PID temp then os.replace into place, so a reader in another project/process
     # sharing the GLOBAL cache never sees a half-written osm_<hash>.json (atomic publish).
     tmp = out_json.with_name(f"{out_json.stem}.{os.getpid()}.tmp")
@@ -175,32 +183,39 @@ def _download_one(exe: str, bbox: dict, out_json: Path, overpass_url: list[str],
     ]
     if overpass_url:
         cmd += ["--overpass-url", ",".join(overpass_url)]
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True,
-                              timeout=_DOWNLOAD_TIMEOUT_S, encoding="utf-8", errors="replace")
-    except subprocess.TimeoutExpired:
-        tmp.unlink(missing_ok=True)
-        return False, "timed out"
-    except Exception as ex:  # noqa: BLE001
-        tmp.unlink(missing_ok=True)
-        return False, f"spawn error: {ex}"
-
-    output = (proc.stdout or "") + (proc.stderr or "")
-    ok_file = proc.returncode == 0 and tmp.exists() and tmp.stat().st_size > 2
-    complete = ok_file and _looks_complete(tmp)
-    if complete:
+    reason = "exit"
+    for attempt in range(max(1, retries)):
         try:
-            os.replace(tmp, out_json)      # atomic publish into the shared cache
-            return True, "ok"
+            proc = subprocess.run(cmd, capture_output=True, text=True,
+                                  timeout=_DOWNLOAD_TIMEOUT_S, encoding="utf-8", errors="replace")
+        except subprocess.TimeoutExpired:
+            reason = "timed out"
         except Exception as ex:  # noqa: BLE001
             tmp.unlink(missing_ok=True)
-            return False, f"publish error: {ex}"
-    tmp.unlink(missing_ok=True)
-    if ok_file:                            # exited 0 with content but not a complete JSON
-        return False, "truncated json"
-    low = output.lower()
-    reason = next((m for m in _SPLIT_MARKERS if m in low), None)
-    return False, reason or f"exit {proc.returncode}"
+            return False, f"spawn error: {ex}"
+        else:
+            output = (proc.stdout or "") + (proc.stderr or "")
+            ok_file = proc.returncode == 0 and tmp.exists() and tmp.stat().st_size > 2
+            if ok_file and _looks_complete(tmp):
+                try:
+                    os.replace(tmp, out_json)      # atomic publish into the shared cache
+                    return True, "ok"
+                except Exception as ex:  # noqa: BLE001
+                    tmp.unlink(missing_ok=True)
+                    return False, f"publish error: {ex}"
+            tmp.unlink(missing_ok=True)
+            if ok_file:                            # exited 0 with content but not a complete JSON
+                return False, "truncated json"
+            low = output.lower()
+            reason = next((m for m in _SPLIT_MARKERS if m in low), None) or f"exit {proc.returncode}"
+        # Retry only TRANSIENT throttle/timeout reasons (not "too big" — that needs a smaller bbox).
+        if attempt < retries - 1 and reason in _RETRY_MARKERS:
+            wait = 2 * (attempt + 1)
+            log(f"  [Prefetch] tile fetch '{reason}' — retry {attempt + 1}/{retries - 1} in {wait}s…")
+            time.sleep(wait)
+            continue
+        return False, reason
+    return False, reason
 
 
 def preview_union(cells, origin, settings) -> dict | None:
@@ -326,14 +341,26 @@ def purge_small_tiles(min_bytes: int = 67, log=None) -> int:
     return n
 
 
-def run_terrain_prefetch(bboxes, exe, log, on_progress=None, timeout_s: int = 1200) -> dict:
+def run_terrain_prefetch(bboxes, exe, log, on_progress=None, timeout_s: int = 1200,
+                         elev_zoom: int | None = None) -> dict:
     """Warm the AWS terrain tiles for each bbox SEQUENTIALLY via `arnis --download-terrain-only`
     (one process at a time, 8 concurrent inside). This pre-fills the shared tile cache without
     the ~64-concurrent S3 burst that the parallel cells would otherwise cause (which truncates
-    tiles into flat-terrain seams). Best-effort: failures just mean those cells fetch live."""
+    tiles into flat-terrain seams). Best-effort: failures just mean those cells fetch live.
+
+    elev_zoom: the SAME elevation zoom the cells will request (ARNIS_ELEV_ZOOM). The warm MUST be
+    told this — terrain tiles are cached zoom-keyed (z{z}_x_y.png), so a warm at the binary's default
+    zoom (15) does NOT satisfy cells that fetch z13 at 1:10, and every cell re-downloads live. Pinning
+    the env makes the warm fill exactly the tiles the cells need (the whole point of warming)."""
     total = len(bboxes)
     ok_tiles = 0
     failed_tiles = 0
+    # Pin the child's elevation zoom to match generation; without this the warm fills the wrong
+    # zoom and the cache-hit it exists to create never happens. None → inherit (legacy behaviour).
+    env = None
+    if elev_zoom is not None:
+        env = {**os.environ, "ARNIS_ELEV_ZOOM": str(int(elev_zoom))}
+        log(f"  [Terrain] warming at z{int(elev_zoom)} (matched to generation)")
     for i, bbox in enumerate(bboxes):
         cmd = [
             str(exe),
@@ -341,7 +368,7 @@ def run_terrain_prefetch(bboxes, exe, log, on_progress=None, timeout_s: int = 12
             "--download-terrain-only",
         ]
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True,
+            proc = subprocess.run(cmd, capture_output=True, text=True, env=env,
                                   timeout=timeout_s, encoding="utf-8", errors="replace")
             out = (proc.stdout or "") + (proc.stderr or "")
             m = re.search(r"(\d+) tile\(s\) cached, (\d+) failed", out)
@@ -359,12 +386,16 @@ def run_terrain_prefetch(bboxes, exe, log, on_progress=None, timeout_s: int = 12
 
 
 def run_prefetch(cells, origin, settings, exe, cache_dir, log, on_chunk) -> dict:
-    """Pre-fetch OSM for `cells` and return {cell_key: osm_file_path}.
+    """Pre-fetch OSM for `cells` and return {cell_key: osm_source}.
+
+    osm_source is the shared grid-cache DIRECTORY (str): the cell hands it to Arnis as
+    `--osm-tile-dir`, and Arnis reads its own covering z11 tiles from it directly — there
+    is no per-cell merge/clump file anymore.
 
     cells: list of {cell_key, bbox} (bbox unused here; recomputed canonically).
     on_chunk(chunk_dict): called whenever a chunk's state changes (for the UI overlay).
-    Cells that can't be prefetched (all splits failed) are simply omitted from the
-    map, so they fall back to live Overpass during generation.
+    Cells whose covering tiles couldn't all be fetched are simply omitted from the map,
+    so they fall back to live Overpass during generation.
     """
     olat, olon = origin.get("lat"), origin.get("lon")
     if olat is None or olon is None:
@@ -395,98 +426,148 @@ def run_prefetch(cells, origin, settings, exe, cache_dir, log, on_chunk) -> dict
         return {}
 
     osm_files: dict[str, str] = {}
-    _files_lock = threading.Lock()   # tiles may download in parallel; guard the shared map
-    extra = f"{OSM_CACHE_VERSION}|rd-superset|op={','.join(overpass_url)}|s{scale}"
+    _files_lock = threading.Lock()   # tiles download in parallel; guard the shared map
     ttl_s = OSM_CACHE_TTL_DAYS * 86400
 
+    # Each cell's covering set of stable grid tiles (the reuse unit). Computed from the SAME
+    # seam-expanded bbox the cell hands Arnis, so the tiles fully cover what the cell needs.
+    for g in work:
+        g["tiles"] = osm_grid.grid_tiles_for_bbox(g["expanded"])
+
+    # Shared per-tile state so a tile straddling two clumps downloads ONCE across the whole run.
+    _tile_state: dict[tuple, str] = {}          # (x,y) -> 'cached' | 'done' | 'fail'
+    _locks: dict = {}                           # per (x,y) tile
+    _locks_guard = threading.Lock()
+
+    def _lock_for(key) -> threading.Lock:
+        with _locks_guard:
+            lk = _locks.get(key)
+            if lk is None:
+                lk = threading.Lock()
+                _locks[key] = lk
+            return lk
+
+    def _fresh_on_disk(xy: tuple) -> bool:
+        """True if grid tile (x,y) is already on disk, intact and within the TTL — a baked or
+        previously-cached tile that needs NO network. Used both to skip the download and to label
+        the overlay/log honestly (a fully-baked clump must not read as 'downloading')."""
+        p = cache_dir / osm_grid.tile_filename(xy[0], xy[1])
+        try:
+            info = p.stat()
+        except OSError:
+            return False
+        return info.st_size > 2 and (time.time() - info.st_mtime) < ttl_s and _looks_complete(p)
+
+    def _ensure_tile(xy: tuple) -> str:
+        """Make grid tile (x,y) present once (cache-aware) and return 'cached'|'done'|'fail'.
+        A grid tile (z11 ≈ 190 km²) is well under the single-query budget, so density never forces
+        a split — on the rare hard failure the tile is 'fail' and its cells fetch live."""
+        x, y = xy
+        with _lock_for(xy):
+            st = _tile_state.get(xy)
+            if st is not None:
+                return st
+            if _fresh_on_disk(xy):                  # baked .pbf tile or prior cache → no download
+                _tile_state[xy] = "cached"
+                return "cached"
+            path = cache_dir / osm_grid.tile_filename(x, y)
+            ok, reason = _download_one(exe, osm_grid.tile_bounds_ll(x, y), path, overpass_url, log)
+            if not ok:
+                log(f"  [Prefetch] grid tile {osm_grid.OSM_GRID_Z}/{x}/{y} failed "
+                    f"({reason}) — cells using it fetch live")
+            _tile_state[xy] = "done" if ok else "fail"
+            return _tile_state[xy]
+
     def fetch_group(group: list[dict], depth: int) -> None:
-        bboxes = [g["expanded"] for g in group]
-        union = _union(bboxes)
+        """Process one clump: ensure its grid tiles are present (shared globally), then point each
+        fully-covered cell at the grid-cache dir (Arnis reads its own tiles — no merge). The clump
+        is only an overlay/terrain GROUPING now — the cache lives on the grid tiles underneath, so
+        overlapping selections reuse them."""
+        keys = [g["cell_key"] for g in group]
+        union = _union([g["expanded"] for g in group])
         d_lat, d_lon = _margin_deg(margin_m, olat)
         chunk_bbox = {
             "south": union["south"] - d_lat, "west": union["west"] - d_lon,
             "north": union["north"] + d_lat, "east": union["east"] + d_lon,
         }
-        keys = [g["cell_key"] for g in group]
-        cid = _bbox_key(chunk_bbox, extra)
-        out_json = cache_dir / f"osm_{cid}.json"
+        cid = _bbox_key(chunk_bbox, f"{OSM_CACHE_VERSION}|grid{osm_grid.OSM_GRID_Z}")
+        clump_tiles = sorted({t for g in group for t in g["tiles"]})
+        # Peek the cache so the overlay/log are honest: a clump whose tiles are all already on disk
+        # (baked from a .pbf, or fetched on a prior run) is ASSEMBLED locally, never "downloading".
+        n_need = sum(1 for xy in clump_tiles
+                     if _tile_state.get(xy) not in ("cached", "done") and not _fresh_on_disk(xy))
         chunk = {"id": cid, "bbox": chunk_bbox, "cells": keys, "depth": depth,
-                 "state": "downloading", "file": str(out_json), "error": None}
-
-        # Cache hit: reuse without a network call (intact AND fresh — OSM drifts, so an old
-        # cached chunk past the TTL is re-downloaded; terrain/ESA don't need this).
-        try:
-            fresh = out_json.exists() and (time.time() - out_json.stat().st_mtime) < ttl_s
-        except Exception:
-            fresh = False
-        if fresh and out_json.stat().st_size > 2 and _looks_complete(out_json):
-            chunk["state"] = "cached"
-            on_chunk(dict(chunk))
-            with _files_lock:
-                for k in keys:
-                    osm_files[k] = str(out_json)
-            log(f"  [Prefetch] cache hit for {len(keys)} cell(s) ({cid})")
-            return
-
+                 "state": "downloading" if n_need else "cached", "file": "", "error": None}
         on_chunk(dict(chunk))
-        log(f"  [Prefetch] downloading 1 chunk for {len(keys)} cell(s) (depth {depth})…")
-        ok, reason = _download_one(exe, chunk_bbox, out_json, overpass_url, log)
-        if ok:
-            chunk["state"] = "done"
-            on_chunk(dict(chunk))
-            with _files_lock:
-                for k in keys:
-                    osm_files[k] = str(out_json)
-            log(f"  [Prefetch] OK: {len(keys)} cell(s) share {out_json.name}")
-            return
-
-        # Failed. Split into quadrants and retry, unless we're at a single cell.
-        try:
-            out_json.unlink(missing_ok=True)
-        except Exception:
-            pass
-        if len(group) > 1 and depth < _MAX_DEPTH:
-            chunk["state"] = "split"
-            chunk["error"] = reason
-            on_chunk(dict(chunk))
-            # These reasons are the Overpass SERVER's per-query limits (not your machine's RAM) —
-            # the area is just too big for one query, so we split it. Make that clear in the log
-            # since "out of memory" reads alarmingly otherwise.
-            why = reason
-            if reason in ("out of memory", "maxsize", "too many", "server overloaded"):
-                why = f"area too big for one Overpass query ({reason}, server-side limit)"
-            log(f"  [Prefetch] {why} — splitting {len(keys)} cells into quadrants")
-            for sub in _split_cells(group):
-                fetch_group(sub, depth + 1)
+        if n_need:
+            log(f"  [Prefetch] clump of {len(keys)} cell(s): fetching {n_need} of "
+                f"{len(clump_tiles)} grid tile(s) ({len(clump_tiles) - n_need} already local)…")
         else:
-            chunk["state"] = "failed"
-            chunk["error"] = reason
-            on_chunk(dict(chunk))
-            log(f"  [Prefetch] gave up on {keys} ('{reason}') — these cells fetch live")
+            log(f"  [Prefetch] clump of {len(keys)} cell(s): all {len(clump_tiles)} grid tile(s) "
+                f"baked/local — NO download, NO merge (Arnis reads tiles directly)")
+        n_dl = n_cache = 0
+        any_fail = False
+        for xy in clump_tiles:
+            st = _ensure_tile(xy)
+            if st == "done":
+                n_dl += 1
+            elif st == "cached":
+                n_cache += 1
+            else:
+                any_fail = True
 
-    # Pre-split into safe tiles up front (proactive), instead of trying the whole area and tiling
-    # down only on failure. Each planned tile still goes through fetch_group, which keeps the
-    # reactive quadrant split as a backstop if a tile is somehow still rejected or times out.
-    # Auto sizes from the whole selection's real-world footprint (the union bbox a single query
-    # would cover), so it's the same handful of big tiles at 1:1 or 1:10.
+        # NO merge step: each fully-covered cell reads its z11 grid tiles STRAIGHT from the cache
+        # dir via Arnis `--osm-tile-dir <cache_dir>`. Arnis recomputes the covering tile set from
+        # --bbox (the same tiles grid_tiles_for_bbox planned, same web-mercator formula), reads
+        # each osm_g1_z11_{x}_{y}.json and dedups them itself. The clump stays purely an
+        # overlay/terrain grouping; the cache lives on the shared grid tiles underneath. This kills
+        # the per-run "assembling" pass entirely (the slow part) and shrinks each cell's Arnis parse
+        # from the whole clump superset to only its own ~9-16 covering tiles.
+        n_ok = 0
+        for g in group:
+            if all(_tile_state.get(t) in ("cached", "done") for t in g["tiles"]):
+                with _files_lock:
+                    osm_files[g["cell_key"]] = str(cache_dir)
+                n_ok += 1
+
+        if n_ok == 0:
+            chunk["state"] = "failed"
+            chunk["error"] = "all covering tiles failed"
+        else:
+            chunk["state"] = "done" if n_dl else "cached"
+        on_chunk(dict(chunk))
+        parts = ([f"{n_dl} fetched"] if n_dl else []) + ([f"{n_cache} from local"] if n_cache else [])
+        log(f"  [Prefetch] clump ({', '.join(parts) or 'no tiles'}); "
+            f"{n_ok}/{len(keys)} cell(s) served from grid"
+            + (" (some tiles failed → live)" if any_fail else ""))
+
+    # Group cells into clumps for the overlay/terrain (the area budget keeps each overlay box a
+    # sane size); the real download unit is the stable grid tile inside _ensure_tile, deduped
+    # across all clumps so the SAME tile never downloads twice even when two clumps share it.
     total_area = _bbox_area_km2(_union([g["expanded"] for g in work]))
     budget_km2 = _resolve_tile_budget(settings, total_area)
     clumps = _plan_clumps(work, budget_km2)
+    tile_set = {t for g in work for t in g["tiles"]}
+    n_tiles = len(tile_set)
+    n_local = sum(1 for xy in tile_set if _fresh_on_disk(xy))
     try:
         conc = int(settings.get("prefetch_concurrency", 2) or 2)
     except (TypeError, ValueError):
         conc = 2
     conc = max(1, min(_MAX_PREFETCH_CONCURRENCY, conc))
-    log(f"  [Prefetch] planned {len(clumps)} tile(s) (≤{budget_km2:.0f} km² each) for "
-        f"{len(work)} cell(s); {conc} download(s) at a time")
+    if n_local >= n_tiles:
+        log(f"  [Prefetch] {len(work)} cell(s) over {n_tiles} stable z{osm_grid.OSM_GRID_Z} grid "
+            f"tile(s) — ALL local (baked/cached), 0 to download; cells read tiles directly (no merge)")
+    else:
+        log(f"  [Prefetch] {len(work)} cell(s) over {n_tiles} stable z{osm_grid.OSM_GRID_Z} grid "
+            f"tile(s) in {len(clumps)} overlay group(s); {n_tiles - n_local} to fetch, "
+            f"{n_local} already local; {conc} download(s) at a time")
     if conc <= 1 or len(clumps) <= 1:
         for grp in clumps:
             fetch_group(grp, 0)
     else:
-        # Up to `conc` Overpass requests in flight at once (default 2 = the public per-IP slot
-        # allowance), so big plans finish faster without tripping the rate limit. Each tile's
-        # reactive quadrant split still runs serially inside its own worker, so the number of
-        # live requests never exceeds `conc`.
+        # Up to `conc` clumps processed at once; a shared tile serializes on its own lock so the
+        # number of live Overpass requests never exceeds `conc` (the public per-IP slot allowance).
         with ThreadPoolExecutor(max_workers=conc) as ex:
             list(ex.map(lambda g: fetch_group(g, 0), clumps))
     return osm_files

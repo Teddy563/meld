@@ -46,6 +46,8 @@ from src.arnis_cmd import (build_arnis_cmd, run_arnis, find_world_dir, clean_out
 from src.prefetch import (run_prefetch, preview_clumps, run_terrain_prefetch,
                           purge_small_tiles)
 from src import datapack as dp
+from src import osm_pack as op
+from src import osm_grid
 from src.merge import (merge_cell_into_master, strip_buffer_regions,
                         MeldCoordinateDriftError, MeldCollisionError)
 from src.survey import survey_elevation
@@ -174,6 +176,13 @@ _DATAPACK_LOCK = threading.Lock()
 _DATAPACK = {"active": False, "done": False, "note": "", "total": 0, "done_n": 0,
              "ok": 0, "absent": 0, "fail": 0, "region": None}
 _DATAPACK_STOP = {"flag": False}
+
+# OSM data-pack bake progress (slice a local .pbf into the shared OSM grid). Its own lock/dict/stop
+# so an OSM bake and an elevation build are independent jobs and never report each other's progress.
+_OSMPACK_LOCK = threading.Lock()
+_OSMPACK = {"active": False, "done": False, "note": "", "total": 0, "done_n": 0,
+            "ok": 0, "absent": 0, "fail": 0, "region": None}
+_OSMPACK_STOP = {"flag": False}
 
 
 def _osm_cache_dir() -> Path:
@@ -322,6 +331,27 @@ def master_world_path(create: bool = True) -> Path:
     return p
 
 
+def _output_drive_ok() -> tuple[bool, str]:
+    """Is the master-world save location reachable AND writable RIGHT NOW? Returns (ok, reason).
+
+    Run BEFORE a generation so an offline/disconnected save drive (e.g. a flaky external/USB drive
+    that dropped) fails the whole run fast with ONE clear message, instead of every cell reaching
+    the merge step and throwing a cryptic per-cell '[WinError 433] A device which does not exist'."""
+    try:
+        parent = master_world_path(create=False).parent
+    except Exception as ex:  # noqa: BLE001
+        return False, f"cannot resolve the save location: {ex}"
+    try:
+        parent.mkdir(parents=True, exist_ok=True)
+        probe = parent / f".meld_write_test.{os.getpid()}"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return True, ""
+    except OSError as ex:  # device offline / read-only / no space → WinError 433/21/112…
+        return False, (f"Save drive not reachable or not writable: {parent} ({ex}). "
+                       f"Reconnect the drive (or change the save location), then generate again.")
+
+
 def _dir_size_mb(p: Path) -> float:
     try:
         total = sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
@@ -458,6 +488,7 @@ def api_datapack_build():
             log(f"[Datapack] {done_n}/{total} tiles · {ok} new, {absent} off-grid, {fail} failed")
 
     def _worker():
+        _t0 = time.time()
         try:
             conc = int(PROJECT.settings().get("datapack_tile_concurrency", 16) or 16)
             log(f"[Datapack] {verb} {len(missing)} z{pz} elevation tiles ({conc} at a time)…")
@@ -466,11 +497,12 @@ def api_datapack_build():
             cov2 = dp.coverage_elevation(bbox, zoom=pz)
             dp.write_manifest(rid, name=name, bbox=bbox, cov=cov2, polygons=rings)
             dp.clear_preview_cache()   # drop rendered overviews so re-fetched tiles show fresh
+            _el = time.time() - _t0
             with _DATAPACK_LOCK:
-                _DATAPACK.update(active=False, done=True,
-                                 note=f"done: {cov2['cached']}/{cov2['total']} tiles cached ({cov2['pct']}%)")
+                _DATAPACK.update(active=False, done=True, elapsed=round(_el, 1),
+                                 note=f"done in {_el:.0f}s: {cov2['cached']}/{cov2['total']} tiles cached ({cov2['pct']}%)")
             log(f"[Datapack] {name or rid}: {res['ok']} new, {res['skip']} cached, "
-                f"{res['absent']} off-grid, {res['fail']} failed -> {cov2['pct']}% covered")
+                f"{res['absent']} off-grid, {res['fail']} failed -> {cov2['pct']}% covered in {_el:.0f}s")
         except Exception as ex:  # noqa: BLE001
             with _DATAPACK_LOCK:
                 _DATAPACK.update(active=False, done=True, note=f"error: {ex}")
@@ -636,6 +668,303 @@ def api_datapack_zoom():
                     "setting": s.get("elevation_zoom", "auto"), "scale": scale})
 
 
+# ── region OSM packs: bake a local .pbf into the shared OSM grid (offline OSM) ─────────────
+def _osm_gen_bbox(bbox: dict) -> dict:
+    """Expand a drawn selection by the SAME seam buffer + prefetch margin the generator adds to
+    every cell, so OSM coverage/bake target exactly the z9 tiles generation will request — not just
+    the drawn rectangle. Without this, edge cells' seam-expanded bboxes reach into tiles the bake
+    skipped, so coverage reads 100% yet generation still fetches the ring (the user-seen gap)."""
+    from src.coords import mpd_lon
+    from src.constants import METERS_PER_DEG_LAT, REGION_BLOCKS, CHUNK_BLOCKS
+    s = PROJECT.settings()
+    scale = float(s.get("scale", 1.0) or 1.0)
+    seam = int(s.get("seam_buffer_chunks", 8) or 0)
+    margin = float(s.get("prefetch_margin_m", 256) or 0)
+    # Edge cells snap OUTWARD to the global region grid (up to one 512-block region past the drawn
+    # edge), THEN get the seam buffer, THEN the prefetch margin. Pad by all three so the baked tiles
+    # are a superset of every tile generation will request — no live-fetched ring.
+    pad_blocks = REGION_BLOCKS + seam * CHUNK_BLOCKS
+    pad_m = pad_blocks / scale + margin if scale > 0 else margin
+    try:
+        clat = (float(bbox["south"]) + float(bbox["north"])) / 2.0
+        d_lat = pad_m / METERS_PER_DEG_LAT
+        d_lon = pad_m / (mpd_lon(clat) or METERS_PER_DEG_LAT)
+        return {"south": bbox["south"] - d_lat, "west": bbox["west"] - d_lon,
+                "north": bbox["north"] + d_lat, "east": bbox["east"] + d_lon}
+    except (TypeError, ValueError, KeyError):
+        return bbox
+
+
+@app.route("/api/osmpack/coverage", methods=["POST"])
+def api_osmpack_coverage():
+    """How much of the selection's OSM is already baked/cached on the stable grid (covered% +
+    missing tiles). Pure disk, no pyosmium needed."""
+    bbox, rings, _ = _datapack_selection()
+    if not bbox:
+        return jsonify({"ok": False, "error": "bbox or polygon required"}), 400
+    cov = op.coverage_osm(_osm_gen_bbox(bbox))   # seam-expanded → matches what generation needs
+    log(f"[OSM pack] coverage: {cov['pct']}% ({cov['cached']}/{cov['total']} z{cov['grid_z']} OSM "
+        f"tiles, {len(cov['missing'])} missing)")
+    return jsonify({"ok": True, "osm": cov, "bbox": bbox})
+
+
+@app.route("/api/osmpack/scan", methods=["POST"])
+def api_osmpack_scan():
+    """List the .pbf files in a drop folder + their header bbox, so the UI can confirm before baking."""
+    folder = ((request.json or {}).get("folder") or "").strip()
+    if not folder:
+        return jsonify({"ok": False, "error": "folder required"}), 400
+    return jsonify(op.scan_pbf_folder(folder))
+
+
+@app.route("/api/osmpack/bake", methods=["POST"])
+def api_osmpack_bake():
+    """Slice the .pbf file(s) in `folder` into the selection's missing OSM grid tiles. Offline:
+    no Overpass. Mirrors the elevation build's lock + daemon-thread + cooperative-stop pattern."""
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before baking OSM"}), 409
+    # Reserve the slot AND reset the stop flag atomically under the lock, so two near-simultaneous
+    # bake POSTs can't both pass the active-check and start two workers over the same tiles.
+    with _OSMPACK_LOCK:
+        if _OSMPACK["active"]:
+            return jsonify({"ok": False, "error": "an OSM bake is already running"}), 409
+        _OSMPACK.update(active=True, done=False, note="preparing OSM bake…",
+                        total=0, done_n=0, ok=0, absent=0, fail=0, region=None)
+        _OSMPACK_STOP["flag"] = False
+
+    def _release(err, code):
+        with _OSMPACK_LOCK:
+            _OSMPACK.update(active=False, done=True, note=f"error: {err}")
+        return jsonify({"ok": False, "error": err}), code
+
+    bbox, rings, name = _datapack_selection()
+    if not bbox:
+        return _release("bbox or polygon required", 400)
+    folder = ((request.json or {}).get("folder") or "").strip()
+    if not folder:
+        return _release("a folder of .pbf files is required", 400)
+    scan = op.scan_pbf_folder(folder)
+    if not scan.get("ok") or not scan.get("files"):
+        return _release(scan.get("error") or "no .pbf files in folder", 400)
+    pbf_paths = [f["path"] for f in scan["files"]]
+    force = bool((request.json or {}).get("force"))
+    gbb = _osm_gen_bbox(bbox)                     # seam-expanded → bake the ring generation will need
+    cov = op.coverage_osm(gbb)
+    tiles = (osm_grid.grid_tiles_for_bbox(gbb) if force
+             else [(t["x"], t["y"]) for t in cov["missing"]])
+    rid = dp.region_id(bbox, name)
+    with _OSMPACK_LOCK:
+        _OSMPACK.update(total=len(tiles), region=name or rid,
+                        note=f"baking {len(tiles)} OSM tile(s) from {len(pbf_paths)} .pbf…")
+
+    _logged = [0]
+
+    def _prog(done_n, total, ok, skip, absent, fail):
+        with _OSMPACK_LOCK:
+            _OSMPACK.update(done_n=done_n, total=total, ok=ok, absent=absent, fail=fail)
+        if total and (done_n - _logged[0] >= max(50, total // 20) or done_n >= total):
+            _logged[0] = done_n
+            log(f"[OSM pack] {done_n}/{total} tiles · {ok} baked, {skip} cached, {fail} failed")
+
+    def _worker():
+        _t0 = time.time()
+        try:
+            log(f"[OSM pack] baking {len(tiles)} z{osm_grid.OSM_GRID_Z} tile(s) from "
+                f"{len(pbf_paths)} .pbf file(s)…")
+            _s = PROJECT.settings()
+            _bw = int(_s.get("osm_bake_workers", 4) or 4)
+            # Parallel front end (one process per .pbf, then merge seams) — bake_tiles_parallel falls
+            # back to the sequential bake_tiles for <2 overlapping .pbf or any pool error. Set bake
+            # workers to 1 to force the sequential path. Output is identical either way (verified).
+            _bake = op.bake_tiles_parallel if (_bw > 1 and _s.get("osm_bake_parallel", True)) else op.bake_tiles
+            _kw = {"workers": _bw} if _bake is op.bake_tiles_parallel else {}
+            res = _bake(pbf_paths, tiles, on_progress=_prog,
+                        should_stop=lambda: _OSMPACK_STOP["flag"], log=log, force=force, **_kw)
+            cov2 = op.coverage_osm(gbb)
+            try:
+                el = dp.coverage_elevation(bbox, zoom=_pack_zoom(bbox))
+                dp.write_manifest(rid, name=name, bbox=bbox, cov=el, polygons=rings, osm=cov2)
+            except Exception:  # noqa: BLE001
+                pass
+            _el = time.time() - _t0
+            with _OSMPACK_LOCK:
+                _OSMPACK.update(active=False, done=True, elapsed=round(_el, 1),
+                                note=f"done in {_el:.0f}s: {cov2['cached']}/{cov2['total']} OSM tiles cached ({cov2['pct']}%)")
+            log(f"[OSM pack] {name or rid}: {res['baked']} baked, {res['skip']} cached, "
+                f"{res['elements']} elements -> {cov2['pct']}% covered in {_el:.0f}s")
+        except Exception as ex:  # noqa: BLE001
+            with _OSMPACK_LOCK:
+                _OSMPACK.update(active=False, done=True, note=f"error: {ex}")
+            log(f"[OSM pack] error: {ex}")
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return jsonify({"ok": True, "region_id": rid, "tiles": len(tiles), "pbf": len(pbf_paths)})
+
+
+@app.route("/api/osmpack/status")
+def api_osmpack_status():
+    with _OSMPACK_LOCK:
+        return jsonify({"ok": True, **_OSMPACK})
+
+
+@app.route("/api/osmpack/stop", methods=["POST"])
+def api_osmpack_stop():
+    _OSMPACK_STOP["flag"] = True
+    return jsonify({"ok": True})
+
+
+# ── Overture buildings pre-warm (data-pack style) ─────────────────────────────
+# Buildings come from Overture Maps GeoParquet — a per-cell HTTP byte-range fetch in the fork. The fork
+# caches each range to <cache>/arnis-overture-cache/ranges/, but on a cold cache the FIRST cell stalls
+# downloading them. Pre-warm fetches the region's ranges ONCE, in parallel, up front (one
+# `arnis --prewarm-overture --bbox` per sub-tile), so the parallel cells read them from disk. Only
+# matters with buildings ON; with --no-buildings the fork skips Overture entirely.
+_OVERTURE_LOCK = threading.Lock()
+_OVERTURE = {"active": False, "done": False, "note": "", "total": 0, "done_n": 0,
+             "ok": 0, "fail": 0, "mb": 0.0}
+_OVERTURE_STOP = {"flag": False}
+
+
+def _overture_ranges_dir() -> Path:
+    from src.prefetch import meld_cache_root
+    return meld_cache_root() / "arnis-overture-cache" / "ranges"
+
+
+def _overture_cached_mb() -> float:
+    d = _overture_ranges_dir()
+    if not d.exists():
+        return 0.0
+    total = 0
+    try:
+        for f in d.glob("*.bin"):
+            try:
+                total += f.stat().st_size
+            except OSError:
+                pass
+    except OSError:
+        pass
+    return round(total / 1_048_576, 1)
+
+
+def _split_bbox_grid(bb: dict, target: int = 96) -> list[dict]:
+    """Split a bbox into ~`target` sub-tiles so the pre-warm runs in parallel and each sub stays under
+    the fork's per-fetch building cap. Step is adaptive so a city and a country both yield ~target."""
+    s, w, n, e = bb["south"], bb["west"], bb["north"], bb["east"]
+    span_lat, span_lon = max(n - s, 1e-6), max(e - w, 1e-6)
+    step = max(0.04, math.sqrt(span_lat * span_lon / max(target, 1)))
+    out = []
+    z = s
+    while z < n - 1e-9:
+        z2 = min(z + step, n)
+        x = w
+        while x < e - 1e-9:
+            x2 = min(x + step, e)
+            out.append({"south": z, "west": x, "north": z2, "east": x2})
+            x = x2
+        z = z2
+    return out[:512]   # hard cap so a huge selection never spawns thousands of processes
+
+
+@app.route("/api/overture/coverage", methods=["POST"])
+def api_overture_coverage():
+    """How much Overture building data is cached locally (MB + range-file count). Overture has no tile
+    grid, so this is a size, not a percent — it grows as cells (or a pre-warm) fetch ranges."""
+    return jsonify({"ok": True, "mb": _overture_cached_mb(),
+                    "files": sum(1 for _ in _overture_ranges_dir().glob("*.bin")) if _overture_ranges_dir().exists() else 0})
+
+
+@app.route("/api/overture/prewarm", methods=["POST"])
+def api_overture_prewarm():
+    """Download the selection's Overture building ranges up front, in parallel, into the shared cache,
+    so a later buildings-ON build never stalls on a cold fetch. Mirrors the OSM-pack lock + daemon +
+    cooperative-stop pattern; drives `arnis --prewarm-overture --bbox` per sub-tile."""
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before pre-warming"}), 409
+    with _OVERTURE_LOCK:
+        if _OVERTURE["active"]:
+            return jsonify({"ok": False, "error": "an Overture pre-warm is already running"}), 409
+        _OVERTURE.update(active=True, done=False, note="preparing Overture pre-warm…",
+                         total=0, done_n=0, ok=0, fail=0, mb=_overture_cached_mb())
+        _OVERTURE_STOP["flag"] = False
+
+    def _release(err, code):
+        with _OVERTURE_LOCK:
+            _OVERTURE.update(active=False, done=True, note=f"error: {err}")
+        return jsonify({"ok": False, "error": err}), code
+
+    exe = resolve_arnis_exe()
+    if not exe:
+        return _release("arnis.exe not found", 400)
+    bbox, rings, name = _datapack_selection()
+    if not bbox:
+        return _release("bbox or polygon required", 400)
+    scale = float(PROJECT.settings().get("scale", 1.0) or 1.0)
+    subs = _split_bbox_grid(_osm_gen_bbox(bbox))
+    from src.prefetch import meld_cache_root
+    root = str(meld_cache_root())
+    with _OVERTURE_LOCK:
+        _OVERTURE.update(total=len(subs), note=f"pre-warming Overture over {len(subs)} tile(s)…")
+
+    def _one(sub):
+        if _OVERTURE_STOP["flag"]:
+            return False
+        cmd = [str(exe), "--prewarm-overture", "--scale", str(scale),
+               "--bbox", f"{sub['south']},{sub['west']},{sub['north']},{sub['east']}"]
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=600,
+                               env={**os.environ, "ARNIS_CACHE_ROOT": root})
+            return p.returncode == 0
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _worker():
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        done_n = ok = fail = 0
+        t0 = time.time()
+        try:
+            log(f"[Overture] pre-warming buildings over {len(subs)} tile(s) (4 at a time)…")
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                futs = [pool.submit(_one, sub) for sub in subs]
+                for fut in as_completed(futs):
+                    done_n += 1
+                    if fut.result():
+                        ok += 1
+                    else:
+                        fail += 1
+                    mb = _overture_cached_mb()
+                    with _OVERTURE_LOCK:
+                        _OVERTURE.update(done_n=done_n, ok=ok, fail=fail, mb=mb)
+                    if done_n % 4 == 0 or done_n == len(subs):
+                        log(f"[Overture] pre-warm {done_n}/{len(subs)} tile(s) · {mb:.0f} MB cached")
+                    if _OVERTURE_STOP["flag"]:
+                        break
+            mb = _overture_cached_mb()
+            el = time.time() - t0
+            with _OVERTURE_LOCK:
+                _OVERTURE.update(active=False, done=True, mb=mb, elapsed=round(el, 1),
+                                 note=f"done in {el:.0f}s: {ok}/{len(subs)} tile(s), {mb:.0f} MB cached")
+            log(f"[Overture] pre-warm done in {el:.0f}s — {mb:.0f} MB of building data cached locally")
+        except Exception as ex:  # noqa: BLE001
+            with _OVERTURE_LOCK:
+                _OVERTURE.update(active=False, done=True, note=f"error: {ex}")
+            log(f"[Overture] pre-warm error: {ex}")
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return jsonify({"ok": True, "tiles": len(subs)})
+
+
+@app.route("/api/overture/status")
+def api_overture_status():
+    with _OVERTURE_LOCK:
+        return jsonify({"ok": True, **_OVERTURE})
+
+
+@app.route("/api/overture/stop", methods=["POST"])
+def api_overture_stop():
+    _OVERTURE_STOP["flag"] = True
+    return jsonify({"ok": True})
+
+
 # ── world metadata sidecar ────────────────────────────────────────────────────
 # Saved INTO the world folder so the exact origin, elevation lock + seed, and the
 # generation settings travel with the world. Load it later (api/world/load-meta) to
@@ -654,7 +983,7 @@ _META_SKIP_SETTINGS = {
 def _world_meta_dict() -> dict:
     data = PROJECT.load()
     return {
-        "meld_version": "1.0.0",
+        "meld_version": "1.2.0",
         "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "name": data.get("name", "Meld World"),
         "origin": data.get("origin", {}),                  # lat, lon, locked
@@ -901,16 +1230,30 @@ def _runner(job: dict, state: dict) -> bool:
 
     state.update(progress=96, message="Merging…")
     try:
-        master = str(master_world_path())
         # overwrite_collisions=True is safe under the v1 uniform grid: each cell
         # owns a disjoint canonical region rectangle, so any collision is the
         # SAME cell re-merging its own regions (a re-run/repair), never two
         # different cells fighting over one region.
-        res = merge_cell_into_master(
-            world_dir, master, cell_key,
-            seam_buffer_chunks=seam, world_name=world_name,
-            overwrite_collisions=True,
-        )
+        res = None
+        for _attempt in range(3):
+            try:
+                master = str(master_world_path())
+                res = merge_cell_into_master(
+                    world_dir, master, cell_key,
+                    seam_buffer_chunks=seam, world_name=world_name,
+                    overwrite_collisions=True,
+                )
+                break
+            except OSError as _oe:
+                # A flaky external save drive can briefly drop mid-merge (WinError 433 no-such-device
+                # / 21 not-ready / 112 / 1167 not-connected). Retry a couple times with short backoff
+                # so a transient blip self-heals; a truly-removed drive still fails fast after ~1.5s
+                # (and the queue-time pre-flight already rejects a persistently-offline drive).
+                if getattr(_oe, "winerror", None) in (433, 21, 112, 1167) and _attempt < 2:
+                    log(f"  [Merge] {cell_key} save-drive blip ({_oe}); retry {_attempt + 1}/2…")
+                    time.sleep(0.5 * (_attempt + 1))
+                    continue
+                raise
         log(f"MERGE {cell_key}: +{res['regions_copied']} regions, "
             f"-{res['regions_skipped']} seam, level.dat={res['level_dat']}")
     except MeldCoordinateDriftError as ex:
@@ -1009,7 +1352,13 @@ POOL.configure(_runner, _on_complete)
 
 @app.route("/")
 def index():
-    return send_from_directory(str(BASE_DIR / "web"), "index.html")
+    # No-cache so a server update is never hidden behind a browser-cached copy of the page (a plain
+    # refresh would otherwise re-serve a stale index.html and the new UI/buttons "wouldn't appear").
+    resp = send_from_directory(str(BASE_DIR / "web"), "index.html")
+    resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
 
 
 @app.route("/assets/<path:fname>")
@@ -1042,6 +1391,7 @@ def api_state():
         "settings": PROJECT.settings(),
         "elevation": PROJECT.elevation(),
         "grid": PROJECT.load_grid(),
+        "selection": PROJECT.load_selection(),   # drawn area, per-project, so a restart redraws it
         "name": PROJECT.load().get("name", "Meld World"),
         "arnis_found": resolve_arnis_exe() is not None,
         "master_world": str(master_world_path(create=False)),   # the world subfolder
@@ -1193,11 +1543,15 @@ def api_world_delete():
 def api_pick_folder():
     """Open a native folder-select dialog on the local machine (the server runs on
     the user's box) and return the chosen path. Uses a throwaway tkinter subprocess
-    so it can't block or crash the server."""
+    so it can't block or crash the server. An optional `title` labels the dialog (used
+    for the Save location, the .pbf folder, and the import folder browse buttons)."""
+    raw_title = ((request.json or {}).get("title") or "Select a folder")
+    # The title is interpolated into the subprocess source, so keep it to a safe, quote-free set.
+    title = re.sub(r"[^A-Za-z0-9 ._/()-]", "", str(raw_title))[:80] or "Select a folder"
     code = (
         "import tkinter as tk, tkinter.filedialog as fd\n"
         "r=tk.Tk(); r.withdraw(); r.attributes('-topmost', True)\n"
-        "p=fd.askdirectory(title='Select save location')\n"
+        f"p=fd.askdirectory(title='{title}')\n"
         "print(p or '')\n"
     )
     try:
@@ -1334,10 +1688,18 @@ def api_survey():
     bbox = d.get("bbox")
     if not bbox:
         return jsonify({"ok": False, "error": "bbox required"}), 400
-    res = survey_elevation(bbox, zoom=int(d.get("zoom", 10)))
+    zoom = int(d.get("zoom", 10))
+    log(f"[Survey] surveying elevation over the selection (z{zoom}, parallel)…")
+    _t0 = time.time()
+    res = survey_elevation(bbox, zoom=zoom)
+    _el = time.time() - _t0
     if res.get("ok"):
         seed = int(PROJECT.elevation().get("seed", 1) or 1)
         PROJECT.set_elevation_lock(res["min_m"], res["max_m"], seed=seed)
+        log(f"[Survey] done in {_el:.0f}s — range {res['min_m']} to {res['max_m']} m from "
+            f"{res['tiles']} tile(s); elevation lock set")
+    else:
+        log(f"[Survey] failed in {_el:.0f}s — {res.get('reason', '?')}")
     return jsonify(res)
 
 
@@ -1388,7 +1750,21 @@ def api_grid():
     for c in cells:
         grid.setdefault(c["cell_key"], "planned")
     PROJECT.save_grid(grid)
+    # Persist the drawn area per-project so a restart redraws it (cells already persist in grid.json;
+    # this restores the live selection + outline so coverage/data-pack/generate work without re-drawing).
+    sel_bbox = bbox or dp.rings_bbox(rings)
+    if sel_bbox:
+        PROJECT.save_selection({"bbox": sel_bbox, "polygons": rings})
     return jsonify({"ok": True, "cells": cells, "count": len(cells)})
+
+
+@app.route("/api/selection", methods=["POST"])
+def api_selection():
+    """Persist or clear the drawn selection for the active project (so a restart redraws it). Body:
+    {selection:{bbox, polygons}} to save, or {selection:null}/{} to clear. Cheap; the client calls
+    it whenever the area is drawn/moved/edited/cleared so project.json always has the latest."""
+    PROJECT.save_selection((request.json or {}).get("selection"))
+    return jsonify({"ok": True})
 
 
 def _run_active() -> bool:
@@ -1513,6 +1889,94 @@ def _bbox_from_cell_key(cell_key: str, origin: dict, scale: float) -> dict:
     return cell_bbox(rx, rz, size, origin["lat"], origin["lon"], scale)
 
 
+# ── trim open-ocean cells (no OSM features AND at/below sea level → skip generating flat water) ──
+_OCEAN_SEA_LEVEL_M = 1.0
+_elev_max_cache: dict = {}
+
+
+def _elev_tile_stats(x: int, y: int, ez: int):
+    """(min, max) terrarium height (m) of a cached elevation tile, or None if not cached/undecodable.
+    Memoised so a tile shared by adjacent cells decodes once. Open sea decodes to a FLAT ~0 m
+    (min≈max≈0); any real land has relief, so flatness distinguishes water from low coastal land far
+    better than the OSM tiles can — those are coarser than a cell and carry maritime boundaries/ferry
+    routes, so 'no OSM' never holds over the sea."""
+    key = (x, y, ez)
+    if key in _elev_max_cache:
+        return _elev_max_cache[key]
+    p = dp.aws_tile_path(x, y, ez)
+    out = None
+    if p.exists():
+        try:
+            from PIL import Image
+            im = Image.open(p).convert("RGB")
+            try:
+                import numpy as _np
+                a = _np.asarray(im, dtype=_np.float64)
+                h = a[..., 0] * 256.0 + a[..., 1] + a[..., 2] / 256.0 - 32768.0
+                h = h[h > -1000.0]      # drop no-data (-32768) samples
+                out = (float(h.min()), float(h.max())) if h.size else None
+            except Exception:           # no numpy → coarse pixel sample
+                px = im.load(); w, hgt = im.size; lo = 1e9; hi = -1e9
+                for j in range(0, hgt, 16):
+                    for i in range(0, w, 16):
+                        r, g, b = px[i, j]
+                        v = r * 256.0 + g + b / 256.0 - 32768.0
+                        if v > -1000.0:
+                            lo = min(lo, v); hi = max(hi, v)
+                out = (lo, hi) if hi > -1e9 else None
+        except Exception:  # noqa: BLE001
+            out = None
+    _elev_max_cache[key] = out
+    return out
+
+
+def _cell_is_ocean(cbb: dict, ez: int) -> bool:
+    """Open water = EVERY covering elevation tile is FLAT at sea level: max ≤ 1 m, min ≥ -5 m, and
+    spread ≤ 1.5 m. Pure sea decodes to (0, 0); land has relief (max-min > 1.5) or rises above 1 m, so
+    it's kept. Conservative: any uncached tile → not ocean. Reversible (re-plan re-adds)."""
+    etiles = dp.tiles_for_bbox(cbb, ez)
+    if not etiles:
+        return False
+    for (x, y) in etiles:
+        st = _elev_tile_stats(x, y, ez)
+        if st is None:
+            return False
+        lo, hi = st
+        if hi > _OCEAN_SEA_LEVEL_M or lo < -5.0 or (hi - lo) > 1.5:
+            return False
+    return True
+
+
+@app.route("/api/grid/trim-ocean", methods=["POST"])
+def api_grid_trim_ocean():
+    """Drop planned cells that are open ocean (no OSM features AND at/below sea level) so generation
+    skips flat-water tiles. Only touches planned/queued cells (never merged/running). Reversible —
+    re-draw or re-plan re-adds them. Needs the region's OSM + elevation cached to classify."""
+    if _run_active():
+        return jsonify({"ok": False, "error": "stop the generation before trimming"}), 409
+    origin = PROJECT.origin()
+    if not origin.get("locked"):
+        return jsonify({"ok": False, "error": "lock an origin first"}), 400
+    settings = PROJECT.settings()
+    scale = float(settings.get("scale", 1.0) or 1.0)
+    ez = effective_elev_zoom(settings, float(origin.get("lat") or 45.0))
+    grid = PROJECT.load_grid()
+    planned = [k for k, v in grid.items() if v in ("planned", "queued")]
+    _elev_max_cache.clear()
+    ocean = []
+    for k in planned:
+        try:
+            if _cell_is_ocean(_bbox_from_cell_key(k, origin, scale), ez):
+                ocean.append(k)
+        except Exception:  # noqa: BLE001
+            continue
+    if ocean:
+        PROJECT.bulk_set_cells(ocean, "remove")
+    log(f"[Grid] trim ocean: removed {len(ocean)} open-water cell(s) of {len(planned)} planned "
+        f"(no OSM + ≤{_OCEAN_SEA_LEVEL_M:.0f} m)")
+    return jsonify({"ok": True, "removed": len(ocean), "planned": len(planned)})
+
+
 def _submit_cells(cells: list[dict], osm_files: dict | None = None,
                   settings: dict | None = None, origin: dict | None = None,
                   keep_started: bool = False) -> list[str]:
@@ -1596,6 +2060,8 @@ def _start_generation(cells: list[dict]) -> tuple[list[str], bool]:
                          note=f"prefetching OSM for {len(cells)} cell(s)…")
 
     def _worker():
+        _t_osm0 = time.time()
+        _phase_t = {}                      # phase -> seconds, for the end-of-prefetch report
         # Phase 1: OSM (Overpass) — download once, share to every cell.
         try:
             osm_files = run_prefetch(cells, origin, settings, str(exe),
@@ -1603,15 +2069,34 @@ def _start_generation(cells: list[dict]) -> tuple[list[str], bool]:
         except Exception as ex:  # noqa: BLE001
             log(f"[Prefetch] error, falling back to live fetch: {ex}")
             osm_files = {}
+        _phase_t["osm"] = time.time() - _t_osm0
+        _t_terr0 = time.time()
 
         # Phase 2: terrain — pre-warm the AWS elevation tiles serially (single process) so the
         # parallel cells hit the cache instead of bursting S3 (the 757-byte truncation -> flat
         # seams around the center). Best-effort; cells fetch live for any tile that misses.
         if settings.get("terrain", True) and settings.get("prefetch_terrain", True):
+            # Skip the (serial, minutes-long) terrain warm ENTIRELY when the build's elevation tiles
+            # are already cached — re-validating a complete data pack on every run is pure waste and
+            # was a big slice of the per-run wait. The per-cell live fallback still covers any gap.
+            _skip_warm = False
+            try:
+                _bs0 = [c["bbox"] for c in cells if c.get("bbox")]
+                if _bs0:
+                    _ubb0 = {"south": min(b["south"] for b in _bs0), "west": min(b["west"] for b in _bs0),
+                             "north": max(b["north"] for b in _bs0), "east": max(b["east"] for b in _bs0)}
+                    _ez0 = effective_elev_zoom(settings, float(origin.get("lat") or 45.0))
+                    _ec0 = dp.coverage_elevation(_ubb0, zoom=_ez0)
+                    if _ec0.get("pct", 0) >= 99.0:
+                        _skip_warm = True
+                        log(f"[Terrain] elevation {_ec0.get('pct', 0)}% cached at z{_ez0} — skipping "
+                            f"the terrain warm (no re-validation needed)")
+            except Exception:  # noqa: BLE001
+                _skip_warm = False
             with _PREFETCH_LOCK:
-                tiles = [c["bbox"] for c in _PREFETCH["chunks"]
+                tiles = [] if _skip_warm else [c["bbox"] for c in _PREFETCH["chunks"]
                          if c.get("bbox") and c.get("state") in ("done", "cached")]
-            if not tiles:
+            if not tiles and not _skip_warm:
                 # OSM prefetch produced no usable chunks (e.g. it failed) — warm terrain over the
                 # whole selection anyway, so the parallel cells still hit the cache instead of
                 # bursting S3. Terrain zoom clamps to 15 for any bbox size, so one sweep is fine.
@@ -1630,15 +2115,47 @@ def _start_generation(cells: list[dict]) -> tuple[list[str], bool]:
                         with _PREFETCH_LOCK:
                             _PREFETCH["terrain"].update(done=done, total=total, ok=ok, failed=failed)
 
-                    run_terrain_prefetch(tiles, str(exe), log, _tp)
+                    # Warm at the SAME zoom the cells fetch (ARNIS_ELEV_ZOOM), or the warm fills the
+                    # wrong zoom and every cell re-downloads live (the 64-way S3 burst).
+                    _lat = float(origin.get("lat") or 45.0)
+                    ez = effective_elev_zoom(settings, _lat)
+                    run_terrain_prefetch(tiles, str(exe), log, _tp, elev_zoom=ez)
                 except Exception as ex:  # noqa: BLE001
                     log(f"[Terrain] prefetch error (cells will fetch live): {ex}")
 
+        # AWS-burst clamp, applied HERE (post-warm) so it sees ACTUAL elevation coverage, not a flag.
+        # At scale<0.5 each cell fetches many AWS tiles; >2 cells live-fetching at once bursts S3 and
+        # truncates terrain into flat seams. If the build's elevation tiles ARE cached (warm worked /
+        # data pack at the right zoom) we keep the user's full worker count; if they're NOT, we hold
+        # at 2 for this run so the cells that must live-fetch don't burst.
+        try:
+            uw = min(WorkerPool.MAX_WORKERS_HARD_CAP, int(settings.get("max_workers") or 4))
+            sc = float(settings.get("scale", 1.0) or 1.0)
+            if sc < 0.5 and uw > 2:
+                bs = [c["bbox"] for c in cells if c.get("bbox")]
+                if bs:
+                    ubb = {"south": min(b["south"] for b in bs), "west": min(b["west"] for b in bs),
+                           "north": max(b["north"] for b in bs), "east": max(b["east"] for b in bs)}
+                    ez2 = effective_elev_zoom(settings, float(origin.get("lat") or 45.0))
+                    cov = dp.coverage_elevation(ubb, zoom=ez2)
+                    if cov.get("pct", 0) < 99.0:
+                        POOL.set_max_workers(2)
+                        log(f"[Workers] clamped to 2 — elevation only {cov.get('pct', 0)}% cached at "
+                            f"z{ez2} (scale<0.5 AWS-burst safety); cells would re-fetch S3 live")
+                    else:
+                        log(f"[Workers] full {uw} workers — elevation {cov.get('pct', 0)}% cached at z{ez2}")
+        except Exception as ex:  # noqa: BLE001
+            log(f"[Workers] coverage clamp check skipped ({ex}); keeping user worker count")
+
+        _phase_t["terrain"] = time.time() - _t_terr0
         with _PREFETCH_LOCK:
             _PREFETCH.update(active=False, done=True, phase="generating",
-                             note=f"{len(osm_files)}/{len(cells)} cells from cached OSM")
-        log(f"[Prefetch] done — {len(osm_files)}/{len(cells)} cells share cached OSM; "
-            f"starting generation")
+                             note=f"{len(osm_files)}/{len(cells)} cells from cached OSM",
+                             timings=dict(_phase_t))
+        # Prefetch report: how long each pre-generation data phase took, so a slow phase is visible.
+        _rep = " · ".join(f"{k} {v:.0f}s" for k, v in _phase_t.items())
+        log(f"[Prefetch] done in {sum(_phase_t.values()):.0f}s ({_rep}) — "
+            f"{len(osm_files)}/{len(cells)} cells share cached OSM; starting generation")
         _submit_cells(cells, osm_files, settings=settings, origin=origin, keep_started=True)
 
     threading.Thread(target=_worker, daemon=True).start()
@@ -1702,19 +2219,30 @@ def api_queue():
     workers = min(WorkerPool.MAX_WORKERS_HARD_CAP, int(settings.get("max_workers") or 4))
     scale = float(settings.get("scale", 1.0) or 1.0)
     note = ""
-    if scale < 0.5 and workers > 2:
-        workers = 2
-        note = "clamped workers to 2 at scale<0.5 (AWS tile rate-limit safety)"
-        log("[Workers] " + note)
+    # Honor the user's worker count here. The scale<0.5 AWS-burst clamp is applied LATER — after the
+    # terrain warm, gated on the build's ACTUAL elevation coverage (src/server _start_generation) —
+    # because only then do we know whether cells will hit the cache or live-fetch S3. Clamping on a
+    # flag here was wrong: prefetch_terrain ON did not mean the right-zoom tiles were cached.
     POOL.set_max_workers(workers)
 
     cells = d.get("cells")
     if not cells:
-        bbox = d.get("bbox")
-        if not bbox:
-            return jsonify({"ok": False, "error": "cells or bbox required"}), 400
-        size = int(d.get("size") or settings.get("job_size_regions") or 4)
-        cells = cells_for_bbox(bbox, origin, scale, size)
+        # Generate runs the SAVED plan (grid.json), skipping already-merged cells. It must NOT
+        # refill the whole bounding rectangle from bbox when a custom plan exists — otherwise a
+        # Generate issued after a page/server refresh (when the client's in-memory plannedCells is
+        # empty and btnGen falls back to {bbox: selection}) silently expands a custom shape (e.g.
+        # Romania+Moldova+1-cell border) into every cell of its bounding box. Only a project with no
+        # standing plan (all cells merged, or none planned yet) falls through to a fresh bbox split.
+        grid = PROJECT.load_grid()
+        plan_keys = [k for k, v in grid.items() if v != "merged"]
+        if plan_keys:
+            cells = [{"cell_key": k, "bbox": _bbox_from_cell_key(k, origin, scale)} for k in plan_keys]
+        else:
+            bbox = d.get("bbox")
+            if not bbox:
+                return jsonify({"ok": False, "error": "cells or bbox required"}), 400
+            size = int(d.get("size") or settings.get("job_size_regions") or 4)
+            cells = cells_for_bbox(bbox, origin, scale, size)
 
     # Continue-where-left-off: skip cells already merged unless force=true.
     if not d.get("force"):
@@ -1723,6 +2251,12 @@ def api_queue():
     if not cells:
         return jsonify({"ok": True, "queued": [], "count": 0,
                         "note": "nothing to do — all cells already merged"})
+
+    # Fail fast if the save drive is offline/unwritable — otherwise every cell generates, then dies
+    # at merge with a cryptic per-cell WinError, wasting the whole run (and the prefetch).
+    drive_ok, drive_why = _output_drive_ok()
+    if not drive_ok:
+        return jsonify({"ok": False, "error": drive_why}), 409
 
     queued, prefetching = _start_generation(cells)
     return jsonify({"ok": True, "queued": queued, "count": len(queued), "note": note,
@@ -2183,15 +2717,23 @@ def api_recommend():
 
 
 if __name__ == "__main__":
-    # Clean restart: drop any un-generated (non-merged) plan so the app does NOT
-    # auto-resume the last planning task on startup. The merged world (real content)
-    # is kept. Runs only on actual server start, never on `import server`.
+    # Restart-safe continuation: KEEP the plan so a run interrupted by a restart / PC close can be
+    # resumed (the whole point — losing it forced a full re-plan). A run that was mid-flight leaves
+    # cells "queued"/"running" but the worker pool is gone, so just RESET those back to "planned" (a
+    # clean, re-runnable state — no stale "running" cell that no worker owns). "merged" (real generated
+    # content), "planned" and "failed" are left as-is. Generation is NOT auto-started on boot, so the
+    # cells simply reappear on the map; hit Generate / Resume unfinished to continue. Runs only on an
+    # actual server start, never on `import server`.
     try:
         _g = PROJECT.load_grid()
-        _kept = {k: v for k, v in _g.items() if v == "merged"}
-        if len(_kept) != len(_g):
-            PROJECT.save_grid(_kept)
-            print(f"cleared {len(_g) - len(_kept)} un-generated planned cell(s) from the last session")
+        _fixed = {k: ("planned" if v in ("queued", "running") else v) for k, v in _g.items()}
+        if _fixed != _g:
+            PROJECT.save_grid(_fixed)
+            _n = sum(1 for v in _g.values() if v in ("queued", "running"))
+            print(f"restart: kept the {len(_g)}-cell plan; reset {_n} interrupted cell(s) to 'planned' "
+                  f"— hit Generate / Resume unfinished to continue")
+        elif _g:
+            print(f"restart: kept the {len(_g)}-cell plan from the last session")
     except Exception:
         pass
     _load_cell_health()   # restore suspect-cell flags so "Redo suspect" survives a restart

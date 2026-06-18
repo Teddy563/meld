@@ -29,6 +29,7 @@ import subprocess
 from pathlib import Path
 
 from .coords import recommended_elev_zoom, ELEV_ZOOM_MIN, ELEV_ZOOM_MAX
+from .osm_grid import OSM_GRID_Z
 
 
 def effective_elev_zoom(settings: dict, origin_lat: float = 45.0) -> int:
@@ -59,12 +60,18 @@ def build_arnis_cmd(arnis_exe: str, bbox: dict, output_path: str,
         "--rotation", str(settings.get("rotation", 0)),
     ]
 
-    # Pre-fetched OSM: read this cell's data from the shared region file instead of
-    # querying Overpass. Arnis clips the file's elements to --bbox, so one shared file
-    # serves every cell. This is what makes parallel generation Overpass-free (no rate
-    # limit). When osm_file is None, Arnis fetches Overpass itself (original behaviour).
+    # Pre-fetched OSM. Two shapes, both Overpass-free at generation time:
+    #   • a DIRECTORY → Meld's stable z11 grid cache. Arnis computes this cell's covering
+    #     tiles from --bbox and reads them straight from the dir (--osm-tile-dir), so there
+    #     is NO per-cell clump-merge step on Meld's side — the slow "assembling" phase.
+    #   • a FILE → a single pre-merged Overpass JSON (legacy / live-fetched cell). Arnis
+    #     clips its elements to --bbox.
+    # When osm_file is None, Arnis fetches Overpass itself (original behaviour).
     if osm_file:
-        cmd += ["--file", str(osm_file)]
+        if os.path.isdir(osm_file):
+            cmd += ["--osm-tile-dir", str(osm_file), "--osm-tile-z", str(OSM_GRID_Z)]
+        else:
+            cmd += ["--file", str(osm_file)]
 
     # Global origin + deterministic building palette (the seamless-tiling pair).
     if origin and origin.get("lat") is not None and origin.get("lon") is not None:

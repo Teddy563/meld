@@ -50,6 +50,10 @@
   #side .card.collapsed > h2 { margin-bottom:-2px; }
   #side .card.collapsed > h2::before { transform:rotate(-90deg); }
   #side .card.collapsed > :not(h2) { display:none; }
+  /* "Prepare data" bundles the 4 data cards: nested cards render as flat sub-rows, no double border. */
+  #side .card.prep > .card { border:none; border-top:1px solid var(--line); border-radius:0;
+    margin:0; padding:10px 2px 6px; background:transparent; }
+  #side .card.prep > .card:first-of-type { border-top:none; padding-top:2px; }
   label { display:flex; justify-content:space-between; align-items:center;
           gap:8px; margin:8px 0; font-size:13px; }
   label:has(input[type=range]) { margin:10px 0; }   /* sliders get a touch more room */
@@ -230,6 +234,7 @@
       <button id="btnGen" title="Generates only the cells that aren't merged yet, safe to re-run after a stop or crash. Set cell size + workers in Settings below.">Generate &amp; merge</button>
       <button id="btnResume" class="sec" title="Re-queue every cell that isn't merged (failed, drift, interrupted). Crash / overnight recovery.">Resume unfinished</button>
       <button id="btnPlan" class="sec" title="Split the selection into cells at the Settings cell size. Change cell size in Settings, then Plan.">Plan or re-split</button>
+      <button id="btnTrimOcean" class="sec" title="Remove planned cells that are open ocean — no OSM features AND at/below sea level — so generation skips flat-water tiles. Needs the region's OSM + elevation cached. Reversible: Plan re-adds them.">🌊 Trim ocean cells</button>
       <div class="row" style="margin-top:6px">
         <button class="sec" id="btnStop">Stop</button>
         <button class="sec xbtn" id="btnClear" title="Clear plan" style="width:auto;flex:0 0 auto;padding:8px 12px">🗑️</button>
@@ -346,6 +351,7 @@
       <label>Name
         <span class="i" title="The world's display name (also the saves subfolder). Saves automatically when you click away or press Enter.">i</span>
         <input id="worldName" type="text" style="width:160px" placeholder="Meld World"></label>
+      <button class="sec" id="btnOpenWorld" style="margin-top:8px" title="Open this world's folder in your file browser">📁 Open folder</button>
       <label style="margin-top:8px">Save location (worlds folder)
         <span class="i" title="The FOLDER that holds your worlds, each world is a subfolder named by the World Name above. Point it at .minecraft/saves to keep several (Meld World, Meld World 2, …) in one place. Blank = the project folder.">i</span></label>
       <input id="masterDir" type="text" style="width:100%" placeholder="paste a path, or Browse…">
@@ -391,6 +397,9 @@
       </div>
       <button class="sec" id="btnManual">Set range manually</button>
     </div>
+
+    <div class="card prep" id="prepData">
+      <h2>Prepare data <span class="i" title="Everything that makes a region local + fast, in one place: the elevation pack, the OSM .pbf bake, the Overture buildings pre-warm, and the shared cache. Each row expands; click a header to collapse it.">i</span></h2>
 
     <div class="card">
       <h2>Cache <button id="btnCacheRefresh" class="sec" style="width:auto;margin:0;padding:2px 8px;font-size:11px;float:right" title="Recompute cache sizes (terrain can be 500k files, takes a second)">↻ sizes</button></h2>
@@ -440,9 +449,44 @@
       <div id="dpList" class="stat" style="color:var(--mut)">…</div>
       <label style="margin-top:8px">Import folder
         <span class="i" title="Drop-in: point at a folder of pack files (z*_x*_y*.png tiles and/or osm_*.json) to import them into the cache — offline, no download.">i</span></label>
-      <input id="dpImportPath" type="text" style="width:100%" placeholder="paste a folder path">
+      <input id="dpImportPath" type="text" style="width:100%" placeholder="paste a folder path, or Browse…">
+      <button class="sec" id="btnDpBrowse" style="margin-top:4px">Browse…</button>
       <button class="sec" id="btnDpImport" style="margin-top:4px">⤓ Import pack folder</button>
     </div>
+
+    <div class="card">
+      <h2>OSM data pack <span class="i" title="Bake a local OpenStreetMap .pbf (e.g. romania-latest.osm.pbf from Geofabrik) into the shared OSM grid, so generation reads buildings/roads OFFLINE with ZERO Overpass calls — and every overlapping selection reuses it instead of re-downloading. Draw/search an area, point at your .pbf folder, then Bake. Needs pyosmium on the server (pip install osmium).">i</span></h2>
+      <div class="stat" id="osmCov" style="margin-bottom:4px">Draw or search an area, then check OSM coverage.</div>
+      <div class="row">
+        <button class="sec" id="btnOsmCoverage" title="Check how much of the selection's OSM is baked/cached on the stable grid. Any red tiles are edge/sea tiles outside your .pbf (the seam ring + the Black Sea) — not errors; generation fetches each live once and caches it.">Check OSM coverage</button>
+        <button class="sec" id="btnOsmBake" title="Slice the .pbf folder below into the selection's missing OSM tiles. Offline — uses your CPU/RAM/disk, no Overpass calls.">⤓ Bake from .pbf</button>
+      </div>
+      <div class="bar" id="osmBarWrap" style="display:none;margin-top:6px"><i id="osmBar" style="width:0%"></i></div>
+      <div class="stat" id="osmProg" style="display:none;margin-top:2px"></div>
+      <button class="sec" id="btnOsmStop" style="display:none;margin-top:4px" title="Stop the running bake (already-written tiles are kept).">Stop bake</button>
+      <label style="margin-top:8px">.pbf folder
+        <span class="i" title="Folder holding one or more *.osm.pbf extracts (Geofabrik per-country files). The bake reads every .pbf in it and produces the OSM tiles for your selection.">i</span></label>
+      <input id="osmPbfPath" type="text" style="width:100%" placeholder="folder with romania-latest.osm.pbf …, or Browse…">
+      <button class="sec" id="btnOsmBrowse" style="margin-top:4px">Browse…</button>
+      <button class="sec" id="btnOsmScan" style="margin-top:4px">⌕ Scan folder</button>
+      <div id="osmScan" class="stat" style="color:var(--mut)">…</div>
+      <label style="margin-top:8px">Bake workers
+        <span class="i" title="How many .pbf files to bake at once, each in its own process (real parallelism). ~2–3× faster on a multi-core box; bounded by your biggest country file. Each worker holds a node index in RAM, so keep it ≤ ~RAM_GB/8. Set to 1 to force the old sequential bake. Output is identical either way.">i</span></label>
+      <input id="osmBakeWorkers" type="number" min="1" max="12" step="1" value="4" style="width:80px">
+    </div>
+
+    <div class="card">
+      <h2>Buildings (Overture) <span class="i" title="Buildings come from Overture Maps (open GeoParquet on cloud storage), fetched per cell when buildings are ON. Pre-warm downloads the selection's building data ONCE, in parallel, into the shared cache, so a buildings-on build never stalls on a cold fetch. Not needed for --no-buildings worlds.">i</span></h2>
+      <div class="stat" id="ovCov" style="margin-bottom:4px">Building buildings? Pre-warm Overture so cells don't stall on a cold fetch.</div>
+      <div class="row">
+        <button class="sec" id="btnOvCoverage" title="Show how much Overture building data is cached locally.">Check cached</button>
+        <button class="sec" id="btnOvPrewarm" title="Download the selection's Overture building ranges up front, in parallel, into the shared cache. One-time per region; cells then read it from disk.">⤓ Pre-warm region</button>
+      </div>
+      <div class="bar" id="ovBarWrap" style="display:none;margin-top:6px"><i id="ovBar" style="width:0%"></i></div>
+      <div class="stat" id="ovProg" style="display:none;margin-top:2px"></div>
+      <button class="sec" id="btnOvStop" style="display:none;margin-top:4px" title="Stop the running pre-warm (already-cached ranges are kept).">Stop pre-warm</button>
+    </div>
+    </div><!-- /Prepare data -->
 
     <div class="card adv">
       <h2>Subregions / worlds</h2>
@@ -1204,6 +1248,7 @@ async function refreshState() {
   $('scale').value = st.scale;
   if (document.activeElement !== $('size')) $('size').value = snapSize(st.job_size_regions);
   $('ground').value = st.ground_level; $('road').value = st.road_detail_level;
+  if ($('osmBakeWorkers') && st.osm_bake_workers) $('osmBakeWorkers').value = st.osm_bake_workers;
   $('emode').value = st.elevation_mode;
   if ($('elevZoom') && document.activeElement !== $('elevZoom')) {
     $('elevZoom').value = st.elevation_zoom || 'auto'; refreshElevZoom();
@@ -1255,6 +1300,23 @@ async function refreshState() {
   }
   if (s.name && $('worldName') && document.activeElement !== $('worldName')) $('worldName').value = s.name;
   ensureCells(s.grid || {});
+  // Repopulate the in-memory plan from the persisted grid so Generate runs the SAVED custom cell
+  // set (not a full-bbox refill) after a page/server refresh. Only when empty, so an active
+  // session's Plan/paint edits are never clobbered. Real per-cell bbox (matches a fresh Plan).
+  if (!plannedCells.length && projOrigin && projOrigin.lat != null) {
+    const gk = Object.keys(s.grid || {});
+    if (gk.length) plannedCells = gk.map(k => {
+      let bb; try { bb = cellBboxFromKey(k, projOrigin, projScale); } catch (e) { bb = {}; }
+      return { cell_key: k, bbox: bb };
+    });
+  }
+  // Restore the per-project drawn selection (survives a restart AND follows the active project).
+  // The server is authoritative; never clobber a selection the user is drawing this session.
+  if (!_userDrew && s.selection && s.selection.bbox) {
+    const nw = `${s.selection.bbox.south},${s.selection.bbox.west},${s.selection.bbox.north},${s.selection.bbox.east}`;
+    const cur = selection ? `${selection.south},${selection.west},${selection.north},${selection.east}` : '';
+    if (nw !== cur) applySavedSelection(s.selection.bbox, s.selection.polygons);
+  }
   // Override the size inputs from the grid's real cell size (keys carry it), so the
   // control always matches the cells on the map rather than a drifted saved setting.
   const gs = gridCellSize(s.grid);
@@ -1347,6 +1409,23 @@ $('btnBrowse').onclick = async () => {
   } catch (e) {}
   $('btnBrowse').textContent = 'Browse…'; $('btnBrowse').disabled = false;
 };
+// Open the current world's folder in the OS file browser (server runs locally).
+if ($('btnOpenWorld')) $('btnOpenWorld').onclick = async () => {
+  const r = await api('/api/open-folder', {}).catch(() => null);
+  if (!r || !r.ok) modalInfo('Meld', (r && r.error) || 'Could not open the world folder (generate it first).');
+};
+// Reusable: open the native folder picker and drop the chosen path into an input.
+async function browseInto(inputId, title, btnId) {
+  const b = $(btnId); const old = b ? b.textContent : '';
+  if (b) { b.textContent = 'Opening…'; b.disabled = true; }
+  try {
+    const r = await api('/api/pick-folder', { title });
+    if (r && r.ok && r.path) $(inputId).value = r.path;
+  } catch (e) {}
+  if (b) { b.textContent = old; b.disabled = false; }
+}
+if ($('btnDpBrowse'))  $('btnDpBrowse').onclick  = () => browseInto('dpImportPath', 'Select the import folder', 'btnDpBrowse');
+if ($('btnOsmBrowse')) $('btnOsmBrowse').onclick = () => browseInto('osmPbfPath', 'Select the .pbf folder', 'btnOsmBrowse');
 $('btnPopLog').onclick = () => window.open('/logs', 'meldlog', 'width=780,height=540');
 $('prune').addEventListener('change', async () => {
   await api('/api/settings', { prune_cell_after_merge: $('prune').checked });
@@ -1510,6 +1589,11 @@ $('scale').addEventListener('change', async () => {
 });
 $('ground').addEventListener('change', () => api('/api/settings', { ground_level: numOr($('ground').value, -56) }));
 $('road').addEventListener('change', () => api('/api/settings', { road_detail_level: $('road').value }));
+if ($('osmBakeWorkers')) $('osmBakeWorkers').addEventListener('change', () => {
+  const w = Math.max(1, Math.min(12, parseInt($('osmBakeWorkers').value) || 4));
+  $('osmBakeWorkers').value = w;
+  api('/api/settings', { osm_bake_workers: w });
+});
 $('emode').addEventListener('change', () => api('/api/settings', { elevation_mode: $('emode').value }));
 $('seed').addEventListener('change', () => { api('/api/settings', { seed: parseInt($('seed').value) || 1 }); refreshState(); });
 
@@ -1637,6 +1721,16 @@ $('btnPlan').onclick = async () => {
   plannedCells = r.cells;
   await refreshState();   // redraws overlay (+emoji) from the new grid
   $('selVal').textContent = `${plannedCells.length} cells @ size ${size}`;
+};
+
+if ($('btnTrimOcean')) $('btnTrimOcean').onclick = async () => {
+  $('selVal').textContent = 'Scanning for open-ocean cells…';
+  const r = await api('/api/grid/trim-ocean', {});
+  if (!r || !r.ok) { modalInfo('Meld', (r && r.error) || 'trim failed'); $('selVal').textContent = ''; return; }
+  await refreshState();
+  $('selVal').textContent = r.removed
+    ? `Trimmed ${r.removed} open-ocean cell(s) of ${r.planned} (no OSM + below sea level)`
+    : `No open-ocean cells found (${r.planned} planned). Tip: bake OSM + cache elevation first so they can be detected.`;
 };
 
 $('btnClear').onclick = async () => {
@@ -1783,6 +1877,7 @@ $('btnNewWorld').onclick = async () => {
   suspectGroup.clearLayers(); _cellHealth = {}; _suspectSig = '';
   retryGroup.clearLayers(); _retryQueue.clear(); _retrySig = ''; setRetrySelect(false);
   selection = null; selectionPolygon = null; plannedCells = []; projOrigin = null; _overlaySig = '';
+  _userDrew = false;   // fresh project → let its (empty) saved selection govern, allow future restore
   setEditCells(false);
   localStorage.removeItem('meld-selection');
   await refreshState();
@@ -2032,9 +2127,40 @@ async function poll() {
 }
 
 // Persist + restore the selection rectangle across refresh.
+let _userDrew = false;   // user set a selection THIS session → a server restore must not clobber it
+let _recenteredBbox = null;   // last bbox we auto-fit the map to → recenter once per restored selection
 function saveSelection() {
-  if (selection) localStorage.setItem('meld-selection',
-    JSON.stringify({ ...selection, polygon: selectionPolygon || null }));
+  _userDrew = true;
+  if (selection) {
+    localStorage.setItem('meld-selection',
+      JSON.stringify({ ...selection, polygon: selectionPolygon || null }));
+    // Persist per-project on the server so a restart redraws it (survives project switches too).
+    const bbox = { south: selection.south, west: selection.west, north: selection.north, east: selection.east };
+    api('/api/selection', { selection: { bbox, polygons: selectionPolygon || null } }).catch(() => {});
+  }
+}
+// Draw a SAVED selection (from the server's per-project project.json) without marking it user-drawn.
+function applySavedSelection(bbox, polygons) {
+  if (!bbox || bbox.south == null) return;
+  selection = { south: bbox.south, west: bbox.west, north: bbox.north, east: bbox.east };
+  const isRings = Array.isArray(polygons) && polygons.length &&
+                  Array.isArray(polygons[0]) && Array.isArray(polygons[0][0]);
+  selectionPolygon = isRings ? polygons : null;
+  if (drawLayer) { try { drawnItems.removeLayer(drawLayer); } catch (_) {} drawLayer = null; }
+  drawLayer = isRings
+    ? L.polygon(polygons[0], { color: '#d6ba58', weight: 2, fillOpacity: 0.05 })
+    : L.rectangle([[bbox.south, bbox.west], [bbox.north, bbox.east]], { color: '#d6ba58', weight: 2, fillOpacity: 0.05 });
+  drawnItems.addLayer(drawLayer);
+  if (!isRings) attachEditing(drawLayer);   // many-vertex polygons freeze on edit-handle spawn; rectangles ok
+  // Re-center the map on the restored area ONCE per selection (first load / after a project switch's
+  // full reload) — guarded by the bbox so refreshState's ~1.5s poll never yanks the view while you pan.
+  const _bk = `${bbox.south},${bbox.west},${bbox.north},${bbox.east}`;
+  if (_bk !== _recenteredBbox) {
+    _recenteredBbox = _bk;
+    try { map.fitBounds(drawLayer.getBounds(), { padding: [40, 40], maxZoom: 13 }); } catch (_) {}
+  }
+  $('selVal').textContent = isRings ? `restored polygon · ${polygons.length} ring(s)`
+    : `restored · S${bbox.south.toFixed(3)} W${bbox.west.toFixed(3)} N${bbox.north.toFixed(3)} E${bbox.east.toFixed(3)}`;
 }
 function restoreSelection() {
   try {
@@ -2058,6 +2184,11 @@ function restoreSelection() {
       // Editing a restored MANY-vertex country polygon spawns a drag handle per vertex and freezes
       // the page on load — so only attach editing to cheap rectangles. (Re-draw to edit a polygon.)
       if (!isRings) attachEditing(drawLayer);
+      const _bk = `${s.south},${s.west},${s.north},${s.east}`;
+      if (_bk !== _recenteredBbox) {   // recenter once on the boot-restored area (server may refine it)
+        _recenteredBbox = _bk;
+        try { map.fitBounds(drawLayer.getBounds(), { padding: [40, 40], maxZoom: 13 }); } catch (_) {}
+      }
     }
   } catch (e) {}
 }
@@ -2329,6 +2460,107 @@ if ($('btnDpImport')) $('btnDpImport').onclick = dpImport;
 if ($('dpPreview')) $('dpPreview').onchange = toggleTerrainPreview;
 if ($('dpPreviewMode')) $('dpPreviewMode').onchange = () => { if ($('dpPreview') && $('dpPreview').checked) refreshTerrainLayer(); };
 loadDpList();
+
+// ── OSM data pack (bake a local .pbf into the shared OSM grid) ──
+const osmMissGroup = L.layerGroup().addTo(map);   // red blocks = OSM grid tiles NOT baked/cached
+function _drawOsmMissing(missing) {
+  osmMissGroup.clearLayers();
+  if (!missing || !missing.length) return;
+  let n = 0;
+  for (const t of missing) {                       // z11 tiles are ~14 km, draw them directly, no bucketing
+    L.rectangle(_tileBounds(t.x, t.y, t.z),
+      { renderer: cellRenderer, color: '#e0504a', weight: 0, fillColor: '#e0504a',
+        fillOpacity: 0.18, interactive: false }).addTo(osmMissGroup);
+    if (++n >= 4000) break;
+  }
+}
+async function osmCoverage() {
+  const sel = _dpSelection();
+  if (!sel) { $('osmCov').textContent = 'Draw or search an area first.'; return null; }
+  $('osmCov').textContent = 'Checking OSM coverage…';
+  const r = await _dpApi('/api/osmpack/coverage', sel);
+  if (!r || !r.ok) { $('osmCov').textContent = (r && r.error) || 'coverage failed'; return null; }
+  const o = r.osm, gaps = o.missing && o.missing.length;
+  $('osmCov').innerHTML = `OSM cached: <b style="color:${o.pct >= 100 ? 'var(--ok)' : 'var(--acc2)'}">${o.pct}%</b> (${o.cached}/${o.total} z${o.grid_z} tiles)`
+    + (gaps ? ` · <span style="color:#e0504a" title="Edge/sea tiles outside your .pbf coverage (the seam ring reaches past the country into neighbours and the sea). Not an error — generation fetches each once, live, and caches it. Re-baking can't fill them.">${gaps} edge/sea tile${gaps === 1 ? '' : 's'}</span> fetched live at generation` : '');
+  _drawOsmMissing(o.missing);
+  return r;
+}
+let _osmPoll = null;
+async function osmBake() {
+  const sel = _dpSelection();
+  if (!sel) { $('osmCov').textContent = 'Draw or search an area first.'; return; }
+  const folder = ($('osmPbfPath').value || '').trim();
+  if (!folder) { $('osmCov').textContent = 'Enter the folder holding your .pbf file(s) first.'; return; }
+  $('osmCov').textContent = 'Starting OSM bake…';
+  const r = await _dpApi('/api/osmpack/bake', Object.assign({ folder }, sel));
+  if (!r || !r.ok) { $('osmCov').textContent = (r && r.error) || 'bake failed'; return; }
+  $('osmBarWrap').style.display = ''; $('osmProg').style.display = ''; $('btnOsmStop').style.display = '';
+  if (_osmPoll) clearInterval(_osmPoll);
+  _osmPoll = setInterval(osmPollStatus, 1000); osmPollStatus();
+}
+async function osmPollStatus() {
+  const s = await _dpApi('/api/osmpack/status');
+  if (!s || s.error) {
+    if (_osmPoll) { clearInterval(_osmPoll); _osmPoll = null; }
+    $('osmProg').textContent = (s && s.error) || 'status unreachable';
+    return;
+  }
+  const pct = s.total ? Math.round(100 * s.done_n / s.total) : (s.done ? 100 : 0);
+  $('osmBar').style.width = pct + '%';
+  $('osmProg').textContent = `${s.note || ''} · ${s.done_n}/${s.total} (${s.ok} baked, ${s.fail} failed)`;
+  if (!s.active) {
+    if (_osmPoll) { clearInterval(_osmPoll); _osmPoll = null; }
+    $('btnOsmStop').style.display = 'none';
+    osmCoverage();
+  }
+}
+async function osmScan() {
+  const folder = ($('osmPbfPath').value || '').trim();
+  if (!folder) { $('osmScan').textContent = 'Enter a folder path first.'; return; }
+  $('osmScan').textContent = 'Scanning…';
+  const r = await _dpApi('/api/osmpack/scan', { folder });
+  if (!r || !r.ok) { $('osmScan').textContent = (r && r.error) || 'scan failed'; return; }
+  const files = r.files || [];
+  $('osmScan').innerHTML = files.length
+    ? files.map(f => `<div>${f.name} · ${(f.size_bytes / 1048576).toFixed(0)} MB${f.bbox ? '' : ' <span style="color:var(--mut)">(no header bbox)</span>'}</div>`).join('')
+    : 'no .pbf files found in that folder';
+}
+if ($('btnOsmCoverage')) $('btnOsmCoverage').onclick = osmCoverage;
+if ($('btnOsmBake')) $('btnOsmBake').onclick = osmBake;
+if ($('btnOsmScan')) $('btnOsmScan').onclick = osmScan;
+if ($('btnOsmStop')) $('btnOsmStop').onclick = () => api('/api/osmpack/stop', {});
+
+// ── Overture buildings pre-warm (download the region's building data once, in parallel) ──
+let _ovPoll = null;
+async function ovCoverage() {
+  const r = await _dpApi('/api/overture/coverage', {});
+  if (!r || !r.ok) { $('ovCov').textContent = (r && r.error) || 'check failed'; return; }
+  $('ovCov').innerHTML = r.mb > 0
+    ? `Overture cached: <b style="color:var(--ok)">${r.mb} MB</b> (${r.files} range file${r.files === 1 ? '' : 's'})`
+    : 'No Overture building data cached yet. Pre-warm before a buildings-on build (skip it for --no-buildings).';
+}
+async function ovPrewarm() {
+  const sel = _dpSelection();
+  if (!sel) { $('ovCov').textContent = 'Draw or search an area first.'; return; }
+  $('ovCov').textContent = 'Starting Overture pre-warm…';
+  const r = await _dpApi('/api/overture/prewarm', sel);
+  if (!r || !r.ok) { $('ovCov').textContent = (r && r.error) || 'pre-warm failed'; return; }
+  $('ovBarWrap').style.display = ''; $('ovProg').style.display = ''; $('btnOvStop').style.display = '';
+  if (_ovPoll) clearInterval(_ovPoll);
+  _ovPoll = setInterval(ovPollStatus, 1000); ovPollStatus();
+}
+async function ovPollStatus() {
+  const s = await _dpApi('/api/overture/status');
+  if (!s || s.error) { if (_ovPoll) { clearInterval(_ovPoll); _ovPoll = null; } $('ovProg').textContent = (s && s.error) || 'status unreachable'; return; }
+  const pct = s.total ? Math.round(100 * s.done_n / s.total) : (s.done ? 100 : 0);
+  $('ovBar').style.width = pct + '%';
+  $('ovProg').textContent = `${s.note || ''} · ${s.done_n}/${s.total} tile(s) · ${s.mb || 0} MB cached`;
+  if (!s.active) { if (_ovPoll) { clearInterval(_ovPoll); _ovPoll = null; } $('btnOvStop').style.display = 'none'; ovCoverage(); }
+}
+if ($('btnOvCoverage')) $('btnOvCoverage').onclick = ovCoverage;
+if ($('btnOvPrewarm')) $('btnOvPrewarm').onclick = ovPrewarm;
+if ($('btnOvStop')) $('btnOvStop').onclick = () => api('/api/overture/stop', {});
 
 refreshState();
 loadProjects();

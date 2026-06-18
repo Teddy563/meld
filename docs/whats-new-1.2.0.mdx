@@ -1,0 +1,52 @@
+---
+title: What's new in Meld 1.2.0
+slug: whats-new-1-2-0
+description: Build a whole region offline by baking OSM from local .pbf files, an OSM cache that reuses tiles across selections, much faster cells (the Overture building fetch is skipped or cached), a fix for the diagonal water and sand wedges, and a drawn area that is remembered per world. A plain guide to what 1.2.0 added and why.
+---
+
+# What's new in Meld 1.2.0
+
+1.1.0 made builds bigger. 1.2.0 makes them **offline and fast**, and fixes the diagonal water-and-sand "wedges" that sometimes slashed across otherwise-perfect terrain. Here is what we added and why it matters.
+
+A region is fully offline once it has **both** an elevation pack (from 1.1.0) and an OSM pack or cache. After you bake OSM, restart the server so coverage reads it.
+
+## Run a region with the new caching, step by step
+
+There are three caches, and they are all shared across worlds: **elevation** (terrain height), **OpenStreetMap** (roads, water, buildings), and the **map tiles** the picker draws. Here is the whole flow for a large area.
+
+1. **Draw or search your area** on the map, and set the scale and world name. The map you see is cached as you pan, so it loads fast next time.
+2. **Elevation.** Open the **Data pack** card and click **Check coverage**. If it is not full, click **Download elevation** (or **Import folder** to use elevation tiles you already have). This downloads once into the shared cache; every world over that area reuses it.
+3. **OpenStreetMap.** For a fully offline build, grab the matching Geofabrik `.osm.pbf` files (for example `romania-latest.osm.pbf`), drop them in a folder, and in the **OSM data pack** card click **Browse** to point at that folder, then **Bake from .pbf**. You need `pip install osmium` once. If you would rather fetch live, skip this and Meld downloads the OSM grid tiles on the first run and caches them, so the next overlapping run downloads nothing. Either way the result lands on the same grid.
+4. **Restart the server** after a bake so coverage reads the new tiles, then hard-refresh the browser.
+5. **Buildings (optional).** Buildings are off by default for a roads-and-ground world. If you turn them on, the building data caches to disk after the first cell. You can pre-warm it from the **Buildings (Overture)** card.
+6. **Generate.** Each cell reads its elevation and its OSM grid tiles straight from the cache, with no per-cell merge, so the build starts quickly and never trips a rate limit.
+
+After step 2 and step 3 are both full for an area, that area builds with zero network.
+
+## Build offline
+
+**OSM data packs.** Drop Geofabrik `.osm.pbf` files in a folder and bake them once into the shared cache, and generation no longer needs Overpass at all. *Why it matters:* paired with elevation packs, a whole country builds with zero network and never gets rate limited. *How to use it:* `pip install osmium`, then the **OSM data pack** card, Scan folder, Bake from .pbf, watch the progress. Baked tiles are interchangeable with live-fetched ones.
+
+**An OSM cache that reuses tiles.** Map data is now cached on a fixed map grid, keyed only by the tile, not by your selection. *Why it matters:* shift or redraw your area and only the new edge downloads; run the exact same area twice and the second run downloads nothing. *How to use it:* automatic.
+
+**Truthful coverage + retries.** Sea and empty areas are baked as valid empty tiles, so coverage reads a real 100 percent instead of looking incomplete, and a rate-limited tile retries and caches instead of re-downloading every run. *How to use it:* automatic.
+
+## Faster cells
+
+**Buildings fetch only when you want buildings.** The generator was fetching supplementary building footprints from Overture Maps on every cell, even with buildings turned off, and that fetch was about 93 percent of a cell's time. *Why it matters:* a roads-only cell in testing dropped from about 29 seconds to 4. *How to use it:* it is automatic when Buildings is off. With Buildings on, those footprints now cache to disk and download once instead of once per cell.
+
+**Each cell reads its tiles directly (no merge).** A cell now reads its OSM straight from the shared tile cache, so there is no per-cell or per-group merge step before a build. *Why it matters:* the data-prep step before a build is far quicker, and there is no large assembled file to build or parse. *How to use it:* automatic.
+
+**Skip work that is already done.** When your elevation is already fully cached, Meld no longer re-checks every terrain tile before a run. *Why it matters:* minutes off every run on a packed region. *How to use it:* automatic.
+
+## Cleaner and remembered
+
+**No more water wedges.** Water areas that crossed a cell's edge could flood a straight-edged triangle of water, and a matching band of sand, across correct land. *Why it matters:* coastlines and rivers near cell boundaries now render clean. *How to use it:* automatic in new generation; regenerate an affected area to clear an old one.
+
+**Your area is remembered.** The drawn selection and its cells now save into each world and redraw on a server restart. *Why it matters:* no re-drawing the country every time you restart, and each world keeps its own area. *How to use it:* automatic, per world.
+
+## Detail and reliability
+
+**Road detail.** Choose how roads render: auto, max, clean, or compact. *How to use it:* Settings, Road detail.
+
+**Custom Overpass URL, sub-world operations, and patch recovery.** Point map fetching at your own Overpass server, carve or re-run sub-regions of an existing world, and recover orphaned pre-generated patches automatically. *How to use it:* the Overpass URL is a setting; sub-world and recovery are automatic where they apply.

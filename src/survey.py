@@ -76,19 +76,36 @@ def survey_elevation(bbox: dict, zoom: int = 10) -> dict:
     x1, y1 = _lat_lng_to_tile(north, west, zoom)
     x2, y2 = _lat_lng_to_tile(south, east, zoom)
 
+    tiles_xy = [(tx, ty)
+                for tx in range(min(x1, x2), max(x1, x2) + 1)
+                for ty in range(min(y1, y2), max(y1, y2) + 1)]
+
+    def _fetch_decode(txy):
+        """Fetch + decode ONE tile to its (lo, hi). Returns None ONLY on a network/IO failure (so it's
+        skipped + uncounted, exactly like the old `except: continue`); a fetched-but-empty tile returns
+        (inf, -inf) which is counted but doesn't move the global range — same as before."""
+        tx, ty = txy
+        url = TERRARIUM_URL.format(z=zoom, x=tx, y=ty)
+        try:
+            req = Request(url, headers={"User-Agent": "light-meld/0.1"})
+            data = urlopen(req, timeout=30).read()
+            return _decode_minmax(data)
+        except Exception:
+            return None
+
+    # Fetch the tiles in parallel (network-bound; min/max is an order-independent reduction so the
+    # result is bit-identical to the old serial loop, just ~8-16x faster wall-clock).
+    import concurrent.futures as _cf
     global_min, global_max, tiles = float("inf"), float("-inf"), 0
-    for tx in range(min(x1, x2), max(x1, x2) + 1):
-        for ty in range(min(y1, y2), max(y1, y2) + 1):
-            url = TERRARIUM_URL.format(z=zoom, x=tx, y=ty)
-            try:
-                req = Request(url, headers={"User-Agent": "light-meld/0.1"})
-                data = urlopen(req, timeout=30).read()
-                lo, hi = _decode_minmax(data)
-                global_min = min(global_min, lo)
-                global_max = max(global_max, hi)
-                tiles += 1
-            except Exception:
+    workers = min(16, max(1, len(tiles_xy)))
+    with _cf.ThreadPoolExecutor(max_workers=workers) as ex:
+        for res in ex.map(_fetch_decode, tiles_xy):
+            if res is None:
                 continue
+            lo, hi = res
+            global_min = min(global_min, lo)
+            global_max = max(global_max, hi)
+            tiles += 1
 
     if tiles == 0 or global_min == float("inf"):
         return {"ok": False, "reason": "No elevation tiles fetched (network?).",

@@ -142,6 +142,24 @@ class Project:
         with _LOCK:
             self._write(self.json_path, data)
 
+    # ── drawn selection (so a restart redraws the area, per-project) ──────────
+    def load_selection(self) -> dict | None:
+        """The drawn area for THIS project: {bbox:{south,west,north,east}, polygons|None}. The grid
+        cells already persist in grid.json; this persists the OUTLINE + lets the UI restore the live
+        selection so coverage / data-pack / generate work right after a restart without re-drawing."""
+        sel = self.load().get("selection")
+        return sel if isinstance(sel, dict) and sel.get("bbox") else None
+
+    def save_selection(self, sel: dict | None) -> None:
+        """Persist (sel with a 'bbox') or clear (None) the selection in project.json, per-project."""
+        with _LOCK:
+            data = self._read(self.json_path, self._default_project())
+            if isinstance(sel, dict) and sel.get("bbox"):
+                data["selection"] = {"bbox": sel["bbox"], "polygons": sel.get("polygons")}
+            else:
+                data.pop("selection", None)
+            self._write(self.json_path, data)
+
     # ── origin (locked once) ──────────────────────────────────────────────────
     def set_origin(self, lat: float, lon: float, force: bool = False) -> dict:
         with _LOCK:

@@ -6,7 +6,7 @@ Turn an OpenStreetMap selection into one seamless Minecraft world. Meld tiles th
 every tile in parallel, and melds them with no height cliffs and no seams. From a city block to a
 whole continent.
 
-&nbsp;![version](https://img.shields.io/badge/version-1.1.0-blue)
+&nbsp;![version](https://img.shields.io/badge/version-1.2.0-blue)
 &nbsp;![Minecraft](https://img.shields.io/badge/Minecraft%20Java-1.21%2B-brightgreen)
 &nbsp;![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 &nbsp;![built on](https://img.shields.io/badge/built%20on-Arnis%20fork-orange)
@@ -31,14 +31,17 @@ Arnis pass, because it builds the tiles in parallel rather than one after anothe
 that speed is how fast your disk can save the regions, not your CPU. Meld 1.1.0 also closes the
 reliability gaps that show up at large scale: it repairs the elevation no-data holes that caused dark
 bands and in-game dips, smooths water artifacts, removes duplicate block entities on the parallel
-path, and fixes the crashes that big parallel runs could hit.
+path, and fixes the crashes that big parallel runs could hit. **1.2.0** takes it offline and faster:
+bake a region's OSM once from local `.pbf` files and generate with zero Overpass calls, skip the
+supplementary building fetch that dominated per-cell time, reuse cached map tiles across overlapping
+selections, and fix the diagonal water/sand wedges near cell edges.
 
 **New here?** Read the [docs](https://meldmc.com/docs) or try the
 [live preview](https://meldmc.com/demo), an interactive, simulated copy of the app.
 
 **Docs.** The full guide lives at the [docs hub](https://meldmc.com/docs). In this repo, the
 [`docs/`](docs/) folder holds the per-release deep dives (start with
-[`docs/whats-new-1.1.0.mdx`](docs/whats-new-1.1.0.mdx)), and [RELEASE-NOTES.md](RELEASE-NOTES.md)
+[`docs/whats-new-1.2.0.mdx`](docs/whats-new-1.2.0.mdx)), and [RELEASE-NOTES.md](RELEASE-NOTES.md)
 has the highlights of each release.
 
 ---
@@ -57,7 +60,11 @@ has the highlights of each release.
 | **Elevation detail** (1.1.0) | Pick the terrarium zoom, or let Auto match it to your scale (1:1 picks the finest, 1:10 picks a lighter, lossless one). Lower zoom is far fewer tiles and dodges the no-data gaps. |
 | **No-data hole repair** (1.1.0) | The source data has gaps at the highest zooms that looked like dark bands and in-game dips. Meld rebuilds them from a lower zoom that has data, for one tile, a selection, or the whole cache. |
 | **No-buildings mode** (1.1.0) | A **Buildings** toggle for a roads and land-cover only world. Roads, bridges, railways, water, natural, and terrain all stay; building footprints are emptied so land cover fills in cleanly. |
-| **Road detail + flat bridges** (1.1.0) | A **Road detail** mode (max, clean, or compact) keeps roads legible at small scales by dropping footways, crossings, and lane clutter. At scale 0.3 or smaller, bridges become a flat one-block deck so tall arches do not collapse into noise. |
+| **Road detail + flat bridges** (1.1.0) | A **Road detail** mode (auto, max, clean, or compact) keeps roads legible at small scales by dropping footways, crossings, and lane clutter. At scale 0.3 or smaller, bridges become a flat one-block deck so tall arches do not collapse into noise. |
+| **OSM data packs** (1.2.0) | Bake a whole region's OpenStreetMap data once from local Geofabrik `.pbf` files, so generation needs no Overpass at all. Pairs with elevation packs for a fully offline region. Needs the optional `osmium` package. |
+| **Reusable OSM cache** (1.2.0) | Map data is cached on a fixed map grid, so overlapping selections share tiles. Shift your area and only the new edge downloads; re-run the same area and nothing does. |
+| **Faster cells** (1.2.0) | The supplementary Overture building fetch (about 93 percent of a roads-only cell's time) is skipped with buildings off and cached to disk with them on; each cell reads its map tiles directly with no merge step, and the terrain warm is skipped when elevation is already cached. |
+| **Remembered selection** (1.2.0) | Your drawn area and its cells save into each world and redraw on a server restart, per world. |
 | **LOD ready** | Chunk lighting is baked in, so distant chunks render lit in Distant Horizons and Voxy without flying the whole world first. |
 | **Resume and retry** | Re-run only unfinished cells after a stop, click one cell to regenerate it, and keep many worlds in your saves folder. |
 
@@ -111,7 +118,10 @@ server.py            Flask orchestrator + the HTTP API
 src/
   coords.py          the coordinate convention (origin anchored)
   grid.py            selection bbox to region aligned cell list
-  prefetch.py        download the OSM once and share it to every cell
+  prefetch.py        ensure each cell's OSM grid tiles are cached, then point cells at the cache dir
+  osm_grid.py        the stable web mercator OSM tile grid (filenames, bbox math, bake merge)
+  osm_pack.py        bake OSM offline from local Geofabrik .pbf files (pyosmium)
+  datapack.py        bulk elevation download, coverage, and no-data hole repair
   arnis_cmd.py       build the Arnis argv, run it, find the world dir
   merge.py           canonical region strip + drift guard
   survey.py          elevation min/max (Pillow optional)
@@ -120,6 +130,7 @@ src/
   level_dat.py       master level.dat handling
   constants.py       shared defaults
 web/index.html       the Leaflet app UI served by Flask
+experimental/        headless tools (region repair, full re-run, wedge scan) for power users
 tests/               coordinate round trip tests
 ```
 

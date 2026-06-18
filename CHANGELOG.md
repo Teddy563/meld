@@ -4,6 +4,97 @@ All notable changes to Meld are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Meld follows
 [Semantic Versioning](https://semver.org).
 
+## [1.2.0] - 2026-06-18
+
+The "offline, faster, cleaner" release. Meld can now build a whole region with **zero Overpass calls**:
+bake OSM once from local Geofabrik `.pbf` files, and cache it on a fixed grid that overlapping
+selections reuse. Generation got much faster: the supplementary Overture building fetch
+(measured at about 93% of a cell's wall-clock) is skipped when you build roads-only, and each cell now
+reads its OSM straight from the shared tile cache with no per-cell merge step. Drawn areas survive a
+restart, per project. And the diagonal water and sand "wedges" that bled across correct terrain are
+fixed at the source.
+
+> Engine note: the Arnis fork (Teddy563/arnis 2.9.1, branch `merge-upstream-2026`) gained
+> `--osm-tile-dir` (a cell reads its own grid tiles directly), an Overture gate plus on-disk cache, and
+> a water ring-closure fix that drops the wedge artifact. The deployed `arnis.exe` is rebuilt from
+> `arnis-283-src`. Meld's tile-invariant seam is unchanged.
+
+> Heads up: OSM data packs need `pip install osmium` plus Geofabrik `.osm.pbf` files dropped in a
+> folder. A region is fully offline once it's BOTH elevation-packed (1.1.0) and OSM-packed/cached.
+> Restart the server after a bake so coverage reads it. Buildings are off by default (`--no-buildings`);
+> turning them on triggers a one-time per-partition Overture download (slow first run, cached after).
+
+### Added
+
+- **OSM data packs (offline `.pbf` bake).** Bake OSM straight from local Geofabrik `.osm.pbf` files
+  into the shared cache, so generation needs no Overpass at all. The **OSM data pack** card has Check
+  coverage, Bake from .pbf, Scan folder, and live progress; baked tiles drop into the same grid the
+  live fetch fills, so the two are interchangeable. New optional dependency `osmium` (pyosmium),
+  lazy-imported only during a bake. Backed by the `/api/osmpack/*` routes.
+- **Stable OSM grid cache (reuse across selections).** OSM is now cached on a fixed web-mercator
+  slippy grid (z11) keyed only by `(z, x, y)`, independent of scale and selection. Two overlapping or
+  near-identical selections share their interior tiles verbatim; only genuinely-new edge tiles fetch,
+  and an identical re-run downloads nothing, fixing the old "re-downloads OSM every time the
+  selection shifts" behaviour (the cache used to be keyed by the per-clump bbox).
+- **Per-project selection persistence.** The drawn area, its polygon, and the planned cells now save
+  into each project's `project.json` and redraw automatically on a server restart, per project,
+  instead of a single global browser key shared across every world. Backed by `/api/selection` and
+  returned in `/api/state`.
+- **Road-detail modes.** A road-detail control (`auto` / `max` / `clean` / `compact`) on the Arnis fork and
+  the Meld settings, to thin or simplify road rendering.
+- **Overpass URL override.** Point OSM fetching at a custom or self-hosted Overpass endpoint
+  (`--overpass-url`), for the live-fetch tail and gap fills.
+- **Sub-world operations.** Carve / re-run sub-regions of an existing world.
+
+### Changed
+
+- **Overture buildings are gated on `--no-buildings`.** The fork's supplementary Overture Maps
+  building fetch, a per-cell network round-trip measured at **~26.8s of a 28.8s cell (~93%)**, now
+  runs only when buildings are enabled. A roads-only (`--no-buildings`) cell dropped **28.8s → 4.2s**.
+- **Each cell reads its OSM tiles directly (no merge step).** Meld no longer assembles a per-cell or
+  per-clump Overpass file. The Arnis fork takes `--osm-tile-dir <cache/osm>` and reads the cell's own
+  z11 grid tiles straight from the shared cache, computing the covering tiles from `--bbox` and
+  de-duplicating by (type, id). That removes the per-run "assembling" pass entirely and shrinks each
+  cell's parse from the whole clump superset to just its own roughly 9 to 16 covering tiles. Verified
+  identical to the old per-cell merge (same de-duplicated element set, same world output within the
+  generator's own run-to-run variance).
+- **Terrain warm is skipped when elevation is already cached.** The serial per-run terrain
+  re-validation sweep is skipped entirely when elevation coverage is ≥99% at the build zoom, removing
+  minutes from every run on a complete pack (the per-cell live fallback still covers any gap).
+- **Elevation zoom is pinned through the terrain warm** (`ARNIS_ELEV_ZOOM`), so the warm and the cells
+  agree on zoom and the warm actually populates the cache the cells read.
+
+### Performance
+
+- **Overture range cache + pre-warm.** When buildings ARE on, the STAC index and each GeoParquet
+  byte-range (footer + row groups) cache to disk under `arnis-overture-cache/`, keyed by `(url,
+  offset, length)` so every cell after the first reads its building data from local disk, only the
+  few MB a cell uses are ever fetched, never the whole ~580 MB partition, and there's no lock to stall
+  the build. A new **Buildings (Overture)** data-pack card + `arnis --prewarm-overture` flag bulk-
+  download a region's ranges up front, in parallel, so a buildings-on build never stalls on a cold
+  fetch (run it like the elevation/OSM packs; skip it for `--no-buildings`).
+- **Empty sentinel tiles.** The bake writes a valid empty tile for sea / no-OSM / outside-`.pbf`
+  areas, so coverage reads a truthful 100% and those tiles are never re-fetched live on each run.
+- **Retry + backoff on transient tile fetches.** A rate-limited or timed-out grid-tile fetch now
+  retries with backoff and caches on success, instead of falling to a per-run live fetch forever.
+
+### Fixed
+
+- **Triangular and rectangular water / sand wedges.** A water multipolygon whose member ways were not
+  all loaded for a cell (a lake or river that extends beyond the cell's tiles) left its outer ring
+  open. The bbox clip then closed that open ring with a straight chord, and the scanline fill flooded
+  the whole side of it with a **triangle of water** plus a matching **sand shore band** along the same
+  diagonal. The fork's `clip_water_ring_to_bbox` now rejects an open input ring (first node not
+  matching the last by id or within one block) and drops it, instead of closing a broken outline with a
+  fake straight edge. Rings that are properly closed still render, so legitimate water is preserved.
+  Verified on real 1:10 data: a wedge cell went from 135,600 to 4,555 water blocks (the triangle gone,
+  the real river kept) while a clean river cell came out byte identical. Both wedge colours are gone
+  from one fix; the shore band recomputes from the corrected water.
+- **Reconcile / patch recovery.** Orphaned pre-generated patches are recovered by scanning disk; a
+  missing reconcile route now returns a clear "restart the server" error instead of failing opaquely.
+
+[1.2.0]: https://github.com/Teddy563/meld/releases/tag/v1.2.0
+
 ## [1.1.0] - 2026-06-16
 
 The "go bigger, see more, waste nothing" release. Meld's Arnis fork gained upstream's in-process

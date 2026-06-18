@@ -2,7 +2,7 @@
 
 Meld turns one map selection into one seamless Minecraft world. It tiles a big area into a grid, builds the tiles with many generator runs at once, and melds them into a single world with the same terrain height and building style everywhere.
 
-This hub links to the how-it-works guides. For a release-by-release list of what changed, see the [changelog page](./whats-new-1.1.0.mdx).
+This hub links to the how-it-works guides. For what changed in the latest release, see [What's new in 1.2.0](./whats-new-1.2.0.mdx); the full per-release history lives in [CHANGELOG.md](../CHANGELOG.md).
 
 ## How a build flows, end to end
 
@@ -27,6 +27,11 @@ Each page explains the why, the mechanism, and how to use it in the app.
 - [Parallel generation](./parallel-generation.mdx). Cells and the worker pool, the CPU budget and staggered starts, stream to disk for huge cells, auto retry, spiral build order, and why small cells can finish faster.
 - [The Arnis fork](./the-arnis-fork.mdx). What the custom Arnis fork changes and the knobs you get: no buildings, road detail modes, automatic flat bridges, seam free rendering, offline elevation, a custom Overpass URL, and how to run map data offline or self-hosted.
 
+## Power tools (experimental)
+
+- [Headless tools](../experimental/README.md). Run Meld work from the command line with no web UI: repair missing regions in a world, re-run a whole world to roll out a generator fix, or scan for residual water artifacts. They write straight to disk, so close Minecraft first.
+
 ## What changed between releases
 
+- [What's new in Meld 1.2.0](./whats-new-1.2.0.mdx). Offline OSM packs, an OSM cache that reuses tiles, much faster cells, the water-wedge fix, and a remembered selection.
 - [What's new in Meld 1.1.0](./whats-new-1.1.0.mdx). The changelog-style summary of what 1.1.0 added and why.
