@@ -2,7 +2,7 @@
 
 Meld turns one map selection into one seamless Minecraft world. It tiles a big area into a grid, builds the tiles with many generator runs at once, and melds them into a single world with the same terrain height and building style everywhere.
 
-This hub links to the how-it-works guides. For what changed in the latest release, see [What's new in 1.2.0](./whats-new-1.2.0.mdx); the full per-release history lives in [CHANGELOG.md](../CHANGELOG.md).
+This hub links to the how-it-works guides. For what changed in the latest release, see [What's new in 1.3.0](./whats-new-1.3.0.mdx); the full per-release history lives in [CHANGELOG.md](../CHANGELOG.md).
 
 ## How a build flows, end to end
 
@@ -33,5 +33,6 @@ Each page explains the why, the mechanism, and how to use it in the app.
 
 ## What changed between releases
 
+- [What's new in Meld 1.3.0](./whats-new-1.3.0.mdx). A benchmark report for every run, live mid-run tuning of workers/threads/CPU budget, one guided rail, fast first-build defaults, a free 1 to 64 cell size, and accurate CPU/RAM gauges.
 - [What's new in Meld 1.2.0](./whats-new-1.2.0.mdx). Offline OSM packs, an OSM cache that reuses tiles, much faster cells, the water-wedge fix, and a remembered selection.
 - [What's new in Meld 1.1.0](./whats-new-1.1.0.mdx). The changelog-style summary of what 1.1.0 added and why.

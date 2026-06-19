@@ -2,8 +2,10 @@
 projects/
 cells/
 
-# Scratch
+# Scratch (local-only design notes / prototypes / archives, never committed)
 docs-temp/
+_proposals/
+_archive/
 
 # Shared map cache (terrain / OSM / land cover) - huge, regenerated on demand, never committed
 cache/

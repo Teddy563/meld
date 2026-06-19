@@ -19,10 +19,12 @@ JobCompleteCb = Callable[[dict, bool, dict], None]
 
 
 class WorkerPool:
-    MAX_WORKERS_HARD_CAP = 64   # generation is disk-write + RAM bound at the save phase,
-                                # not CPU bound; many concurrent saves can peg the SSD and
-                                # OOM-kill workers mid-save. High ceiling: the user owns the
-                                # trade-off. Aim ~8 by default; push higher on fast NVMe + lots of RAM.
+    MAX_WORKERS_HARD_CAP = 64   # generation is mostly CPU bound: the rule is to keep workers x
+                                # threads-per-worker at or under your cores; going over oversubscribes
+                                # and slows the build. RAM and save-disk speed are secondary caps (many
+                                # concurrent saves can peg a slow SSD or OOM a worker mid-save). High
+                                # ceiling so the user owns the trade-off; aim ~8, push higher on lots
+                                # of cores + fast NVMe + RAM.
 
     # Per-worker first-job delay (seconds). Each worker offsets the start of its FIRST
     # job by worker_id * this, so the workers don't all enter the same generation phase

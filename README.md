@@ -6,7 +6,7 @@ Turn an OpenStreetMap selection into one seamless Minecraft world. Meld tiles th
 every tile in parallel, and melds them with no height cliffs and no seams. From a city block to a
 whole continent.
 
-&nbsp;![version](https://img.shields.io/badge/version-1.2.0-blue)
+&nbsp;![version](https://img.shields.io/badge/version-1.3.0-blue)
 &nbsp;![Minecraft](https://img.shields.io/badge/Minecraft%20Java-1.21%2B-brightgreen)
 &nbsp;![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 &nbsp;![built on](https://img.shields.io/badge/built%20on-Arnis%20fork-orange)
@@ -28,20 +28,25 @@ seamless. Cities, regions, whole continents, built as one world.
 The headline is **scale**: build a whole city, country, or continent as one seamless world, with no
 seams and no height cliffs at the joins. On the same area Meld runs about **2x faster** than a single
 Arnis pass, because it builds the tiles in parallel rather than one after another. The ceiling on
-that speed is how fast your disk can save the regions, not your CPU. Meld 1.1.0 also closes the
-reliability gaps that show up at large scale: it repairs the elevation no-data holes that caused dark
-bands and in-game dips, smooths water artifacts, removes duplicate block entities on the parallel
-path, and fixes the crashes that big parallel runs could hit. **1.2.0** takes it offline and faster:
-bake a region's OSM once from local `.pbf` files and generate with zero Overpass calls, skip the
-supplementary building fetch that dominated per-cell time, reuse cached map tiles across overlapping
-selections, and fix the diagonal water/sand wedges near cell edges.
+that speed is your CPU: the rule is to keep workers times threads at or under your cores, with RAM and
+save-disk speed as secondary caps. Meld 1.1.0 also closes the reliability gaps that show up at large
+scale: it repairs the elevation no-data holes that caused dark bands and in-game dips, smooths water
+artifacts, removes duplicate block entities on the parallel path, and fixes the crashes that big
+parallel runs could hit. **1.2.0** takes it offline and faster: bake a region's OSM once from local
+`.pbf` files and generate with zero Overpass calls, skip the supplementary building fetch that
+dominated per-cell time, reuse cached map tiles across overlapping selections, and fix the diagonal
+water/sand wedges near cell edges. **1.3.0** makes it easy to drive, tunable while it runs, and
+measurable: one guided rail, **live mid-run tuning** of workers/threads/CPU budget, and a **benchmark
+report** (machine specs, CPU/RAM and activity graphs, a per-worker timeline, Save as PDF) written
+into every world. Plus fast-first-build defaults (1:10 scale, buildings off), a readable scale, a free
+1 to 64 cell size, and accurate CPU/RAM gauges.
 
 **New here?** Read the [docs](https://meldmc.com/docs) or try the
 [live preview](https://meldmc.com/demo), an interactive, simulated copy of the app.
 
 **Docs.** The full guide lives at the [docs hub](https://meldmc.com/docs). In this repo, the
 [`docs/`](docs/) folder holds the per-release deep dives (start with
-[`docs/whats-new-1.2.0.mdx`](docs/whats-new-1.2.0.mdx)), and [RELEASE-NOTES.md](RELEASE-NOTES.md)
+[`docs/whats-new-1.3.0.mdx`](docs/whats-new-1.3.0.mdx)), and [RELEASE-NOTES.md](RELEASE-NOTES.md)
 has the highlights of each release.
 
 ---
@@ -53,7 +58,7 @@ has the highlights of each release.
 | **Region perfect merge** | Every cell boundary is snapped to a Minecraft region edge, so tiles join exactly. About 99 percent seamless surface, no height cliffs. |
 | **Custom Arnis fork** | Meld ships a fork of Arnis with a `--download-only` OSM mode and tile invariant rendering, so neighbouring cells agree on terrain and scatter. |
 | **Shared OSM prefetch** | The selection's OpenStreetMap data is downloaded once and reused by every cell, so parallel runs never hit the Overpass rate limit. |
-| **Parallel workers** | Builds many Arnis instances at once. Default 4, up to 16, with a one click **Recommend** that tunes cell size and workers to your CPU, RAM, and save disk. |
+| **Parallel workers** | Builds many Arnis instances at once. One click **Recommend** tunes cell size and workers to your machine: CPU is the main limit (keep workers x threads at or under your cores), with RAM and save disk as secondary caps. |
 | **One elevation lock** | A single global elevation range plus a tile invariant seed, so terrain height and building or scatter choices match on both sides of every border. |
 | **Region data packs** (1.1.0) | Download a whole region's elevation once into a shared cache, then generate offline with no rate limits. Check coverage, preview the height map, or import a folder of tiles. |
 | **Height preview** (1.1.0) | A grayscale or hillshade overlay of the cached elevation right on the map. Red means a tile is not cached yet. Click a tile to see its height range and status. |
@@ -65,6 +70,11 @@ has the highlights of each release.
 | **Reusable OSM cache** (1.2.0) | Map data is cached on a fixed map grid, so overlapping selections share tiles. Shift your area and only the new edge downloads; re-run the same area and nothing does. |
 | **Faster cells** (1.2.0) | The supplementary Overture building fetch (about 93 percent of a roads-only cell's time) is skipped with buildings off and cached to disk with them on; each cell reads its map tiles directly with no merge step, and the terrain warm is skipped when elevation is already cached. |
 | **Remembered selection** (1.2.0) | Your drawn area and its cells save into each world and redraw on a server restart, per world. |
+| **Benchmark report** (1.3.0) | Every finished or stopped run writes `meld-report.html` + `.json` into the world: summary tiles, your machine (CPU model, cores and threads, RAM type/speed, drive type), the run settings, CPU/RAM and activity graphs, a per-worker cell timeline with merge playback, and a Save-as-PDF. |
+| **Live mid-run tuning** (1.3.0) | Change workers, threads per worker or CPU budget during a run; the next cells use the new values, no restart, no re-plan. Origin, seed, elevation and scale stay locked. |
+| **Guided rail** (1.3.0) | The right rail is one numbered top-to-bottom flow (steps 1 to 6) with the advanced cards collapsed at the bottom. One-click **Prepare and build** runs the prep then generates. |
+| **Fast first build + readable scale** (1.3.0) | New projects start at 1:10 with buildings off and solid ground; the scale field shows the ratio (1:10) in blocks and metres; cell size is a free 1 to 64 fill-in. |
+| **Accurate gauges + snappier UI** (1.3.0) | CPU% from a background sampler and RAM as Task Manager's "in use"; the rail polls on your actions and idles when nothing runs, so buttons respond instantly. |
 | **LOD ready** | Chunk lighting is baked in, so distant chunks render lit in Distant Horizons and Voxy without flying the whole world first. |
 | **Resume and retry** | Re-run only unfinished cells after a stop, click one cell to regenerate it, and keep many worlds in your saves folder. |
 
@@ -138,9 +148,11 @@ tests/               coordinate round trip tests
 
 ## Caveats
 
-- **The save phase is the bottleneck**, not the CPU. Each cell writes its region files in one
-  burst, so very large cells or very high worker counts can saturate a slow disk. Meld defaults to
-  cell size 4 and a low worker count, and **Recommend** tunes both to your machine.
+- **Generation is mostly CPU bound.** The lever that matters is keeping **workers x threads at or
+  under your CPU cores**; going over oversubscribes the cores and slows the build. On 24 cores,
+  12 x 2 and 8 x 3 perform about the same, so the exact split barely matters under that line.
+  Save-disk speed and RAM are secondary caps that **Recommend** still applies (a slow drive or low
+  RAM lowers the suggested worker count). Meld defaults to cell size 4.
 - **One Arnis binary required.** Meld will not generate without `arnis.exe` (or `arnis`) next to
   `server.py`. The app says so on startup if it is missing.
 

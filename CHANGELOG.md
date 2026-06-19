@@ -4,6 +4,91 @@ All notable changes to Meld are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Meld follows
 [Semantic Versioning](https://semver.org).
 
+## [1.3.0] - 2026-06-19
+
+The "guided start, live tuning, and a benchmark report" release. Same engine, much easier to drive
+and to understand. The right rail is now one numbered, guided flow instead of a wall of options, and a
+one-click **Prepare and build** runs the prep steps in order. You can retune a run **while it runs**,
+workers, threads and CPU budget all apply to the next cells, and every finished or stopped run writes
+a **benchmark report** into the world folder: a themed page with the machine specs, CPU/RAM and
+activity graphs, a per-worker timeline, and a Save-as-PDF. New projects start with defaults tuned for
+a fast first build, the scale field reads out the real ratio, cell size is a free 1 to 64 fill-in, and
+the live CPU/RAM gauges read accurately now.
+
+> No engine change: this release ships the same Arnis fork (Teddy563/arnis 2.9.1) as 1.2.0. Every
+> change here is in the Meld orchestrator, its UI, and the docs. Existing worlds and settings are
+> untouched; the new defaults apply only to brand-new projects.
+
+### Added
+
+- **Benchmark report.** Every run that finishes (or is stopped midway) writes `meld-report.html` and
+  `meld-report.json` into the world folder. The HTML is a themed, self-contained page: summary tiles
+  (total time, cells merged, on disk, peak workers, median and slowest cell), the **machine** (CPU
+  model, physical cores and logical threads, RAM type and speed, drive type) and the exact **run
+  settings**, **CPU and RAM over the run**, **activity over the run**, a per-worker **cell timeline**
+  (a Gantt with a merge playback), and a per-cell table. **Save as PDF** lays it out as two pages.
+  Open it from **Benchmark report** in the Build card, or **View benchmark** when a run finishes; the
+  full per-cell list is in the JSON. Backed by `/api/report`, `/api/report.json`, and a new
+  `src/runreport.py`.
+- **Live mid-run tuning.** Change **Workers**, **Threads per worker** or **CPU budget** during a run
+  and the next cells a worker picks up use the new values, with no restart and no re-plan. The world
+  invariants (origin, seed, elevation lock, scale, the cell grid) stay frozen, so a mid-run tweak can
+  never desync the world.
+- **One-click Prepare and build.** A button next to Generate runs the prep your settings need, in
+  order, then generates: bake OSM if you pointed at a `.pbf` folder, warm the Overture building cache
+  if buildings are on, wait for each, then build.
+- **Readable scale.** The scale field shows the live ratio (for example `1:10`) and what it means: one
+  block is N metres, and a 1 km city is X blocks wide. Editing the number updates the readout.
+- **Explore mode (teleport lookup).** A 🗺️ **Explore mode** toggle in the Build card hides the cell
+  preview, shows the world's border, and turns the map into a coordinate picker: click anywhere and
+  Meld pops up the Minecraft teleport command for that spot (`/tp @s X ~ Z`), computed from the project
+  origin and scale, with a Copy button. A search box at the top right of the map finds and zooms to
+  any place while you explore. The world does not need to be built; it uses the same origin-anchored,
+  scale-aware formula as the live coordinate readout.
+- **Open world folder.** A button in the Build card opens the saved world in your file browser, and
+  falls back to the first folder that exists if the save location was moved or disconnected.
+
+### Changed
+
+- **One guided rail (no mode toggle).** The right rail is a single numbered, top-to-bottom flow, steps
+  1 to 6 (Settings, Project and world, Selection, Edit and retry, Prepare data, Generate), with the
+  advanced cards (Elevation lock, Subregions) collapsed at the bottom. Every control is present; there
+  is no Simplified/Advanced switch to think about.
+- **New-project defaults tuned for a fast first build.** New projects start at **scale 1:10**,
+  **buildings off**, **solid ground fill on**, and **4 threads per worker**. Existing projects keep
+  their saved settings.
+- **Cell size is a free 1 to 64 fill-in.** The cell-size dropdown is now a number field (presets 1, 2,
+  4, 6, 8, 12, 16, 32, 64). Any integer aligns to its own region grid; 8 and up auto stream-to-disk so
+  they do not run out of memory.
+- **Recommend tunes workers and threads.** Recommend now suggests a worker count and a
+  threads-per-worker so workers times threads fits your logical CPUs, and applies both. It counts the
+  product as threads against your hardware threads, not a confusing "of N cores".
+- **CPU-bound framing, everywhere.** The docs, Recommend, and the worker and thread tooltips lead with
+  the real rule: generation is mostly CPU bound, keep workers times threads at or under your cores
+  (logical CPUs / hardware threads). Stream to disk handles the big-tile memory burst; RAM and
+  save-disk speed are secondary caps.
+- **Browse-only folder pickers, flattened Prepare.** The OSM and elevation pickers are a single Browse
+  button plus a Geofabrik link, and the Prepare data step no longer nests dropdowns.
+- **Snappier, event-driven UI.** The rail no longer polls once a second when idle; polling kicks on
+  your actions (Generate, Stop, Plan) and idles to a slow heartbeat, tightening only while a build
+  runs. The worker list and log redraw only when they change. The live left-rail activity squares were
+  dropped (they did not scale to big runs); the activity graph lives in the report instead.
+
+### Fixed
+
+- **CPU gauge stuck near 0%.** CPU was read with `cpu_percent(interval=None)` from the request path,
+  which measured the sub-second gap between two polls under the threaded server. A dedicated background
+  sampler (1-second rolling average) now feeds an accurate CPU%; the live gauge and the report both
+  match Task Manager.
+- **RAM read low.** RAM "in use" is now total minus available (what Task Manager shows), not psutil's
+  `used`, which under-reports on Windows.
+- **Open world folder did nothing** when the save location pointed at a moved or disconnected drive; it
+  now climbs to the first existing folder and shows the path if it still cannot open.
+- **Laggy buttons.** The per-second tick is gone; Stop responds instantly and the rail stops repainting
+  needlessly.
+- **Benchmark PDF stays two pages** with many workers: the cell timeline now compresses its lane height
+  to fit instead of spilling onto a third page.
+
 ## [1.2.0] - 2026-06-18
 
 The "offline, faster, cleaner" release. Meld can now build a whole region with **zero Overpass calls**:
@@ -148,7 +233,7 @@ walk that was quietly adding seconds to every cell's startup is gone.
 - **Auto-retry.** A cell that fails for a transient reason (network / rate-limit / timeout / OOM)
   is re-queued up to 2x; deterministic failures (drift / collision / disk-full / panic) are not.
 - **Shared global cache in the Meld project.** OSM, AWS terrain, and ESA land-cover caches now live
-  under `light-meld/cache/` (override with `MELD_CACHE_DIR`), reused by every project/world instead
+  under `meld/cache/` (override with `MELD_CACHE_DIR`), reused by every project/world instead
   of being hidden in AppData and re-downloaded per project.
 - **Region data packs.** Bulk-download a whole region's elevation once into the shared cache, so
   generation runs offline and is never rate-limited. The Data pack card has Check coverage,

@@ -28,6 +28,13 @@
   /* Left status rail: mirrors #side but borders on the right. #map (flex:1) shrinks to fit. */
   #sideL { width:300px; flex:0 0 300px; background:var(--panel); border-right:1px solid var(--line);
            overflow-y:auto; padding:14px; }
+  /* themed scrollbars everywhere (left + right rails and inner lists): darkest-black track, gold
+     thumb. Firefox uses scrollbar-color; WebKit/Chromium uses the ::-webkit-scrollbar pseudos. */
+  * { scrollbar-width: thin; scrollbar-color: var(--acc) #060504; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-track { background:#060504; }
+  ::-webkit-scrollbar-thumb { background:var(--acc); border-radius:5px; border:2px solid #060504; }
+  ::-webkit-scrollbar-thumb:hover { background:var(--acc2); }
   #sideL .logo { display:block; line-height:0; margin-bottom:10px; }
   h1 { font-size:15px; margin:0 0 4px; letter-spacing:.5px; }
   .sub { color:var(--mut); font-size:12px; margin-bottom:12px; }
@@ -50,10 +57,41 @@
   #side .card.collapsed > h2 { margin-bottom:-2px; }
   #side .card.collapsed > h2::before { transform:rotate(-90deg); }
   #side .card.collapsed > :not(h2) { display:none; }
+  /* One guided rail, no mode toggle. The right rail is a flex column ordered top-to-bottom as the
+     six build steps (Settings..Generate), then the advanced tool cards (Elevation lock, Subregions)
+     at the very bottom, then the footer disclaimer last. Order is fixed once in JS; a small STEP
+     badge numbers 1..6. The DOM never moves, so every handler keeps working. */
+  #side { display:flex; flex-direction:column; }
+  .stepnum { display:none; }
+  #side > .card[data-ord] .stepnum { display:inline-block; color:var(--acc2); font-size:10px;
+    border:1px solid #5a4a1e; border-radius:3px; padding:0 5px; margin-right:7px; vertical-align:middle;
+    font-family:var(--pixel); letter-spacing:.02em; }
+  #side > .railfoot { order:99; }   /* footer disclaimer pinned to the very bottom of the rail */
+  /* rail links use the theme gold, not the browser default blue */
+  #side a, #sideL a { color:var(--acc2); text-decoration:underline; text-underline-offset:2px; }
+  #side a:hover, #sideL a:hover { color:#ffd24a; }
+  /* Explore mode toggle: green when on. */
+  #btnExplore.on { border-color:var(--ok); color:var(--ok); box-shadow:inset 0 0 0 1px var(--ok); }
+  /* inline button icon: inherits the button's currentColor (so it goes gold/green with the button). */
+  .bi { vertical-align:-2px; }
+  /* themed Leaflet popup for the teleport command (default Leaflet popups are white). */
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background:var(--panel); color:var(--fg);
+    border:1px solid var(--line); border-radius:3px; box-shadow:0 4px 14px rgba(0,0,0,.5); }
+  .leaflet-popup-content { margin:10px 12px; }
+  .leaflet-popup-close-button { color:var(--mut) !important; }
+  .tppop { min-width:184px; }
+  .tpcmd { font-family:ui-monospace,Consolas,monospace; color:var(--acc2); font-weight:700; font-size:13px;
+    word-break:break-all; background:var(--bg); border:1px solid var(--line); border-radius:2px; padding:4px 6px; }
+  .tpsub { color:var(--mut); font-size:11px; margin:5px 0 7px; }
+  .tpcopy { width:100%; margin:0; }
   /* "Prepare data" bundles the 4 data cards: nested cards render as flat sub-rows, no double border. */
   #side .card.prep > .card { border:none; border-top:1px solid var(--line); border-radius:0;
     margin:0; padding:10px 2px 6px; background:transparent; }
   #side .card.prep > .card:first-of-type { border-top:none; padding-top:2px; }
+  /* nested Prepare sub-cards are flat, not dropdowns: no collapse arrow, no click affordance. */
+  #side .card.prep > .card > h2::before { display:none; }
+  #side .card.prep > .card > h2 { cursor:default; }
+  #side .card.prep > .card > h2:hover { background:none; color:var(--acc2); }
   label { display:flex; justify-content:space-between; align-items:center;
           gap:8px; margin:8px 0; font-size:13px; }
   label:has(input[type=range]) { margin:10px 0; }   /* sliders get a touch more room */
@@ -139,6 +177,16 @@
             border-radius:5px; padding:3px 8px; font:10.5px/1.3 ui-monospace,Consolas,monospace; }
   #credit a { color:var(--acc2); text-decoration:none; }
   #credit a:hover { text-decoration:underline; }
+  /* Explore search box: matches the dark translucent corner overlays (coordbox / credit). */
+  #exploreSearch { position:fixed; top:12px; right:352px; z-index:600; display:none; }
+  #exploreSearch form { display:flex; gap:5px; align-items:center; background:rgba(20,18,13,.82);
+    border:1px solid var(--line); border-radius:5px; padding:5px; backdrop-filter:blur(2px); }
+  #exploreSearch input { width:190px; background:rgba(0,0,0,.35); color:var(--fg);
+    border:1px solid var(--line); border-radius:3px; padding:5px 8px;
+    font:12px/1.3 ui-monospace,Consolas,monospace; }
+  #exploreSearch input::placeholder { color:var(--mut); }
+  #exploreSearch input:focus { outline:none; border-color:var(--acc); }
+  #exploreSearch button { width:auto; margin:0; padding:5px 10px; }
   /* all cards always shown (Simple/Detail toggle removed) */
   .report { background:var(--bg); border:2px solid var(--line); border-radius:2px;
             padding:9px 11px; margin:4px 0 8px; }
@@ -208,6 +256,9 @@
         <div class="stat" id="prefetchLine" style="display:none;color:var(--acc2)"></div>
         <div class="stat" id="runLine" style="margin-top:6px"></div>
       </div>
+      <button class="sec" id="btnOpenWorld" title="Open the master world folder (drop it into your Minecraft saves).">📂 Open world folder</button>
+      <button class="sec" id="btnReport2" style="display:none" title="Open the benchmark report for the last finished run: per-worker timings, the activity graph, and any errors. Saved into the world folder as meld-report.html.">📊 Benchmark report</button>
+      <button class="sec" id="btnExplore" title="Explore mode: hide the cell preview, show the world border, and click anywhere on the map to get a Minecraft teleport command for that spot, computed from the origin and scale. The world does not need to be built."><svg class="bi" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" style="margin-right:6px"><path d="M8 1.7c-2.4 0-4.3 1.9-4.3 4.3 0 3 4.3 7.8 4.3 7.8s4.3-4.8 4.3-7.8c0-2.4-1.9-4.3-4.3-4.3z"/><circle cx="8" cy="6" r="1.7"/></svg><span id="exploreLabel">Explore mode: off</span></button>
     </div>
     <div class="card">
       <h2>Workers <span id="workersCount" class="chip un" style="float:right">idle</span></h2>
@@ -219,6 +270,12 @@
     </div>
   </div>
   <div id="map"></div>
+  <div id="exploreSearch">
+    <form id="exploreSearchForm">
+      <input id="exploreQ" placeholder="Search a place to zoom to…" autocomplete="off"/>
+      <button class="sec" id="exploreGo" type="submit" title="Search and zoom"><svg class="bi" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l4 4"/></svg></button>
+    </form>
+  </div>
   <div id="coordbox">move the mouse over the map</div>
   <div id="credit">Arnis by <a href="https://github.com/louis-e/arnis" target="_blank" rel="noopener">louis-e</a> · Meld by <a href="https://github.com/Teddy563/meld" target="_blank" rel="noopener">Teddy563</a></div>
   <div id="side">
@@ -231,7 +288,8 @@
         <span><i class="dot" style="background:var(--ok)"></i>merged</span>
         <span><i class="dot" style="background:var(--bad)"></i>failed</span>
       </div>
-      <button id="btnGen" title="Generates only the cells that aren't merged yet, safe to re-run after a stop or crash. Set cell size + workers in Settings below.">Generate &amp; merge</button>
+      <button id="btnPrepBuild" title="One click for the simple path: bakes your local .pbf if you set one, pre-warms buildings if they are on, then builds. Skips whatever is not needed. Generate already caches OSM and terrain for you.">Prepare &amp; build</button>
+      <button id="btnGen" class="sec" title="Generates only the cells that aren't merged yet, safe to re-run after a stop or crash. Set cell size + workers in Settings below.">Generate &amp; merge</button>
       <button id="btnResume" class="sec" title="Re-queue every cell that isn't merged (failed, drift, interrupted). Crash / overnight recovery.">Resume unfinished</button>
       <button id="btnPlan" class="sec" title="Split the selection into cells at the Settings cell size. Change cell size in Settings, then Plan.">Plan or re-split</button>
       <button id="btnTrimOcean" class="sec" title="Remove planned cells that are open ocean — no OSM features AND at/below sea level — so generation skips flat-water tiles. Needs the region's OSM + elevation cached. Reversible: Plan re-adds them.">🌊 Trim ocean cells</button>
@@ -244,16 +302,13 @@
 
     <div class="card">
       <h2>Settings</h2>
-      <label>Scale <input id="scale" type="number" step="0.05" min="0.01"></label>
+      <label>Scale <span id="scaleRatio" style="float:right;color:var(--acc2)">1:10</span>
+        <input id="scale" type="number" step="0.05" min="0.01"></label>
+      <div class="stat" id="scaleHint" style="margin-top:3px">1:10 &middot; 1 block = 10 m &middot; a 1 km city = 100 blocks wide</div>
       <label>Cell size (regions)
-        <span class="i" title="Side length of each generation cell in 512-block regions. Powers of two only: 1, 2, 4, 8, 16. Default 4. 8 and 16 are for testing the new parallel/streaming engine (auto stream-to-disk so they don't run out of memory). Change this then Plan to re-split.">i</span>
-        <select id="size">
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="4">4</option>
-          <option value="8">8 (test)</option>
-          <option value="16">16 (test)</option>
-        </select></label>
+        <span class="i" title="Side length of each generation cell in 512-block regions. Any value 1 to 64; 4 is the sweet spot. Bigger cells write larger save bursts (heavier on RAM + the save disk); 8 and up auto stream-to-disk so they don't run out of memory. Presets: 1, 2, 4, 6, 8, 12, 16, 32, 64. Change this then Plan to re-split.">i</span>
+        <input id="size" type="number" min="1" max="64" step="1" list="cellpresets"></label>
+      <datalist id="cellpresets"><option value="1"></option><option value="2"></option><option value="4"></option><option value="6"></option><option value="8"></option><option value="12"></option><option value="16"></option><option value="32"></option><option value="64"></option></datalist>
       <div class="stat" style="margin-top:-2px">1 / 2 / 4 / 8 / 16 · default 4. 8 and 16 auto stream-to-disk (testing the parallel engine).</div>
       <label>Ground level <input id="ground" type="number" step="1"></label>
       <label>Road detail
@@ -263,15 +318,16 @@
         <span class="i" title="global = one locked range, no height cliffs across cells. local = per-cell auto-fit (will seam).">i</span>
         <select id="emode"><option>global</option><option>local</option></select></label>
       <label>Workers
-        <span class="i" title="Parallel Arnis runs (aim ~8, max 64). Generation is disk + RAM bound at the save phase, not CPU bound, so past ~8-12 the SSD often saturates instead of going faster. Push higher only on fast NVMe with lots of RAM. Auto-clamped to 2 below scale 0.5.">i</span>
+        <span class="i" title="Parallel Arnis runs. Generation is mostly CPU bound: keep workers x threads at or under your CPU cores, going over slows it down. Recommend tunes it to your machine; RAM and save-disk speed are secondary caps. Auto-clamped to 2 below scale 0.5.">i</span>
         <input id="workers" type="number" min="1" max="64" step="1" list="workerpresets"></label>
       <datalist id="workerpresets"><option value="4"></option><option value="8"></option><option value="16"></option><option value="32"></option><option value="64"></option></datalist>
       <label>CPU budget <span id="cpuPctVal" style="float:right;color:var(--acc2)">90%</span>
         <span class="i" title="Share of CPU cores Meld hands to Arnis across all workers. Lower = quieter machine + headroom; higher = faster. Capped at 95% for safety so the OS + disk save phase never starve. Each worker still gets at least the min-threads floor.">i</span>
         <input id="cpuPct" type="range" min="10" max="95" step="5" style="width:100%"></label>
-      <label>Threads / task <span id="minThrVal" style="float:right;color:var(--acc2)">2</span>
-        <span class="i" title="Minimum CPU threads each Arnis task (cell) gets for its in-process tile build. 1-2 keeps it tight; 4-8 makes each cell finish its CPU phase faster (often quicker overall) but oversubscribes if you also run many workers. The CPU budget above still caps the total.">i</span>
-        <input id="minThr" type="range" min="1" max="8" step="1" style="width:100%"></label>
+      <label>Threads / task <span id="minThrVal" style="float:right;color:var(--acc2)">4</span>
+        <span class="i" title="Threads each Arnis task (cell) gets for its in-process tile build. Keep workers x threads at or under your CPU cores; over it oversubscribes the cores and slows the build.">i</span>
+        <input id="minThr" type="range" min="1" max="8" step="1" value="4" style="width:100%"></label>
+      <div class="stat" style="margin-top:4px">Keep <b style="color:var(--fg)">workers &times; threads</b> at or under your CPU cores. Over it is slower. On 24 cores, 12&times;2 and 8&times;3 are about the same.</div>
       <label>Stagger starts
         <span class="i" title="Delay each worker's first cell so they don't all hit the network / CPU / disk at the same instant (smoother CPU, less spiky). Off = all start at once. The slider is the per-worker step in seconds.">i</span>
         <input id="staggerOn" type="checkbox"></label>
@@ -351,7 +407,7 @@
       <label>Name
         <span class="i" title="The world's display name (also the saves subfolder). Saves automatically when you click away or press Enter.">i</span>
         <input id="worldName" type="text" style="width:160px" placeholder="Meld World"></label>
-      <button class="sec" id="btnOpenWorld" style="margin-top:8px" title="Open this world's folder in your file browser">📁 Open folder</button>
+      <button class="sec" id="btnOpenWorld2" style="margin-top:8px" title="Open this world's folder in your file browser">📁 Open folder</button>
       <label style="margin-top:8px">Save location (worlds folder)
         <span class="i" title="The FOLDER that holds your worlds, each world is a subfolder named by the World Name above. Point it at .minecraft/saves to keep several (Meld World, Meld World 2, …) in one place. Blank = the project folder.">i</span></label>
       <input id="masterDir" type="text" style="width:100%" placeholder="paste a path, or Browse…">
@@ -468,6 +524,7 @@
         <span class="i" title="Folder holding one or more *.osm.pbf extracts (Geofabrik per-country files). The bake reads every .pbf in it and produces the OSM tiles for your selection.">i</span></label>
       <input id="osmPbfPath" type="text" style="width:100%" placeholder="folder with romania-latest.osm.pbf …, or Browse…">
       <button class="sec" id="btnOsmBrowse" style="margin-top:4px">Browse…</button>
+      <div class="stat" style="margin-top:5px">Get the .pbf from <a href="https://download.geofabrik.de/" target="_blank" rel="noopener">Geofabrik</a></div>
       <button class="sec" id="btnOsmScan" style="margin-top:4px">⌕ Scan folder</button>
       <div id="osmScan" class="stat" style="color:var(--mut)">…</div>
       <label style="margin-top:8px">Bake workers
@@ -499,7 +556,7 @@
     </div>
 
 
-    <div class="stat" style="text-align:center;opacity:.6;margin-top:2px">Not affiliated with Mojang AB or Minecraft. Built on the open source Arnis generator.</div>
+    <div class="stat railfoot" style="text-align:center;opacity:.6;margin-top:16px">Not affiliated with Mojang AB or Minecraft. Built on the open source Arnis generator.</div>
   </div>
 </div>
 
@@ -537,6 +594,7 @@ let cellLayers = {};           // cell_key -> L.rectangle
 let cellMarkers = {};          // cell_key -> L.marker (stage emoji)
 let _cellStatus = {};          // cell_key -> last drawn status (skip redundant restyles)
 let combinedBorder = [];       // bold double-line outline around the whole grid
+let exploreMode = false;       // map "explore" mode: hide cells, click for a teleport command
 let plannedCells = [];         // last planned cell list (cell_key + bbox)
 let selectionPolygon = null;   // array of rings [[ [lat,lon],... ], ...] when shaped (not a box)
 let selectMode = 'replace';    // how a drawn/searched shape applies: replace | add | remove
@@ -794,6 +852,8 @@ function _drainDraw() {
 function ensureCells(grid) {
   grid = grid || {};
   _lastGrid = grid;
+  // Explore mode: no cell preview, just the world border (and stats). Clicks become teleport lookups.
+  if (exploreMode) { drawCombinedBorder(grid); updateStats(grid); return; }
   // Cell positions depend on origin + scale. When either changes, every existing
   // rectangle/marker is at a STALE map position (we only ever drew them once), so
   // wipe and rebuild, this is what caused leftover/white cells after re-centering.
@@ -869,6 +929,69 @@ function drawCombinedBorder(grid) {
   combinedBorder = [outer, inner];
 }
 
+// ── Explore mode: click the map for a Minecraft teleport command ───────────────
+// Same origin-anchored, scale-aware formula as the live coordbox: the origin is Minecraft (0,0),
+// X grows east, Z grows south, both scaled by the project scale. Y stays ~ (keep your height).
+window.meldCopy = (s, btn) => {
+  (navigator.clipboard ? navigator.clipboard.writeText(s) : Promise.reject()).then(() => {
+    if (btn) { const o = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => btn.textContent = o, 1200); }
+  }).catch(() => {});
+};
+function exploreClick(e) {
+  if (!exploreMode || !projOrigin || projOrigin.lat == null) return;
+  const ll = e.latlng;
+  const mpdLat = 111320, mpdLon = mpdLat * Math.cos(projOrigin.lat * Math.PI / 180);
+  const bx = Math.round((ll.lng - projOrigin.lon) * mpdLon * projScale);
+  const bz = Math.round((projOrigin.lat - ll.lat) * mpdLat * projScale);
+  const cmd = `/tp @s ${bx} ~ ${bz}`;
+  const html = `<div class="tppop"><div class="tpcmd">${cmd}</div>`
+    + `<div class="tpsub">X ${bx} · Z ${bz} · Y kept (~) · scale 1:${Math.round(1 / (projScale || 0.1))}</div>`
+    + `<button class="sec tpcopy" onclick="meldCopy('${cmd}',this)">Copy command</button></div>`;
+  L.popup({ autoPan: true, maxWidth: 240 }).setLatLng(ll).setContent(html).openOn(map);
+}
+function setExplore(on) {
+  exploreMode = on;
+  const b = $('btnExplore');
+  if (b) b.classList.toggle('on', on);
+  const lbl = $('exploreLabel'); if (lbl) lbl.textContent = `Explore mode: ${on ? 'on' : 'off'}`;
+  const es = $('exploreSearch'); if (es) es.style.display = on ? 'block' : 'none';
+  map.getContainer().style.cursor = on ? 'crosshair' : '';
+  if (on) {
+    if (!projOrigin || projOrigin.lat == null)
+      modalInfo('Explore mode', 'Set a project origin first (anchor the map), then click anywhere for a teleport command.');
+    for (const k of Object.keys(cellLayers)) { map.removeLayer(cellLayers[k]); delete cellLayers[k]; }
+    for (const k of Object.keys(cellMarkers)) { map.removeLayer(cellMarkers[k]); delete cellMarkers[k]; }
+    _cellStatus = {}; _drawQueue = []; _drawSet.clear();
+    if (_drawRaf) { cancelAnimationFrame(_drawRaf); _drawRaf = null; }
+    map.on('click', exploreClick);
+    drawCombinedBorder(_lastGrid);
+  } else {
+    map.off('click', exploreClick);
+    map.closePopup();
+    _overlaySig = '';                 // force a full cell rebuild on the next poll
+    ensureCells(_lastGrid);
+  }
+}
+if ($('btnExplore')) $('btnExplore').onclick = () => setExplore(!exploreMode);
+
+// Explore-mode map search: geocode (Nominatim) and just FLY there. Does not touch the selection.
+function exploreSearchSubmit(ev) {
+  ev.preventDefault();
+  const q = ($('exploreQ').value || '').trim(); if (!q) return;
+  const btn = $('exploreGo'), old = btn.textContent; btn.textContent = '…'; btn.disabled = true;
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q);
+  fetch(url, { headers: { 'Accept': 'application/json' } })
+    .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+    .then(arr => {
+      if (!Array.isArray(arr) || !arr.length) { modalInfo('Search', 'Not found: ' + q); return; }
+      const bb = arr[0].boundingbox.map(Number);   // [south, north, west, east]
+      map.fitBounds([[bb[0], bb[2]], [bb[1], bb[3]]]);
+    })
+    .catch(e => modalInfo('Search', 'Search failed (' + e + '). Nominatim may be rate-limiting.'))
+    .finally(() => { btn.textContent = old; btn.disabled = false; });
+}
+if ($('exploreSearchForm')) $('exploreSearchForm').addEventListener('submit', exploreSearchSubmit);
+
 // Coordinates + world size, like the original Meld. Each cell owns size*size
 // regions (512 blocks each). Rough size estimate ~4 MB / generated region.
 function fmtMB(mb) {
@@ -876,10 +999,10 @@ function fmtMB(mb) {
   if (gb >= 1000) return (gb / 1000).toFixed(2) + ' TB';   // decimal TB (1920 GB -> 1.92 TB)
   return gb >= 1 ? gb.toFixed(1) + ' GB' : Math.round(mb) + ' MB';
 }
-// Cell size is restricted to powers of two (1,2,4,8,16). snapSize coerces any stored/typed
-// value to the nearest allowed one, so legacy sizes (e.g. 6) and the <select> stay consistent.
-const SIZES = [1, 2, 4, 8, 16];
-const snapSize = n => { n = parseInt(n) || 4; return SIZES.reduce((a, b) => Math.abs(b - n) <= Math.abs(a - n) ? b : a); };
+// Cell size is a free 1..64 region fill-in (presets 1,2,4,6,8,12,16,32,64 in the datalist).
+// snapSize just coerces any stored/typed value into that range (kept the name so every call site
+// stays consistent). Any integer aligns to its own region grid, so 6 / 12 / etc. merge cleanly.
+const snapSize = n => { n = parseInt(n) || 4; return Math.max(1, Math.min(64, n)); };
 function fmtTime(s) {
   s = Math.max(0, Math.floor(s));
   const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
@@ -1046,11 +1169,21 @@ function showRunDone(run, elapsed) {
     + `</table>`
     + `<div style="font-size:11.5px;color:var(--mut);margin-top:10px">Open it in Minecraft from the save location in the World panel.</div>`;
   _meldModal({ title: run.failed ? 'Finished, with failures' : 'World ready',
-    html, buttons: [{ label: run.failed ? 'Review' : 'Open Minecraft folder', value: 'open', kind: 'gold' },
+    html, buttons: [{ label: 'View benchmark', value: 'report', kind: 'gold' },
+                    { label: run.failed ? 'Review' : 'Open Minecraft folder', value: 'open', kind: 'ghost' },
                     { label: 'Close', value: false, kind: 'ghost' }] })
-    .then(v => { if (v === 'open') api('/api/open-folder', {}).catch(() => {}); });
+    .then(v => { if (v === 'open') api('/api/open-folder', {}).catch(() => {});
+                 else if (v === 'report') window.open('/api/report', '_blank'); });
 }
 setInterval(() => { if (_run && _run.active) renderRun(); }, 1000);
+if ($('btnReport2')) $('btnReport2').onclick = () => window.open('/api/report', '_blank');
+async function openWorldFolder() {
+  const r = await api('/api/open-folder', {}).catch(() => null);
+  if (!r || !r.ok) modalInfo('Open world folder', r && r.path
+    ? ('Could not open it automatically.\nThe world folder is:\n' + r.path)
+    : 'No world folder yet — generate a world first.');
+}
+['btnOpenWorld', 'btnOpenWorld2'].forEach(id => { const el = $(id); if (el) el.onclick = openWorldFolder; });
 
 let originMarker = null;
 function updateOriginMarker(lat, lon) {
@@ -1150,7 +1283,7 @@ async function applyShape(bbox, rings, mode) {
     await refreshState();
   }
   if (seq !== _selSeq) return;
-  const size = Math.max(1, Math.min(16, gridCellSize(grid) || parseInt($('size').value) || 4));
+  const size = Math.max(1, Math.min(64, gridCellSize(grid) || parseInt($('size').value) || 4));
   const r = await api('/api/grid', { bbox, polygons: rings || undefined, size, mode });
   if (r && r.ok) {
     if (mode === 'remove') {
@@ -1244,8 +1377,8 @@ async function refreshState() {
   }
   // settings
   const st = s.settings || {};
-  projScale = parseFloat(st.scale) || 0.3;
-  $('scale').value = st.scale;
+  projScale = parseFloat(st.scale) || 0.1;
+  $('scale').value = st.scale; updateScaleHint();
   if (document.activeElement !== $('size')) $('size').value = snapSize(st.job_size_regions);
   $('ground').value = st.ground_level; $('road').value = st.road_detail_level;
   if ($('osmBakeWorkers') && st.osm_bake_workers) $('osmBakeWorkers').value = st.osm_bake_workers;
@@ -1259,7 +1392,7 @@ async function refreshState() {
     $('cpuPct').value = cp; $('cpuPctVal').textContent = cp + '%';
   }
   if ($('minThr') && document.activeElement !== $('minThr')) {
-    const mt = Math.max(1, Math.min(8, parseInt(st.min_threads_per_worker) || 2));
+    const mt = Math.max(1, Math.min(8, parseInt(st.min_threads_per_worker) || 4));
     $('minThr').value = mt; $('minThrVal').textContent = mt;
   }
   if ($('staggerSec') && document.activeElement !== $('staggerSec')) {
@@ -1337,16 +1470,21 @@ $('btnRecommend').onclick = async () => {
       + row(`Save disk (${r.drive})`, `${r.disk_mbps} MB/s`) + `</table>`
       + `<div style="font-family:var(--pixel);color:var(--acc2);font-size:12px;margin:12px 0 4px">Recommended</div>`
       + `<table>` + row('Cell size', `${r.rec_cell} regions`) + row('Workers', r.rec_workers)
+      + row('Threads / task', r.rec_threads || 4)
+      + row('Workers &times; threads', `${r.rec_workers} × ${r.rec_threads || 4} = ${r.rec_workers * (r.rec_threads || 4)} threads (within your ${r.cores} threads)`)
       + row('Bake lighting', r.rec_bake ? 'on' : 'off') + `</table>`
       + `<div style="font-size:11.5px;color:var(--mut);margin-top:10px">${_nl2br(r.note)}</div>`;
     const apply = await _meldModal({ title: 'Recommended settings', html, buttons: [
       { label: 'Keep mine', value: false, kind: 'ghost' }, { label: 'Apply', value: true, kind: 'gold' }] });
     if (apply) {
+      const recThreads = r.rec_threads || 4;
       $('size').value = snapSize(r.rec_cell);
       $('workers').value = r.rec_workers;
+      if ($('minThr')) { $('minThr').value = recThreads; if ($('minThrVal')) $('minThrVal').textContent = recThreads; }
       $('bakelight').checked = !!r.rec_bake;
       await api('/api/settings', {
-        job_size_regions: r.rec_cell, max_workers: r.rec_workers, bake_lighting: !!r.rec_bake,
+        job_size_regions: r.rec_cell, max_workers: r.rec_workers,
+        min_threads_per_worker: recThreads, bake_lighting: !!r.rec_bake,
       });
       await refreshState();
     }
@@ -1557,7 +1695,7 @@ $('btnManual').onclick = async () => {
 $('btnSave').onclick = async () => {
   const num = (v, d) => { const n = parseFloat(v); return isNaN(n) ? d : n; };
   await api('/api/settings', {
-    scale: num($('scale').value, 1.0),
+    scale: num($('scale').value, 0.1),
     job_size_regions: num($('size').value, 8),
     ground_level: num($('ground').value, -56),
     road_detail_level: $('road').value,
@@ -1582,8 +1720,21 @@ $('m3d').addEventListener('change', () => api('/api/settings', { generate_3d_mod
 // Numeric / select settings ALSO auto-save on change (no need to hit Save). Scale change
 // re-tiles (cell geometry depends on scale), so refreshState redraws + re-estimates.
 const numOr = (v, d) => { const n = parseFloat(v); return isNaN(n) ? d : n; };
+// Live scale readout: turns the 0..1 number into a 1:N ratio + a plain-words size, updated as you
+// type, so the scale number is never a mystery. scale s -> ratio 1:(1/s); 1 block = (1/s) real metres.
+function updateScaleHint() {
+  const s = parseFloat($('scale').value);
+  const rEl = $('scaleRatio'), hEl = $('scaleHint');
+  if (!rEl || !hEl) return;
+  if (!(s > 0)) { rEl.textContent = ''; hEl.textContent = 'enter a scale (0.1 = 1:10, 1 = 1:1 real size)'; return; }
+  const n = 1 / s;                                         // 1:n ratio, and 1 block = n metres
+  const fmt = x => Math.abs(x - Math.round(x)) < 0.05 ? String(Math.round(x)) : x.toFixed(1);
+  rEl.textContent = `1:${fmt(n)}`;
+  hEl.textContent = `1:${fmt(n)} · 1 block = ${fmt(n)} m · a 1 km city = ${Math.round(s * 1000)} blocks wide`;
+}
+if ($('scale')) $('scale').addEventListener('input', updateScaleHint);
 $('scale').addEventListener('change', async () => {
-  await api('/api/settings', { scale: numOr($('scale').value, 1.0) });
+  await api('/api/settings', { scale: numOr($('scale').value, 0.1) });
   await refreshState();
   if (selection) onSelectionChanged();   // re-tile at the new scale
 });
@@ -1597,8 +1748,9 @@ if ($('osmBakeWorkers')) $('osmBakeWorkers').addEventListener('change', () => {
 $('emode').addEventListener('change', () => api('/api/settings', { elevation_mode: $('emode').value }));
 $('seed').addEventListener('change', () => { api('/api/settings', { seed: parseInt($('seed').value) || 1 }); refreshState(); });
 
-// Worker count is bound by RAM at the save phase, not CPU. Safe ceiling scales with RAM:
-// 32 GB -> 16, 64 GB -> 32, 128 GB -> 64. We WARN (not block) above it. Hard cap is 64.
+// RAM safety ceiling for the worker count (avoid OOM in the save phase). The main lever is CPU
+// (workers x threads <= cores); this is the secondary RAM cap. 32 GB -> 16, 64 GB -> 32,
+// 128 GB -> 64. We WARN (not block) above it. Hard cap is 64.
 function ramWorkerMax() {
   const r = RAM_GB || 0;
   if (r >= 96) return 64;     // ~128 GB
@@ -1635,7 +1787,7 @@ if ($('cpuPct')) {
 }
 if ($('minThr')) {
   $('minThr').addEventListener('input', () => { $('minThrVal').textContent = $('minThr').value; });
-  $('minThr').addEventListener('change', () => api('/api/settings', { min_threads_per_worker: parseInt($('minThr').value) || 2 }));
+  $('minThr').addEventListener('change', () => api('/api/settings', { min_threads_per_worker: parseInt($('minThr').value) || 4 }));
 }
 if ($('staggerSec')) {
   $('staggerSec').addEventListener('input', () => { $('staggerSecVal').textContent = $('staggerSec').value + 's'; });
@@ -1662,8 +1814,9 @@ paintAllRanges();
 // Collapsible #side sections — independent open/close (multiple open at once), persisted to
 // localStorage. Default-collapse the bulky/secondary ones; clicks on header controls don't toggle.
 (function initSections(){
-  const DEF_COLLAPSED = ['edit-retry','settings','cache','elevation-lock','subregions-worlds'];
-  document.querySelectorAll('#side .card').forEach(card => {
+  // Steps 1..6 start open (the guided look); only the advanced tool cards collapse by default.
+  const DEF_COLLAPSED = ['cache','elevation-lock','subregions-worlds'];
+  document.querySelectorAll('#side > .card').forEach(card => {   // only top-level cards collapse; nested Prepare sub-cards stay flat (no dropdown-in-dropdown)
     const h2 = card.querySelector(':scope > h2'); if (!h2) return;
     const label = ((h2.firstChild && h2.firstChild.textContent) || h2.textContent).trim();
     const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -1676,6 +1829,30 @@ paintAllRanges();
       card.classList.toggle('collapsed');
       localStorage.setItem(key, card.classList.contains('collapsed') ? 'collapsed' : 'open');
     });
+  });
+})();
+
+// Simplified / Advanced drawer mode. Simplified (default) shows only the numbered step cards in
+// guided order; Advanced shows the full rail unchanged. CSS does the reorder + hide; here we only
+// tag the step cards with data-ord, inject a small STEP badge, and toggle the #side class. The DOM
+// is never moved, so every existing handler keeps working.
+// One guided rail (no mode toggle): fix the card order once — the six build steps first
+// (Settings..Generate), then the advanced tool cards (Elevation lock, Subregions) at the bottom —
+// and number the steps 1..6 with a small badge. The DOM never moves, so every handler keeps working.
+(function initRailOrder(){
+  const STEPS = { 'settings':1, 'project-world':2, 'selection-search':3, 'edit-retry':4, 'prepare-data':5, 'generate':6 };
+  const ORDER = { ...STEPS, 'elevation-lock':7, 'cache':8, 'data-pack':9, 'osm-data-pack':10,
+                  'buildings-overture':11, 'subregions-worlds':12 };
+  document.querySelectorAll('#side > .card').forEach(card => {
+    const h2 = card.querySelector(':scope > h2'); if (!h2) return;
+    const label = ((h2.firstChild && h2.firstChild.textContent) || h2.textContent).trim();
+    const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    card.style.order = (ORDER[slug] != null ? ORDER[slug] : 99);
+    if (STEPS[slug]) {
+      card.dataset.ord = STEPS[slug];                              // drives the STEP badge
+      const b = document.createElement('span'); b.className = 'stepnum'; b.textContent = STEPS[slug];
+      h2.insertBefore(b, h2.firstChild);
+    }
   });
 })();
 
@@ -1802,6 +1979,41 @@ $('btnGen').onclick = async () => {
   }
   if (!r.ok) { modalInfo('Meld', r.error); return; }
   if (r.note) console.log(r.note);
+  kickPoll();   // show the run + switch to fast polling immediately
+};
+
+// ✨ Prepare & build: the simple one-click path. Bakes a local .pbf if one is set, pre-warms
+// Overture if buildings are on, then builds (Generate itself prefetches OSM + warms terrain).
+// Skips any phase the current config does not need. Every manual button stays as-is.
+async function _waitDone(statusUrl) {
+  for (let i = 0; i < 100000; i++) {
+    const s = await _dpApi(statusUrl).catch(() => null);
+    if (!s || s.error || !s.active) return;
+    await new Promise(r => setTimeout(r, 1200));
+  }
+}
+if ($('btnPrepBuild')) $('btnPrepBuild').onclick = async () => {
+  if (!plannedCells.length && !selection) { modalInfo('Meld', 'Pick a place first (the Selection step).'); return; }
+  const btn = $('btnPrepBuild'), old = btn.textContent; btn.disabled = true;
+  const set = t => { btn.textContent = t; };
+  try {
+    const sel = (typeof _dpSelection === 'function') ? _dpSelection() : null;
+    const pbf = (($('osmPbfPath') && $('osmPbfPath').value) || '').trim();
+    if (pbf && sel) {                                       // 1. offline OSM bake, only if a .pbf folder is set
+      set('1 · Baking OSM…');
+      const r = await _dpApi('/api/osmpack/bake', Object.assign({ folder: pbf }, sel));
+      if (r && r.ok) await _waitDone('/api/osmpack/status');
+    }
+    if ($('buildings') && $('buildings').checked && sel) {  // 2. prewarm buildings, only if buildings are on
+      set('2 · Prewarming buildings…');
+      const r = await _dpApi('/api/overture/prewarm', sel);
+      if (r && r.ok) await _waitDone('/api/overture/status');
+    }
+    set('3 · Starting build…');                             // 3. build (Generate prefetches OSM + warms terrain)
+    await new Promise(r => setTimeout(r, 30));
+    $('btnGen').click();
+  } catch (e) { modalInfo('Meld', 'Prepare and build failed: ' + e); }
+  finally { btn.disabled = false; btn.textContent = old; }
 };
 
 // ── suspect cells + selective redo ──────────────────────────────────────────
@@ -1858,7 +2070,10 @@ $('btnRedoRegion').onclick = async () => {
   refreshState();
 };
 
-$('btnStop').onclick = () => api('/api/stop', {});
+$('btnStop').onclick = () => {
+  const b = $('btnStop'); b.disabled = true; b.textContent = 'Stopping…';   // instant feedback, no spam-click
+  api('/api/stop', {}).catch(() => {}).finally(() => kickPoll());            // reflect the stop right away
+};
 
 $('btnNewWorld').onclick = async () => {
   if (!(await modalConfirm('New world', 'Start a new world? This creates a NEW project (its own workspace). The current world stays saved and you can switch back to it from Projects.', 'New world'))) return;
@@ -1911,7 +2126,7 @@ function setEditCells(on) {
 function latlonToCellKey(lat, lon) {
   if (!projOrigin || projOrigin.lat == null) return null;
   const gsize = (typeof gridCellSize === 'function' && gridCellSize(_lastGrid)) || (parseInt($('size').value) || 4);
-  const size = snapSize(Math.max(1, Math.min(16, gsize)));   // was min(6) — clamped painted cells, misaligned 8/16
+  const size = snapSize(gsize);   // snapSize clamps to 1..64 (was capped at 16, which misaligned big cells)
   const dLat = size * 512 / projScale / 111320;
   const dLon = size * 512 / projScale / (111320 * Math.cos(projOrigin.lat * Math.PI / 180));
   const rx = Math.floor((lon - projOrigin.lon) / dLon);
@@ -2059,18 +2274,19 @@ $('btnResume').onclick = async () => {
   refreshState();
 };
 
-let _pollN = 0;
+let _pollN = 0, _pollTimer = null, _pollActive = false, _workersSig = '', _logSig = '';
 async function poll() {
   try {
     const s = await api('/api/status');
     ensureCells(s.grid || {});   // redraw + recolor + stage emoji (survives refresh)
     setRun(s.run);               // elapsed timer + final report
     renderStats(s.stats);        // live CPU / RAM / disk gauges (left rail)
+    { const br = $('btnReport2'); if (br) br.style.display = s.report_ready ? '' : 'none'; }
     const ws = (s.workers || []).filter(w => w.running || w.success != null);
     const nRun = ws.filter(w => w.running).length;
     $('workersCount').textContent = nRun ? `${nRun} running` : (ws.length ? 'done' : 'idle');
     $('workersCount').className = 'chip ' + (nRun ? 'lk' : 'un');
-    $('workersState').innerHTML = ws.length ? ws.map(w => {
+    const wHtml = ws.length ? ws.map(w => {
       const pct = Math.max(0, Math.min(100, Math.round(w.progress || 0)));
       const cls = w.running ? 'run' : (w.success ? 'ok' : 'bad');
       return `<div class="wjob">`
@@ -2081,8 +2297,9 @@ async function poll() {
         +   (w.message ? `<div class="wjmsg">${w.message}</div>` : '')
         + `</div></div>`;
     }).join('') : '<div class="stat">Idle. Start a generation to see live workers here.</div>';
-    $('log').textContent = (s.log||[]).join('\n');
-    $('log').scrollTop = $('log').scrollHeight;
+    if (wHtml !== _workersSig) { $('workersState').innerHTML = wHtml; _workersSig = wHtml; }   // skip identical rewrites
+    const logText = (s.log||[]).join('\n');
+    if (logText !== _logSig) { $('log').textContent = logText; $('log').scrollTop = $('log').scrollHeight; _logSig = logText; }
     // Failed-cell reasons: refresh tooltips so hovering a red cell shows WHY it failed.
     _cellFail = s.cell_fail || {};
     for (const k in _cellFail) if (cellLayers[k]) cellLayers[k].setTooltipContent(cellTip(k));
@@ -2122,9 +2339,18 @@ async function poll() {
       updatePrefetchPreview(false);
     }
     if (_pollN++ % 3 === 0) loadWorlds();   // refresh subregion list ~every 4.5s
+    _pollActive = !!((s.run && s.run.active) || pf.active || s.running || s.queue_size
+                     || (s.workers || []).some(w => w.running));
+    // Re-enable the Stop button once the run is actually done (it disabled itself on click).
+    if (!_pollActive) { const b = $('btnStop'); if (b && b.disabled) { b.disabled = false; b.textContent = 'Stop'; } }
   } catch(e) {}
-  setTimeout(poll, 1500);
+  // Adaptive poll: fast (1.5s) while something is running so progress stays live; slow (7s) when
+  // idle, since nothing changes then and every action calls kickPoll() for an immediate update.
+  // This kills the constant once-a-second churn that made buttons feel laggy.
+  _pollTimer = setTimeout(poll, _pollActive ? 1500 : 7000);
 }
+// Run a poll RIGHT NOW (after an action that changes state), then resume the adaptive schedule.
+function kickPoll() { if (_pollTimer) { clearTimeout(_pollTimer); _pollTimer = null; } poll(); }
 
 // Persist + restore the selection rectangle across refresh.
 let _userDrew = false;   // user set a selection THIS session → a server restore must not clobber it

@@ -1,0 +1,67 @@
+---
+title: What's new in Meld 1.3.0
+slug: whats-new-1-3-0
+description: A benchmark report for every run (machine specs, CPU/RAM and activity graphs, a per-worker timeline, Save as PDF), live mid-run tuning of workers/threads/CPU budget, one guided rail, fast first-build defaults, a readable scale, a free 1 to 64 cell size, and accurate CPU/RAM gauges. A plain guide to what 1.3.0 changed and why.
+---
+
+# What's new in Meld 1.3.0
+
+1.2.0 made builds offline and fast. 1.3.0 makes Meld **easy to drive, tunable while it runs, and finally measurable**. The right rail is one guided flow, you can retune a run without restarting it, and every run leaves a benchmark report behind. Here is what changed and why it matters.
+
+> No engine change. This release ships the same Arnis fork (2.9.1) as 1.2.0. Everything here is the Meld orchestrator, its UI, and the docs. Your existing worlds and settings are untouched; the new defaults below apply to brand-new projects only.
+
+## A benchmark report for every run
+
+**The report.** When a run finishes, Meld writes two files next to the world: `meld-report.html` and `meld-report.json`. The HTML is a themed, self-contained page you can open anywhere. *Why it matters:* you can finally see where the time went, how hard your machine worked, and which cells were slow or failed, instead of guessing. *How to use it:* click **Benchmark report** in the Build card (left rail), or **View benchmark** on the "world ready" dialog.
+
+What the page shows:
+
+- **Summary tiles**: total time, cells merged, on-disk size, peak workers, median and slowest cell.
+- **This machine**: CPU model, physical cores and logical threads, RAM type and speed, and the save drive's type (NVMe SSD / SSD / HDD), plus the CPU and RAM the run actually used.
+- **Run settings**: scale, cell size, buildings, workers, threads per worker, the workers-times-threads load, CPU budget, stagger, prefetch and its timings.
+- **CPU and RAM over the run**: a line graph, the same shape as the live left-rail gauge.
+- **Activity over the run**: workers active and cells merged over time.
+- **Cell timeline**: a per-worker Gantt: one bar per cell, its width is how long it took. Press **Replay merges** to watch them land in order.
+- **Cells table**: the most relevant cells (failures first, then slowest); the full list is in the JSON.
+
+**Save as PDF.** The page has a **Save as PDF** button that lays it out as two pages (specs, then the graphs and timeline) through the browser's print dialog, no extra software. *How to use it:* in the print dialog, turn **on** "Background graphics" and **off** "Headers and footers" for a clean export.
+
+**Stopped runs too.** If you stop a run midway, Meld still writes the report for the work so far, so a partial or interrupted build is just as saveable.
+
+## Tune it while it runs
+
+**Live workers, threads and CPU budget.** Change **Workers**, **Threads per worker** or **CPU budget** in Settings during a run, and the next cells a worker picks up use the new values. *Why it matters:* if a build is too aggressive (or too gentle) you fix it on the spot, no stop, no re-plan. *How to use it:* just change the number; the workers already mid-cell finish as they are, and everything queued after picks up the change. The world's origin, seed, elevation lock and scale stay frozen for the whole run, so a live tweak can never desync the world.
+
+## Explore the map
+
+**A coordinate picker on the map.** A new **Explore mode** toggle in the Build card (left rail) turns the map into a teleport lookup. *Why it matters:* once you find a place on the real map, you want its exact spot in your Minecraft world, and that depends on the origin and the scale. *How to use it:* turn Explore mode on (the button goes green), then click anywhere on the map. Meld pops up the Minecraft teleport command for that spot, `/tp @s X ~ Z`, computed from your project origin (which is Minecraft 0, 0) and scale, with a Copy button. Explore mode hides the cell preview and shows just the world's border so you can see where your built area is; turn it off to get the cells back. A search box at the top right of the map lets you find and jump to any place while you explore. It works before you build anything.
+
+## One guided rail
+
+**A single top-to-bottom flow.** The right rail is one numbered sequence, steps 1 to 6: Settings, Project and world, Selection, Edit and retry, Prepare data, Generate, with the advanced cards (Elevation lock, Subregions) collapsed at the bottom. *Why it matters:* a newcomer follows the steps in order; there is no Simplified/Advanced switch to think about, and nothing is hidden. *How to use it:* it is just the rail. Click any step's header to collapse it.
+
+## A fast first build, and a scale you can read
+
+**New projects start small and fast.** A brand-new project starts at **scale 1:10**, with **buildings off**, **solid ground**, and **4 threads per worker**. *Why it matters:* a first build finishes quickly and a whole city fits, instead of a slow 1:1 build of a few blocks. *How to use it:* automatic for new projects; existing projects keep what you saved.
+
+**A scale you can read.** The scale field shows the live ratio and what it means. *Why it matters:* `0.1` told you nothing; `1:10` plus "one block is 10 m, a 1 km city is 100 blocks wide" tells you exactly how big your world will be. *How to use it:* edit the scale and the readout updates as you type.
+
+**Cell size is a free 1 to 64 fill-in.** The cell-size dropdown is now a number field, with quick presets 1, 2, 4, 6, 8, 12, 16, 32, 64. *Why it matters:* you can pick the exact tile size that suits your area. *How to use it:* type a number or pick a preset; 8 and up automatically stream to disk so a big cell does not run out of memory.
+
+## Accurate gauges and a smarter Recommend
+
+**CPU and RAM read correctly now.** The live CPU% was reading near zero on some machines; it now comes from a dedicated background sampler (a one-second rolling average) and matches Task Manager. RAM shows the "in use" figure (total minus available), the same number Task Manager reports. *How to use it:* automatic; the report's graphs use the same accurate values.
+
+**Recommend tunes workers and threads.** A core can run more than one hardware thread, and the work is bound by your **logical CPUs (hardware threads)**, not just physical cores. Recommend now suggests both a worker count and a threads-per-worker so that workers times threads fits your hardware threads, and applies both. *How to use it:* click Recommend, review This PC and Recommended, then Apply.
+
+## A UI that responds
+
+**No more once-a-second tick.** The rail used to poll every second whether or not anything was happening. *Why it matters:* the UI now feels immediate. *How to use it:* automatic. Polling kicks the moment you act (Generate, Stop, Plan), idles to a slow heartbeat when nothing runs, and tightens only while a build is active. Stop responds instantly, and the worker list and log redraw only when they change. The OSM and elevation folder pickers are a single **Browse** button (with a Geofabrik link), and the Prepare data step no longer nests dropdowns inside dropdowns.
+
+## CPU-bound, said plainly
+
+**The real speed rule.** The docs, Recommend, and the worker and thread tooltips lead with the rule that matters: generation is **mostly CPU bound**, so keep **workers times threads at or under your cores (logical CPUs)**. *Why it matters:* the earlier framing called the save phase the disk and RAM bottleneck "not CPU," which was wrong for the common case and led people to oversubscribe. *How to use it:* Settings warns when you go over, and Recommend keeps the split under that line. Stream to disk (automatic on big cells) handles the large-tile memory burst; RAM and save-disk speed are secondary caps.
+
+---
+
+[Back to the docs hub](./index.md)

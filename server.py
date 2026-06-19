@@ -48,16 +48,16 @@ from src.prefetch import (run_prefetch, preview_clumps, run_terrain_prefetch,
 from src import datapack as dp
 from src import osm_pack as op
 from src import osm_grid
+from src import runreport
 from src.merge import (merge_cell_into_master, strip_buffer_regions,
                         MeldCoordinateDriftError, MeldCollisionError)
 from src.survey import survey_elevation
 from src.workers import WorkerPool
 
 # psutil powers the live CPU/RAM gauges. Optional: Flask must boot without it (disk still
-# works via shutil, RAM via the ctypes fallback). Prime cpu_percent so the first poll isn't 0.
+# works via shutil, RAM via the ctypes fallback).
 try:
     import psutil
-    psutil.cpu_percent(interval=None)
 except Exception:
     psutil = None
 
@@ -161,6 +161,121 @@ _RUN_LOCK = threading.Lock()
 _RUN = {"started": None, "ended": None, "total": 0, "done": 0, "failed": 0,
         "est_regions": 0, "est_mb": 0, "actual_mb": None, "phase": "idle"}
 MB_PER_REGION = 4   # rough estimate for the size report
+
+# ── per-cell timing + activity timeline (squares graph + end-of-run benchmark) ──
+# Collected live during a run, reset when a fresh batch is submitted. Read by /api/status
+# (the live squares graph) and by _write_run_report (assembled via src/runreport.py).
+_RUN_TIMING_LOCK = threading.Lock()
+_CELL_TIMING: dict[str, dict] = {}   # cell_key -> {queued, started, ended, duration, attempts, worker, status, reason}
+_RUN_TIMELINE: list[dict] = []       # [{t: bucket_epoch, active: peak running, done, failed}] (done/failed cumulative)
+_TIMELINE_BUCKET_S = 20              # seconds per activity square — finer than a minute = a richer graph
+_LAST_REPORT = {"html": None, "json": None, "world": None, "ts": None}
+
+
+def _timing_reset() -> None:
+    with _RUN_TIMING_LOCK:
+        _CELL_TIMING.clear()
+        _RUN_TIMELINE.clear()
+
+
+def _timing_queued(cell_key: str) -> None:
+    with _RUN_TIMING_LOCK:
+        t = _CELL_TIMING.setdefault(cell_key, {"attempts": 0})
+        if not t.get("queued"):
+            t["queued"] = time.time()
+
+
+def _timing_started(cell_key: str, worker_id) -> None:
+    with _RUN_TIMING_LOCK:
+        t = _CELL_TIMING.setdefault(cell_key, {"attempts": 0})
+        t["started"] = time.time()
+        t["worker"] = worker_id
+        t["attempts"] = int(t.get("attempts", 0)) + 1
+
+
+def _timing_finished(cell_key: str, status: str, reason: str | None = None) -> None:
+    with _RUN_TIMING_LOCK:
+        t = _CELL_TIMING.setdefault(cell_key, {"attempts": 1})
+        now = time.time()
+        t["ended"] = now
+        t["status"] = status
+        if t.get("started"):
+            t["duration"] = round(now - t["started"], 2)
+        if reason:
+            t["reason"] = reason
+
+
+def _timeline_sample(n_running: int, done: int, failed: int, cpu=None, ram=None) -> None:
+    """Fold one observation into the current time bucket (called from /api/status while a run is
+    active). active = peak running in the bucket; done/failed cumulative; cpu/ram = latest sample
+    (so the report can chart CPU and RAM over the run)."""
+    with _RUN_TIMING_LOCK:
+        m = int(time.time() // _TIMELINE_BUCKET_S) * _TIMELINE_BUCKET_S
+        if _RUN_TIMELINE and _RUN_TIMELINE[-1]["t"] == m:
+            b = _RUN_TIMELINE[-1]
+            b["active"] = max(b["active"], n_running)
+            b["done"], b["failed"] = done, failed
+        else:
+            b = {"t": m, "active": n_running, "done": done, "failed": failed,
+                 "cpu": None, "ram": None, "_cs": 0.0, "_cn": 0, "_rs": 0.0, "_rn": 0}
+            _RUN_TIMELINE.append(b)
+            if len(_RUN_TIMELINE) > 360:
+                del _RUN_TIMELINE[:len(_RUN_TIMELINE) - 360]
+        # Average every sample in the bucket (not the last one) so the CPU/RAM chart reads the true
+        # ~20s level instead of a single instantaneous spike.
+        if cpu is not None:
+            b["_cs"] += cpu; b["_cn"] += 1; b["cpu"] = round(b["_cs"] / b["_cn"])
+        if ram is not None:
+            b["_rs"] += ram; b["_rn"] += 1; b["ram"] = round(b["_rs"] / b["_rn"])
+
+
+def _report_exists() -> bool:
+    """True if a benchmark report is available to open: the one written this session, or a
+    meld-report.html left in the current world folder by any prior run (survives a restart)."""
+    p = _LAST_REPORT.get("html")
+    if p and Path(p).exists():
+        return True
+    try:
+        return (master_world_path(create=False) / runreport.REPORT_HTML_NAME).exists()
+    except Exception:
+        return False
+
+
+def _write_run_report() -> None:
+    """Assemble + write the end-of-run benchmark (meld-report.json + .html) into the world
+    folder. Best-effort: never raises into the run path."""
+    try:
+        with _RUN_LOCK:
+            run = dict(_RUN)
+        with _RUN_TIMING_LOCK:
+            timing = {k: dict(v) for k, v in _CELL_TIMING.items()}
+            timeline = [{k: v for k, v in b.items() if not k.startswith("_")} for b in _RUN_TIMELINE]
+        with _PREFETCH_LOCK:
+            pf_timings = dict(_PREFETCH.get("timings", {}))
+        name = PROJECT.load().get("name", "Meld World")
+        stats = _sys_stats()
+        hw = _hw_specs(stats.get("drive"))
+        machine = {"cores": os.cpu_count() or 0,   # logical CPUs / hardware threads (the parallelism budget)
+                   "cores_phys": (psutil.cpu_count(logical=False) if psutil is not None else None),
+                   "ram_gb": stats.get("ram_total_gb") or _total_ram_gb(),
+                   "drive": stats.get("drive"),
+                   "disk_free_gb": stats.get("disk_free_gb"),
+                   "disk_total_gb": stats.get("disk_total_gb"),
+                   "cpu_model": hw.get("cpu_model"), "ram_kind": hw.get("ram_kind"),
+                   "ram_speed": hw.get("ram_speed"), "ram_modules": hw.get("ram_modules"),
+                   "drive_type": hw.get("drive_type")}
+        rep = runreport.build_report(
+            world_name=name, meld_version="1.3.0", run=run, timing=timing,
+            timeline=timeline, grid=PROJECT.load_grid(), prefetch_timings=pf_timings,
+            settings=PROJECT.settings(), actual_mb=run.get("actual_mb"),
+            max_workers=POOL.max_workers, machine=machine)
+        paths = runreport.write_report(master_world_path(), rep)
+        if paths.get("html"):
+            _LAST_REPORT.update(html=str(paths["html"]), json=str(paths.get("json") or ""),
+                                world=name, ts=time.time())
+            log(f"[Report] benchmark written to the world folder ({Path(paths['html']).name})")
+    except Exception as ex:  # noqa: BLE001
+        log(f"[Report] could not write benchmark: {ex}")
 
 # OSM prefetch state (for the live cyan-chunk overlay + status). Populated while a
 # selection's OSM is being downloaded once and shared to all cells (src/prefetch.py).
@@ -983,7 +1098,7 @@ _META_SKIP_SETTINGS = {
 def _world_meta_dict() -> dict:
     data = PROJECT.load()
     return {
-        "meld_version": "1.2.0",
+        "meld_version": "1.3.0",
         "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "name": data.get("name", "Meld World"),
         "origin": data.get("origin", {}),                  # lat, lon, locked
@@ -1118,6 +1233,7 @@ def _runner(job: dict, state: dict) -> bool:
         return False
 
     PROJECT.set_cell_status(cell_key, "running")
+    _timing_started(cell_key, state.get("worker_id"))
     clean_output_dir(out)
     Path(out).mkdir(parents=True, exist_ok=True)
 
@@ -1189,10 +1305,17 @@ def _runner(job: dict, state: dict) -> bool:
     #  - ARNIS_STREAM_TO_DISK=1: region eviction so big test cells (8x8/16x16) don't OOM.
     #    Env, not a CLI flag (upstream removed the flag). Forced for size>=8 or when the
     #    user enables the setting; smaller cells let Arnis's own RAM heuristic decide.
-    cpu_pct = float(settings.get("cpu_target_pct", 100) or 100)
-    min_threads = max(1, int(settings.get("min_threads_per_worker", 2) or 1))
+    # Live CPU budget: re-read these from the CURRENT settings (NOT the job snapshot), so
+    # changing CPU budget / threads-per-worker / worker count MID-RUN flows to the next cells a
+    # worker picks up. The world invariants (scale, origin, seed, elevation, bbox) stay frozen in
+    # the snapshot above, so a mid-run tweak never desyncs the world. max_workers is already live
+    # (the pool resizes), and POOL.max_workers below reflects the current value.
+    _live = PROJECT.settings()
+    cpu_pct = float(_live.get("cpu_target_pct", settings.get("cpu_target_pct", 100)) or 100)
+    min_threads = max(1, int(_live.get("min_threads_per_worker", settings.get("min_threads_per_worker", 2)) or 1))
     core_budget = max(1, int((os.cpu_count() or 4) * cpu_pct / 100.0))
     rayon_threads = max(min_threads, core_budget // max(1, POOL.max_workers))
+    log(f"  [{cell_key}] {rayon_threads} threads/cell (cpu {int(cpu_pct)}% · {POOL.max_workers} workers, live)")
     child_env = {"RAYON_NUM_THREADS": str(rayon_threads)}
     if settings.get("stream_to_disk") or cell_size >= 8:
         child_env["ARNIS_STREAM_TO_DISK"] = "1"
@@ -1330,6 +1453,16 @@ def _on_complete(job, ok, err):
             POOL.submit(job)
             return   # re-queued: don't count it done/failed yet (the retry will)
 
+    # Terminal outcome (a retry returned above): stamp the cell's wall-time + final status/reason.
+    ck = job.get("cell_key")
+    if ok:
+        _timing_finished(ck, "merged")
+    else:
+        with _CELL_HEALTH_LOCK:
+            _fin_reason = _CELL_FAIL.get(ck, "")
+        _timing_finished(ck, PROJECT.load_grid().get(ck) or "failed", _fin_reason or None)
+
+    run_done = False
     with _RUN_LOCK:
         if ok:
             _RUN["done"] += 1
@@ -1343,6 +1476,9 @@ def _on_complete(job, ok, err):
                 _RUN["actual_mb"] = None
             # Final snapshot of the world's origin/elevation/settings sidecar.
             write_world_meta()
+            run_done = True
+    if run_done:
+        _write_run_report()   # benchmark JSON + HTML into the world folder (best-effort)
 
 
 POOL.configure(_runner, _on_complete)
@@ -1565,10 +1701,15 @@ def api_pick_folder():
 
 @app.route("/api/open-folder", methods=["POST"])
 def api_open_folder():
-    """Open the save-location folder in the OS file browser (server runs locally)."""
+    """Open the world's save folder in the OS file browser (server runs locally). Climbs to the
+    first folder that ACTUALLY exists — the world, else its save location, else the Meld project
+    folder — so it always opens something instead of silently failing on a not-yet-created or
+    moved/disconnected path (e.g. a save location left pointing at an old drive)."""
     target = master_world_path(create=False)
-    if not target.exists():
+    while not target.exists() and target.parent != target:
         target = target.parent
+    if not target.exists():
+        target = PROJECT.root   # local Meld project folder always exists
     try:
         if sys.platform == "win32":
             os.startfile(str(target))   # type: ignore[attr-defined]  # noqa: S606
@@ -1578,7 +1719,8 @@ def api_open_folder():
             subprocess.Popen(["xdg-open", str(target)])
         return jsonify({"ok": True, "path": str(target)})
     except Exception as ex:  # noqa: BLE001
-        return jsonify({"ok": False, "error": str(ex)}), 500
+        # 200 (not 500) + the path so the UI can tell the user where it is to open manually.
+        return jsonify({"ok": False, "error": str(ex), "path": str(target)}), 200
 
 
 @app.route("/api/log")
@@ -1661,7 +1803,7 @@ def api_settings():
     # Guard rails: cell size 1-16 (snapped to a power of two on the UI), workers 1-64,
     # CPU budget 10-95% (95 cap leaves the OS + disk-save phase headroom).
     if patch.get("job_size_regions") is not None:
-        patch["job_size_regions"] = max(1, min(16, int(patch["job_size_regions"])))
+        patch["job_size_regions"] = max(1, min(64, int(patch["job_size_regions"])))
     if patch.get("max_workers") is not None:
         patch["max_workers"] = max(1, min(64, int(patch["max_workers"])))
     if patch.get("cpu_target_pct") is not None:
@@ -1729,9 +1871,9 @@ def api_grid():
     if not bbox and not has_rings:
         return jsonify({"ok": False, "error": "bbox or polygon required"}), 400
     settings = PROJECT.settings()
-    # Cell size is capped at 6: bigger cells write huge save bursts that are much
-    # slower (disk + RAM bound), so the grid never tiles above 6.
-    size = max(1, min(16, int(d.get("size") or settings.get("job_size_regions") or 4)))
+    # Cell size is a free 1..64: bigger cells write larger save bursts (heavier on RAM and the save
+    # disk at the end of each cell, auto stream-to-disk for 8+), but the user owns the trade-off.
+    size = max(1, min(64, int(d.get("size") or settings.get("job_size_regions") or 4)))
     scale = float(settings.get("scale", 1.0))
     if has_rings:
         cells = cells_for_polygons(rings, origin, scale, size)   # follow the drawn/searched shape
@@ -1987,6 +2129,7 @@ def _submit_cells(cells: list[dict], osm_files: dict | None = None,
     settings change mid-prefetch could leave a cell's bbox outside its chunk file).
     Shared by /api/queue, /api/cell/regenerate and /api/resume."""
     osm_files = osm_files or {}
+    _timing_reset()   # fresh benchmark for this run (per-cell timings + the activity timeline)
     settings = settings if settings is not None else PROJECT.settings()
     origin = origin if origin is not None else PROJECT.origin()
     elevation = PROJECT.elevation()
@@ -2018,6 +2161,7 @@ def _submit_cells(cells: list[dict], osm_files: dict | None = None,
         ck = c["cell_key"]
         out = str(PROJECT.cells_dir / ck.replace(",", "_"))
         PROJECT.set_cell_status(ck, "queued")   # atomic; won't clobber a worker's status
+        _timing_queued(ck)
         POOL.submit({
             "cell_key": ck, "bbox": c["bbox"], "settings": settings,
             "origin": origin, "elevation": elevation, "output_path": out,
@@ -2556,6 +2700,20 @@ def api_queue_clear():
 def api_stop():
     POOL.clear()
     n = POOL.terminate_all()
+    # Finalize a PARTIAL benchmark report for a run stopped mid-way, so the work so far (and where
+    # it broke) is still saveable — cells that never finished show as running/incomplete.
+    finalize = False
+    with _RUN_LOCK:
+        if _RUN.get("started") and not _RUN.get("ended"):
+            _RUN["ended"] = time.time()
+            try:
+                _RUN["actual_mb"] = _dir_size_mb(master_world_path(create=False))
+            except Exception:
+                _RUN["actual_mb"] = None
+            finalize = True
+    if finalize:
+        write_world_meta()
+        _write_run_report()
     return jsonify({"ok": True, "terminated": n})
 
 
@@ -2566,6 +2724,16 @@ def api_status():
     now = time.time()
     run["elapsed"] = ((run["ended"] or now) - run["started"]) if run["started"] else 0
     run["active"] = bool(run["started"] and not run["ended"])
+    states = POOL.get_states()
+    stats = _sys_stats()
+    if run["active"]:
+        n_running = sum(1 for s in states if s.get("running"))
+        ram_pct = (round(stats["ram_used_gb"] / stats["ram_total_gb"] * 100)
+                   if stats.get("ram_used_gb") and stats.get("ram_total_gb") else None)
+        _timeline_sample(n_running, run.get("done", 0) or 0, run.get("failed", 0) or 0,
+                         cpu=stats.get("cpu_pct"), ram=ram_pct)
+    with _RUN_TIMING_LOCK:
+        run["timeline"] = [{k: v for k, v in b.items() if not k.startswith("_")} for b in _RUN_TIMELINE]
     with _PREFETCH_LOCK:
         prefetch = {"active": _PREFETCH["active"], "done": _PREFETCH["done"],
                     "note": _PREFETCH["note"], "chunks": list(_PREFETCH["chunks"]),
@@ -2575,7 +2743,7 @@ def api_status():
         suspects = {k: v for k, v in _CELL_HEALTH.items() if v.get("suspect")}
         cell_fail = dict(_CELL_FAIL)
     return jsonify({
-        "workers": POOL.get_states(),
+        "workers": states,
         "queue_size": POOL.queue_size(),
         "running": POOL.is_running(),
         "grid": PROJECT.load_grid(),
@@ -2583,9 +2751,48 @@ def api_status():
         "run": run,
         "prefetch": prefetch,
         "cell_health": suspects,
-        "stats": _sys_stats(),
+        "stats": stats,
+        "report_ready": _report_exists(),
         "log": _LOG[-150:],
     })
+
+
+@app.route("/api/report")
+def api_report():
+    """Serve the latest benchmark report (meld-report.html) inline, so the UI can open it in a
+    new tab. Falls back to the current world's report file if the in-memory pointer is stale."""
+    p = _LAST_REPORT.get("html")
+    if not (p and Path(p).exists()):
+        try:
+            cand = master_world_path(create=False) / runreport.REPORT_HTML_NAME
+            p = str(cand) if cand.exists() else None
+        except Exception:
+            p = None
+    if not p:
+        return ("No benchmark report yet. Finish a generation run first.", 404)
+    pp = Path(p)
+    resp = send_from_directory(str(pp.parent), pp.name)
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/api/report.json")
+def api_report_json():
+    """Serve the latest benchmark raw data (meld-report.json), so the report's 'Open full list'
+    button can show every cell without bloating the printable HTML."""
+    p = _LAST_REPORT.get("json")
+    if not (p and Path(p).exists()):
+        try:
+            cand = master_world_path(create=False) / runreport.REPORT_JSON_NAME
+            p = str(cand) if cand.exists() else None
+        except Exception:
+            p = None
+    if not p:
+        return ("No benchmark report yet. Finish a generation run first.", 404)
+    pp = Path(p)
+    resp = send_from_directory(str(pp.parent), pp.name, mimetype="application/json")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.route("/api/prefetch/plan")
@@ -2611,17 +2818,42 @@ def _save_drive_dir() -> str:
     return (PROJECT.settings().get("master_world_dir") or "").strip() or str(PROJECT.root)
 
 
+# Overall CPU% from a dedicated background sampler. psutil.cpu_percent(interval=1) blocks 1s for an
+# ACCURATE rolling system average; calling it with interval=None from the request path measured the
+# sub-second gap between two polls under the threaded server, which read ~0%. The sampler stores the
+# latest value; _sys_stats reads it non-blocking, so the gauge + report match Task Manager.
+_CPU_PCT = {"v": 0, "started": False}
+
+
+def _ensure_cpu_sampler() -> None:
+    if _CPU_PCT["started"] or psutil is None:
+        return
+    _CPU_PCT["started"] = True
+
+    def _loop():
+        while True:
+            try:
+                _CPU_PCT["v"] = round(psutil.cpu_percent(interval=1.0))
+            except Exception:
+                time.sleep(1.0)
+    threading.Thread(target=_loop, name="cpu-sampler", daemon=True).start()
+
+
 def _sys_stats() -> dict:
-    """Live CPU% / RAM / save-disk usage for the left-rail System card. cpu_percent(interval=None)
-    is non-blocking (returns the delta since the previous call, primed at import)."""
+    """Live CPU% / RAM / save-disk usage for the left-rail System card. CPU comes from the
+    background sampler (accurate rolling %); RAM is total-available (Task Manager's 'in use')."""
+    _ensure_cpu_sampler()
     out = {"cpu_pct": None, "ram_used_gb": None, "ram_total_gb": None,
            "disk_free_gb": None, "disk_total_gb": None, "drive": None}
     try:
         if psutil is not None:
-            out["cpu_pct"] = round(psutil.cpu_percent(interval=None))
+            out["cpu_pct"] = _CPU_PCT["v"]   # rolling 1s average, matches Task Manager
             vm = psutil.virtual_memory()
-            out["ram_used_gb"] = round(vm.used / 1e9, 1)
+            # "in use" the way Task Manager shows it = total - available (NOT psutil's .used, which
+            # on Windows excludes the modified/standby cache and reads low vs the task manager number).
+            out["ram_used_gb"] = round((vm.total - vm.available) / 1e9, 1)
             out["ram_total_gb"] = round(vm.total / 1e9, 1)
+            out["ram_pct"] = round(vm.percent)
         else:
             out["ram_total_gb"] = _total_ram_gb()
     except Exception:
@@ -2634,6 +2866,65 @@ def _sys_stats() -> dict:
         out["drive"] = os.path.splitdrive(os.path.abspath(d))[0] or d
     except Exception:
         pass
+    return out
+
+
+_HW_CACHE: dict = {}
+_DDR_TYPE = {20: "DDR", 21: "DDR2", 24: "DDR3", 26: "DDR4", 34: "DDR5", 35: "DDR5"}
+
+
+def _hw_specs(drive_hint: str | None = None) -> dict:
+    """Best-effort hardware detail for the benchmark report: CPU model, RAM type + speed +
+    module layout, and the save drive's media type (NVMe SSD / SSD / HDD). Windows uses a one-shot
+    CIM probe (cached, ~1s); other OSes fall back to platform.processor(). Never raises."""
+    key = (drive_hint or "").upper()[:1]
+    if key in _HW_CACHE:
+        return _HW_CACHE[key]
+    out = {"cpu_model": None, "ram_kind": None, "ram_speed": None, "ram_modules": None, "drive_type": None}
+    try:
+        import platform
+        out["cpu_model"] = (platform.processor() or "").strip() or None
+    except Exception:
+        pass
+    if sys.platform == "win32":
+        letter = key if key.isalpha() else "C"
+        ps = (
+            "$ErrorActionPreference='SilentlyContinue';"
+            "$cpu=(Get-CimInstance Win32_Processor|Select-Object -First 1).Name;"
+            "$mem=Get-CimInstance Win32_PhysicalMemory|ForEach-Object{[pscustomobject]@{cap=$_.Capacity;spd=$_.Speed;typ=$_.SMBIOSMemoryType}};"
+            f"$pd=Get-Partition -DriveLetter {letter} -ErrorAction SilentlyContinue|Get-Disk|Get-PhysicalDisk;"
+            "$media=($pd.MediaType|Select-Object -First 1);$bus=($pd.BusType|Select-Object -First 1);"
+            "[pscustomobject]@{cpu=$cpu;mem=@($mem);media=\"$media\";bus=\"$bus\"}|ConvertTo-Json -Compress -Depth 4"
+        )
+        try:
+            r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                               capture_output=True, text=True, timeout=12)
+            data = json.loads((r.stdout or "").strip() or "{}")
+            if data.get("cpu"):
+                out["cpu_model"] = str(data["cpu"]).strip()
+            mem = data.get("mem") or []
+            if isinstance(mem, dict):
+                mem = [mem]
+            speeds = [int(m["spd"]) for m in mem if m.get("spd")]
+            typs = [_DDR_TYPE.get(m.get("typ")) for m in mem if _DDR_TYPE.get(m.get("typ"))]
+            caps = [int(m["cap"]) for m in mem if m.get("cap")]
+            if speeds:
+                out["ram_speed"] = max(speeds)
+            if typs:
+                out["ram_kind"] = typs[0]
+            if caps:
+                gb = [round(c / 1e9) for c in caps]
+                out["ram_modules"] = (f"{len(gb)}×{gb[0]} GB" if len(set(gb)) == 1
+                                      else " + ".join(f"{g} GB" for g in gb))
+            media = (data.get("media") or "").strip()
+            bus = (data.get("bus") or "").strip()
+            if bus.lower() == "nvme":
+                out["drive_type"] = "NVMe SSD"
+            elif media and media.lower() not in ("unspecified", "0", ""):
+                out["drive_type"] = media   # "SSD" / "HDD"
+        except Exception:
+            pass
+    _HW_CACHE[key] = out
     return out
 
 
@@ -2689,10 +2980,11 @@ def _disk_write_mbps(target_dir: str) -> float | None:
 
 @app.route("/api/recommend")
 def api_recommend():
-    """Probe CPU, RAM and the save-disk write speed, then recommend cell size + workers.
-    Generation is bound by the save phase (disk write + a RAM burst), not CPU, so the
-    recommendation is the min of the CPU/RAM/disk budgets, capped at the safe ceiling of 8
-    (the UI lets the user push up to 64 manually, with a warning)."""
+    """Probe CPU, RAM and the save-disk write speed, then recommend cell size, worker count and
+    threads-per-worker. Generation is mostly CPU bound, so the recommendation keeps
+    workers x threads at or under the core count (each worker gets >= 2 threads), with RAM and
+    save-disk speed as secondary caps on the worker count. The UI lets the user push higher
+    manually, with a warning."""
     cores = os.cpu_count() or 4
     ram_gb = _total_ram_gb()
     save_dir = str(master_world_path(create=True).parent)
@@ -2701,19 +2993,21 @@ def api_recommend():
 
     ram = ram_gb or 16.0
     disk = float(disk_mbps or 800)
-    by_cpu = max(2, cores // 2)
+    by_cpu = max(2, cores // 2)        # leave room for >= 2 threads per worker (workers x threads ~ cores)
     by_ram = max(2, int(ram // 3))     # ~3 GB per concurrent heavy (baked) save
     by_disk = max(2, int(disk // 90))  # ~90 MB/s sustained per worker during save bursts
     rec_workers = max(2, min(8, by_cpu, by_ram, by_disk))
+    rec_threads = max(1, min(8, cores // max(1, rec_workers)))   # fill the cores: workers x threads ~ cores
     rec_cell = 4 if (disk < 600 or ram < 16) else 6
     rec_bake = ram >= 16
     bound = min([("CPU", by_cpu), ("RAM", by_ram), ("disk", by_disk)], key=lambda x: x[1])[0]
-    note = (f"Limited by {bound}. The save phase is disk + RAM bound, so {rec_workers} "
-            f"workers at cell size {rec_cell} keeps saves smooth. You can push higher "
-            f"manually (the app warns above 8).")
+    note = (f"{rec_workers} workers x {rec_threads} threads = {rec_workers * rec_threads} of your "
+            f"{cores} logical CPUs (hardware threads). Generation is mostly CPU bound, so this fills the "
+            f"machine without oversubscribing (limited by {bound}; RAM and save-disk speed are secondary "
+            f"caps). You can push higher manually.")
     return jsonify({"ok": True, "cores": cores, "ram_gb": ram_gb, "disk_mbps": disk_mbps,
                     "drive": drive, "rec_cell": rec_cell, "rec_workers": rec_workers,
-                    "rec_bake": rec_bake, "note": note})
+                    "rec_threads": rec_threads, "rec_bake": rec_bake, "note": note})
 
 
 if __name__ == "__main__":

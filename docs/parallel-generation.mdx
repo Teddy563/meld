@@ -58,9 +58,9 @@ This is how Meld goes big and stays fast. The area is split into cells, many cel
 
 ## Why small cells can finish faster
 
-**Why.** It seems like a few big cells should beat many small ones, but the save phase (disk plus memory) is the bottleneck, and big cells make each save a heavier burst.
+**Why.** It seems like a few big cells should beat many small ones, but the build is mostly CPU bound (keep workers times threads at or under your cores), and a big cell's save lands in one heavy burst at the end. Stream to disk (automatic on big cells) keeps that burst from running out of memory; small cells just keep every worker fed with a steady cadence, so they often finish sooner.
 
-**The mechanism.** A small cell builds and saves quickly, so the pool keeps every worker busy with a steady stream of light saves. A big cell holds more in memory and dumps a huge save burst at the end, which can stall the disk and starve the other workers, so a few big cells can actually finish later than more small ones. Cell sizes are 1, 2, 4, 8, and 16 regions; 4 is the default and the sweet spot for most builds, with 8 and 16 marked as testing for very large jobs where stream to disk carries them.
+**The mechanism.** A small cell builds and saves quickly, so the pool keeps every worker busy with a steady stream of light saves. A big cell holds more in memory and writes one large save burst at the end; stream to disk (automatic for cell size 8 and up) evicts finished regions as it goes, so that burst no longer runs the machine out of memory. Generation is CPU bound, so the steady cadence of many small cells often finishes sooner than a few big ones. Cell sizes are 1, 2, 4, 8, and 16 regions; 4 is the default and the sweet spot for most builds, with 8 and 16 for very large jobs where stream to disk carries them.
 
 **How to use it.** Set Cell size in Settings. Start at 4. Only reach for 8 or 16 on very large areas, and let Recommend weigh it against your disk and RAM.
 
@@ -68,7 +68,7 @@ This is how Meld goes big and stays fast. The area is split into cells, many cel
 
 **Why.** The right cell size and worker count depend on your CPU, your RAM, and how fast your save drive is, which is hard to guess.
 
-**The mechanism.** The Recommend button probes your machine (cores, memory, and save disk write speed) and suggests a cell size, worker count, and lighting setting, bounded by whichever resource is tightest, so it will not pick numbers that starve the disk bound save phase.
+**The mechanism.** The Recommend button probes your machine (cores, memory, and save disk write speed) and suggests a cell size, worker count, and lighting setting, bounded by whichever resource is tightest. The main one is CPU: it keeps workers times threads at or under your cores. RAM and save-disk speed are secondary caps for machines with little memory or a slow drive.
 
 **How to use it.** Click Recommend in the left rail, review the This PC and Recommended values, then Apply or keep your own.
 

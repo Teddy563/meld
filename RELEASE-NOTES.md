@@ -2,6 +2,48 @@
 
 Short, human highlights for each Meld release. Full detail lives in [CHANGELOG.md](CHANGELOG.md).
 
+## v1.3.0
+
+**Guided start, live tuning, and a benchmark report.**
+
+1.2.0 made builds offline and fast. 1.3.0 makes Meld easy to drive, tunable while it runs, and finally
+measurable. The right rail is one numbered, guided flow instead of a wall of options, and one
+**Prepare and build** button runs the prep and the build in order. You can now retune a run **while it
+is running**, workers, threads and CPU budget all take effect on the next cells. And every run that
+finishes (or that you stop) drops a **benchmark report** into the world folder: a clean page with your
+machine, the settings, CPU/RAM and activity graphs, a per-worker timeline, and a Save-as-PDF. The live
+CPU and RAM gauges also read accurately now.
+
+Highlights:
+
+- **A benchmark report for every run.** When a run finishes (or you stop it), Meld writes
+  `meld-report.html` and `meld-report.json` next to the world. The page shows the time and cells, your
+  machine (CPU model, cores and threads, RAM type and speed, drive type), the exact run settings,
+  CPU and RAM over the run, activity over the run, and a per-worker **cell timeline** you can replay.
+  **Save as PDF** turns it into a tidy two-pager. Open it from **Benchmark report** in the Build card.
+- **Tune it while it runs.** Change Workers, Threads per worker or CPU budget mid-run and the next
+  cells use the new numbers, no restart, no re-plan. The world's origin, seed, elevation and scale
+  stay locked, so a live tweak never desyncs the build.
+- **Explore the map.** A 🗺️ Explore mode toggle in the Build card hides the cell preview, draws the
+  world's border, and turns the map into a coordinate picker: click anywhere for the Minecraft
+  teleport command (`/tp @s X ~ Z`) for that spot, with a Copy button. A search box on the map finds
+  and zooms to any place. It works before you build.
+- **One guided rail.** The right rail is a single top-to-bottom flow, steps 1 to 6, with the advanced
+  cards collapsed at the bottom. No Simplified/Advanced switch to think about; every control is there.
+- **A fast first build by default.** New projects start at 1:10 scale with buildings off and solid
+  ground, the scale field reads out the ratio (one block is N metres, a 1 km city is X blocks), and
+  cell size is a free 1 to 64 fill-in (presets 1, 2, 4, 6, 8, 12, 16, 32, 64).
+- **Accurate gauges + Recommend.** CPU% now comes from a background sampler (it was reading near 0),
+  RAM is the "in use" figure Task Manager shows, and Recommend suggests both a worker count and a
+  threads-per-worker so workers times threads fits your logical CPUs.
+- **A UI that responds.** No more once-a-second tick: polling kicks on your actions and idles when
+  nothing runs, Stop reacts instantly, folder pickers are one Browse, and Prepare no longer nests
+  dropdowns.
+
+> No engine change: same Arnis fork (2.9.1) as 1.2.0. Everything here is the Meld orchestrator, its UI,
+> and the docs. Your existing worlds and settings are untouched; the new defaults apply to new projects
+> only.
+
 ## v1.2.0
 
 **Offline, faster, cleaner.**
@@ -43,8 +85,9 @@ Highlights:
 
 Meld turns the real world into one seamless Minecraft world at scale, on a single PC. On the same
 area it runs about 2x faster than a single Arnis pass, because it builds the tiles in parallel
-instead of one after another. The ceiling on that speed is how fast your disk can save the regions,
-not your CPU. The real win is scale: build a whole city, country, or continent as one world, with no
+instead of one after another. The ceiling on that speed is your CPU, so the rule is to keep workers
+times threads at or under your cores (RAM and save-disk speed are secondary). The real win is scale:
+build a whole city, country, or continent as one world, with no
 seams and no height cliffs at the joins. 1.1.0 adds the reliability to match. It repairs the
 elevation no-data holes that caused dark bands and in-game dips, smooths water artifacts, removes
 duplicate block entities on the parallel path, and fixes the crashes big parallel runs could hit.

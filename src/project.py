@@ -17,7 +17,9 @@ _LOCK = threading.Lock()
 
 def default_settings() -> dict:
     return {
-        "scale": 1.0,
+        # 1:10 default so a first build is fast and a whole city fits. 1:1 (real size) is huge + slow;
+        # users raise it deliberately. The guided (Simplified) UI starts here.
+        "scale": 0.1,
         "job_size_regions": 4,   # sweet spot: small save bursts, safe on any disk (see Workers note)
         "seam_buffer_chunks": 8,    # 8 chunks = 128 blocks of overlap per side
         "ground_level": -56,
@@ -30,11 +32,14 @@ def default_settings() -> dict:
         # zoom's pixel to the block size for this scale (the right detail with no waste): 1:1->z15,
         # 1:10->z13, etc. Lower zoom = far fewer tiles + dodges the z14/z15 no-data holes. 11..15.
         "elevation_zoom": "auto",
-        "buildings": True,   # off => roads + land cover only (roads/bridges/rails/water kept)
+        # Off by default for the fastest first build (roads + land cover + water + terrain only).
+        # Turning it on is remembered per project via update_settings. roads/bridges/rails/water kept.
+        "buildings": False,
         "roof": True,
         "interior": False,
         "land_cover": True,
-        "fill_ground": False,
+        "fill_ground": True,   # solid floor under the surface, no holes
+        "osm_bake_workers": 4,  # offline .pbf bake parallelism; UI caps at 8, auto from CPU cores
         "disable_height_limit": False,
         # Pre-bake per-chunk lighting so LOD mods (Voxy, Distant Horizons) render
         # distant chunks lit without visiting them (Arnis issue #1071). On by default
@@ -47,15 +52,21 @@ def default_settings() -> dict:
         "poi_3d_only": True,                # reserved
         "overpass_url": "",
         "timeout": 600,
-        "max_workers": 4,   # sweet spot: ~4x speedup, safe save load. Up to 16 (8+ warns).
+        # Generation is mostly CPU bound now. The rule that matters: keep workers x threads at or
+        # under your CPU cores. Going over OVERSUBSCRIBES the cores and slows the build. With the
+        # default 4 workers x 4 threads = 16, fine on any 8+ core machine. Recommend tunes it to
+        # the box (and still caps on RAM + save-disk speed as secondary safety).
+        "max_workers": 4,
         # CPU core budget Meld spreads across workers. Each child gets
         # max(min_threads_per_worker, floor(cores*pct/100) / max_workers) rayon threads.
         # 95 (slider max) = use nearly the whole machine; lower leaves headroom for the OS +
         # disk-save phase. >100 (not reachable from the slider) oversubscribes. Default 90.
         "cpu_target_pct": 90,
-        # Floor on rayon threads per worker, so a high worker count never starves each
-        # cell's in-process tile parallelism down to 1 thread. 2 is a good default.
-        "min_threads_per_worker": 2,
+        # Threads each worker (cell) uses for its in-process tile parallelism. The actual count is
+        # max(this, floor(cores*pct/100) / max_workers). Keep workers x this AT OR UNDER your cores;
+        # over the core count slows the build. On 24 cores, 12 workers x 2 and 8 x 3 perform about
+        # the same, so the exact split barely matters as long as the product stays under the cores.
+        "min_threads_per_worker": 4,
         # Per-worker first-job start delay (seconds) to desync CPU phases. Small on
         # purpose; big values just make generation look slow to start. Slider 1-4s.
         "cpu_stagger_seconds": 2,
