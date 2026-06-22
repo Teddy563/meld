@@ -141,6 +141,16 @@
           font-family:var(--pixel); letter-spacing:.04em; text-transform:uppercase;
           background:var(--bg); border:2px solid var(--line); }
   .lk { color:var(--ok); } .un { color:var(--mut); }
+  /* segmented multi-toggle (tree sizes): connected chips, no wrap, multi-select */
+  .szgroup { display:inline-flex; vertical-align:middle; }
+  .szgroup label { cursor:pointer; line-height:1; }
+  .szgroup label input { position:absolute; opacity:0; pointer-events:none; }
+  .szgroup label > span { display:inline-block; padding:3px 7px; border:1px solid var(--line);
+    border-left-width:0; font-size:11px; background:var(--bg); color:var(--mut); user-select:none; }
+  .szgroup label:first-child > span { border-left-width:1px; border-radius:3px 0 0 3px; }
+  .szgroup label:last-child > span { border-radius:0 3px 3px 0; }
+  .szgroup label input:checked + span { background:var(--acc2); color:#06121f; border-color:var(--acc); }
+  .szgroup label input:focus-visible + span { outline:2px solid var(--acc2); outline-offset:1px; }
   .legend span { display:inline-flex; align-items:center; gap:4px; margin-right:8px; font-size:11px; }
   .dot { width:9px; height:9px; border-radius:2px; display:inline-block; }
   #log { font:11px/1.4 ui-monospace,Consolas,monospace; color:var(--mut);
@@ -215,6 +225,17 @@
     box-shadow: inset 0 2px 0 rgba(255,235,170,.28); }
   .mb-ghost { background:var(--panel); color:var(--fg); border:2px solid var(--line); box-shadow:none; }
   .mb-gold:hover { filter:brightness(1.07); } .mb-ghost:hover { color:var(--acc2); border-color:var(--acc); }
+  /* Docs quick-menu: anchored dropdown under the header 📖 Docs button */
+  .docs-menu { position:absolute; top:calc(100% + 4px); right:0; z-index:4000; min-width:182px;
+    background:var(--panel); border:2px solid var(--line); border-radius:2px; padding:5px;
+    box-shadow:0 6px 18px rgba(0,0,0,.5); display:flex; flex-direction:column; }
+  .docs-menu[hidden] { display:none; }
+  .docs-menu a { display:block; padding:6px 9px; font-size:12px; color:var(--fg) !important;
+    text-decoration:none !important; border-radius:2px; letter-spacing:.01em; white-space:nowrap; }
+  .docs-menu a:hover { background:var(--bg); color:var(--acc2) !important; }
+  .docs-menu a.docs-all { margin-top:4px; border-top:1px solid var(--line); padding-top:8px;
+    color:var(--acc2) !important; font-family:var(--pixel); font-size:11px; text-transform:uppercase;
+    letter-spacing:.04em; }
   /* paint-cells toggle: a triangle button under the draw toolbar. Gold + white triangle when ON. */
   .leaflet-bar a.meld-brush-btn { font:700 16px/26px system-ui,sans-serif; color:#1a1712; text-align:center; }
   .leaflet-bar a.meld-brush-btn.meld-brush-on { background:#e3a417; color:#fff; }
@@ -227,8 +248,36 @@
     <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">
       <a href="https://meldmc.com" target="_blank" rel="noopener" title="meldmc.com" class="logo" style="margin:0">
         <img src="assets/meld_icon.png" alt="Meld" style="height:40px;width:auto;display:block;cursor:pointer"/></a>
-      <button id="btnRecommend" class="sec" style="width:auto;margin:0;padding:5px 8px;font-size:11px;white-space:nowrap" title="Check this PC (CPU, RAM, save-disk speed) and recommend the best cell size + worker count.">⚡ Recommend</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <div style="position:relative">
+          <button id="btnDocs" class="sec" style="width:auto;margin:0;padding:5px 8px;font-size:11px;white-space:nowrap" title="Open the Meld documentation index.">📖 Docs ▾</button>
+          <div id="docsMenu" class="docs-menu" hidden>
+            <a href="https://meldmc.com/docs/how-it-works" target="_blank" rel="noopener">How it works</a>
+            <a href="https://meldmc.com/docs/elevation" target="_blank" rel="noopener">Elevation</a>
+            <a href="https://meldmc.com/docs/parallel-generation" target="_blank" rel="noopener">Parallel generation</a>
+            <a href="https://meldmc.com/docs/the-arnis-fork" target="_blank" rel="noopener">The Arnis fork</a>
+            <a href="https://meldmc.com/docs/tree-packs" target="_blank" rel="noopener">Tree packs</a>
+            <a href="https://meldmc.com/docs/terrain-and-snow" target="_blank" rel="noopener">Terrain &amp; snow</a>
+            <a href="https://meldmc.com/docs/border-zones" target="_blank" rel="noopener">Border &amp; zones</a>
+            <a href="https://meldmc.com/docs" target="_blank" rel="noopener" class="docs-all">All docs →</a>
+          </div>
+        </div>
+        <button id="btnRecommend" class="sec" style="width:auto;margin:0;padding:5px 8px;font-size:11px;white-space:nowrap" title="Check this PC (CPU, RAM, save-disk speed) and recommend the best cell size + worker count.">⚡ Recommend</button>
+      </div>
     </div>
+    <script>
+    (function(){
+      var btn = document.getElementById('btnDocs'), menu = document.getElementById('docsMenu');
+      if (!btn || !menu) return;
+      var close = function(){ menu.hidden = true; };
+      btn.addEventListener('click', function(e){ e.stopPropagation(); menu.hidden = !menu.hidden; });
+      menu.addEventListener('click', close);                       // close after picking a link
+      document.addEventListener('click', function(e){
+        if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) close();
+      });
+      document.addEventListener('keydown', function(e){ if (e.key === 'Escape') close(); });
+    })();
+    </script>
     <div class="sub" style="font-size:10px;line-height:1.3;margin:0 0 10px">From a city block to a whole continent, in Minecraft.</div>
     <div class="sub" style="margin:0 0 12px">Live status</div>
     <div class="card">
@@ -317,6 +366,17 @@
       <label>Elevation mode
         <span class="i" title="global = one locked range, no height cliffs across cells. local = per-cell auto-fit (will seam).">i</span>
         <select id="emode"><option>global</option><option>local</option></select></label>
+      <div class="stat" style="border-top:1px solid var(--line);margin-top:7px;padding-top:5px;color:var(--acc2);font-weight:600;letter-spacing:.03em">Terrain shaping</div>
+      <label>Terrain height &times;
+        <span class="i" title="Vertical exaggeration: makes mountains taller WITHOUT widening the map. 1 = true scale, 2-3 = dramatic, 4+ may need 'disable height limit' for headroom. Auto-compresses to fit the build height.">i</span>
+        <input id="vexag" type="number" step="0.5" min="1" max="8" style="width:80px"></label>
+      <label>Snow
+        <span class="i" title="off = none. realistic = real climate snow line by latitude (often no snow on lower mountains). peaks = snow on the top N% of the world's height (always caps the tallest terrain). manual = snow above a Y you pick.">i</span>
+        <span style="display:inline-flex;gap:6px;align-items:center">
+          <select id="snowMode"><option value="off">off</option><option value="realistic">realistic</option><option value="peaks">peaks</option><option value="manual">manual</option></select>
+          <span id="snowPctWrap" style="display:none"><input id="snowPct" type="number" step="1" min="0" max="100" title="peaks: top N% of the world height gets snow" style="width:54px"> %</span>
+          <span id="snowYWrap" style="display:none"><input id="snowY" type="number" step="1" title="manual: snow at/above this Y" style="width:62px"> Y</span>
+        </span></label>
       <label>Workers
         <span class="i" title="Parallel Arnis runs. Generation is mostly CPU bound: keep workers x threads at or under your CPU cores, going over slows it down. Recommend tunes it to your machine; RAM and save-disk speed are secondary caps. Auto-clamped to 2 below scale 0.5.">i</span>
         <input id="workers" type="number" min="1" max="64" step="1" list="workerpresets"></label>
@@ -336,6 +396,7 @@
       <label id="staggerAdaptiveRow">Adaptive pacing
         <span class="i" title="Pace worker starts from the measured average cell time so each worker hits the CPU as the previous one frees (keeps cores full, smoother). Off = fixed step from the slider. The slider is the floor either way.">i</span>
         <input id="staggerAdaptive" type="checkbox"></label>
+
       <label>Seed
         <span class="i" title="Tile-invariant building seed. Same value for the whole project keeps buildings identical across seams.">i</span>
         <input id="seed" type="number" min="1" step="1"></label>
@@ -352,6 +413,33 @@
       <label>Buildings
         <span class="i" title="Generate OSM buildings. Off = a roads + land-cover only world (roads, bridges, railways, water and terrain are still built).">i</span>
         <input id="buildings" type="checkbox"></label>
+      <label>Schematic trees
+        <span class="i" title="Stamp detailed schematic trees from the bundled pack (geography-picked species, scale-aware sizes, spaced trunks, avoids roads/water/buildings). Off = the simpler procedural trees.">i</span>
+        <input id="trees" type="checkbox" checked></label>
+      <label>Tree biome
+        <span class="i" title="Which regional tree pack to use. Auto picks the biogeographic realm from your selection's location (e.g. Africa -> acacia/baobab, Europe -> oak/spruce). Each realm blends 85% local species, 12% vanilla sprinkle, 3% rare. Or force one.">i</span>
+        <select id="treeRealm">
+          <option value="auto">Auto (by location)</option>
+          <option value="vanilla-plus">Vanilla+ (generic)</option>
+          <option value="afr">Africa</option>
+          <option value="eur">Europe &amp; Mediterranean</option>
+          <option value="asn">Asia (temperate)</option>
+          <option value="ind">Indomalaya (tropical)</option>
+          <option value="ena">E North America</option>
+          <option value="wna">W North America</option>
+          <option value="fl">Florida / Caribbean</option>
+          <option value="sam">South America</option>
+          <option value="aus">Australia / Oceania</option>
+        </select></label>
+      <label>Tree sizes
+        <span class="i" title="Which of the 5 height tiers to place. small &le;6, medium 7-12, big 13-20, tall 21-28, giant 29-40 blocks. Giant (very tall) only renders at 1:1 and is OFF by default; tall is rare. A disabled tier falls back to a smaller tree (never leaves a gap).">i</span>
+        <span class="szgroup">
+          <label><input id="szSmall" type="checkbox" checked><span>S</span></label>
+          <label><input id="szMedium" type="checkbox" checked><span>M</span></label>
+          <label><input id="szBig" type="checkbox" checked><span>Big</span></label>
+          <label><input id="szTall" type="checkbox" checked><span>Tall</span></label>
+          <label><input id="szGiant" type="checkbox"><span>Giant</span></label>
+        </span></label>
       <label>Roofs
         <span class="i" title="Generate building roofs.">i</span>
         <input id="roof" type="checkbox"></label>
@@ -394,6 +482,46 @@
         </div>
         <button class="sec" id="btnPickOrigin">📍 Click map to set origin</button>
       </div>
+    </div>
+
+    <div class="card" id="borderCard">
+      <h2>Border &amp; zones <span class="chip" style="color:#00e5ff">servers</span>
+        <span class="i" title="Country/zone borders for a server. Builds concentric rings, exports WorldGuard regions.yml + per-ring point files + a ready border.sk Skript, previews them on the map, and trims the world to the outer ring. Independent of the render settings above.">i</span></h2>
+      <div class="stat" style="margin-bottom:6px">Rings: <b style="color:#00e5ff">actual</b> border, <b style="color:#ff9800">soft</b> (+km safe edge), <b style="color:#ffeb3b">hard</b> (+km wall / trim), <b style="color:#76ff03">lime</b> internal line. Exports <code>regions.yml</code> + point files + <code>border.sk</code> to <code>&lt;project&gt;/border/</code>.</div>
+      <div id="zoneList"></div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0">
+        <button id="zoneAdd" class="sec" type="button" style="width:auto;padding:5px 9px">+ Add zone</button>
+        <label style="font-weight:normal" title="Buildable safe margin past the country border (build allowed out to here)">soft <input id="bSoft" type="number" min="0" step="1" value="3" style="width:46px">km</label>
+        <label style="font-weight:normal" title="Outer wall / trim line. Build denied + kill-zone in the soft->hard band">hard <input id="bHard" type="number" min="0" step="1" value="8" style="width:46px">km</label>
+        <label style="font-weight:normal" title="Extra terrain generated PAST the hard wall so the void edge is never visible (the wall flings players back before they reach it). 0 = cut exactly at the wall.">trim margin <input id="bTrimKm" type="number" min="0" step="1" value="5" style="width:42px">km</label>
+        <label style="font-weight:normal" title="Points along ALL rings (actual + soft + hard). More = follows the real coast / Danube delta better and smoother soft/hard. ~700 hugs the border closely (max ~300 m off); 1000 is near-exact. WorldGuard poly2d has no hard cap.">border pts <input id="bPoints" type="number" min="50" max="1000" step="50" value="700" style="width:58px"></label>
+        <label style="font-weight:normal" title="Points along the internal line between two zones (e.g. the RO/MD Prut). Keep ~20.">internal line pts <input id="bShared" type="number" min="0" max="200" value="20" style="width:46px"></label>
+        <label style="font-weight:normal"><input id="bAutoShared" type="checkbox" checked> auto internal line</label>
+      </div>
+      <details style="margin:4px 0;border-top:1px solid var(--line);padding-top:5px">
+        <summary style="cursor:pointer;font-weight:600;color:#00e5ff">Server script (border.sk)</summary>
+        <label style="font-weight:normal;margin-top:4px"><input id="skGen" type="checkbox" checked> export <code>border.sk</code> (titles · escalating kill-zone · fling-back wall · packet particles)</label>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px">
+          <label style="font-weight:normal">kill interval <input id="skInterval" type="number" min="1" value="60" style="width:54px">s</label>
+          <label style="font-weight:normal">base <input id="skBase" type="number" min="1" value="1" style="width:44px">♥</label>
+          <label style="font-weight:normal">curve <select id="skCurve"><option value="double">double</option><option value="linear">linear</option></select></label>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:4px">
+          <label style="font-weight:normal">knockback <input id="skKnock" type="number" step="0.1" value="1.8" style="width:50px"></label>
+          <label style="font-weight:normal">render radius <input id="skRadius" type="number" value="56" style="width:50px"></label>
+          <label style="font-weight:normal">wall H <input id="skWallH" type="number" value="4" style="width:44px"></label>
+          <label style="font-weight:normal">update ticks <input id="skTicks" type="number" value="8" style="width:44px"></label>
+        </div>
+        <div class="stat">Skript runs on the server (WorldGuard + Skript + a packet-particle provider). Meld only writes it.</div>
+      </details>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        <button id="bPreview" class="sec" type="button" style="width:auto;padding:6px 10px">Preview on map</button>
+        <button id="bExport" class="sec" type="button" style="width:auto;padding:6px 10px">Export</button>
+        <button id="bTrim" class="sec" type="button" title="Restrict generation to cells touching the outer (hard) ring of the first zone" style="width:auto;padding:6px 10px">Trim to ring</button>
+        <button id="bClear" class="sec" type="button" style="width:auto;padding:6px 10px">Clear</button>
+      </div>
+      <div id="bStatus" class="stat" style="margin-top:4px"></div>
+      <datalist id="countryList"></datalist>
     </div>
 
     <div class="card">
@@ -607,6 +735,7 @@ const drawnItems = new L.FeatureGroup().addTo(map);
 const prefetchGroup = L.layerGroup().addTo(map);   // cyan dashed OSM-download chunks
 const suspectGroup = L.layerGroup().addTo(map);    // amber rings on cells flagged suspect
 const retryGroup = L.layerGroup().addTo(map);      // blue dashed rings on cells queued for retry
+const borderGroup = L.layerGroup().addTo(map);     // country/zone border preview (cyan/orange/yellow/lime)
 const _retryQueue = new Set();                     // cell_keys the user has marked to re-run
 let _retrySig = '';
 let _cellHealth = {};                              // cell_key -> {suspect, reasons}
@@ -1183,7 +1312,11 @@ async function openWorldFolder() {
     ? ('Could not open it automatically.\nThe world folder is:\n' + r.path)
     : 'No world folder yet — generate a world first.');
 }
-['btnOpenWorld', 'btnOpenWorld2'].forEach(id => { const el = $(id); if (el) el.onclick = openWorldFolder; });
+// Delegated so it survives any panel re-render (direct onclick was getting lost).
+document.addEventListener('click', e => {
+  const b = e.target && e.target.closest && e.target.closest('#btnOpenWorld, #btnOpenWorld2');
+  if (b) { e.preventDefault(); openWorldFolder(); }
+});
 
 let originMarker = null;
 function updateOriginMarker(lat, lon) {
@@ -1381,6 +1514,15 @@ async function refreshState() {
   $('scale').value = st.scale; updateScaleHint();
   if (document.activeElement !== $('size')) $('size').value = snapSize(st.job_size_regions);
   $('ground').value = st.ground_level; $('road').value = st.road_detail_level;
+  if ($('treeRealm')) $('treeRealm').value = st.tree_realm || 'auto';
+  { const ts = st.tree_sizes || {small:true,medium:true,big:true,tall:true,giant:false};
+    const map = {szSmall:'small',szMedium:'medium',szBig:'big',szTall:'tall',szGiant:'giant'};
+    for (const id in map) if ($(id)) $(id).checked = !!ts[map[id]]; }
+  if ($('vexag') && document.activeElement !== $('vexag')) $('vexag').value = st.vertical_exaggeration || 1;
+  if ($('snowMode')) $('snowMode').value = st.snow_mode || 'peaks';
+  if (typeof updateSnowFields === 'function') updateSnowFields();
+  if ($('snowPct') && document.activeElement !== $('snowPct')) $('snowPct').value = (st.snow_percent != null ? st.snow_percent : 6);
+  if ($('snowY') && document.activeElement !== $('snowY')) $('snowY').value = (st.snow_y != null ? st.snow_y : 80);
   if ($('osmBakeWorkers') && st.osm_bake_workers) $('osmBakeWorkers').value = st.osm_bake_workers;
   $('emode').value = st.elevation_mode;
   if ($('elevZoom') && document.activeElement !== $('elevZoom')) {
@@ -1414,7 +1556,8 @@ async function refreshState() {
   $('m3d').checked = !!st.generate_3d_models;
   const ckmap = { terrain:'terrain', buildings:'buildings', roof:'roof', interior:'interior',
                   landcover:'land_cover', fillground:'fill_ground', heightlimit:'disable_height_limit',
-                  bakelight:'bake_lighting', streamdisk:'stream_to_disk', awsonly:'aws_only_elevation' };
+                  bakelight:'bake_lighting', streamdisk:'stream_to_disk', awsonly:'aws_only_elevation',
+                  trees:'trees' };
   for (const [id, key] of Object.entries(ckmap))
     if ($(id) && document.activeElement !== $(id)) $(id).checked = key === 'interior' || key === 'fill_ground'
       || key === 'disable_height_limit' || key === 'stream_to_disk' || key === 'aws_only_elevation' ? !!st[key] : st[key] !== false;
@@ -1548,10 +1691,8 @@ $('btnBrowse').onclick = async () => {
   $('btnBrowse').textContent = 'Browse…'; $('btnBrowse').disabled = false;
 };
 // Open the current world's folder in the OS file browser (server runs locally).
-if ($('btnOpenWorld')) $('btnOpenWorld').onclick = async () => {
-  const r = await api('/api/open-folder', {}).catch(() => null);
-  if (!r || !r.ok) modalInfo('Meld', (r && r.error) || 'Could not open the world folder (generate it first).');
-};
+// btnOpenWorld + btnOpenWorld2 are both handled by the delegated click listener above
+// (survives panel re-renders, so the build-section button no longer goes dead after a run).
 // Reusable: open the native folder picker and drop the chosen path into an input.
 async function browseInto(inputId, title, btnId) {
   const b = $(btnId); const old = b ? b.textContent : '';
@@ -1707,6 +1848,19 @@ $('btnSave').onclick = async () => {
     land_cover: $('landcover').checked, fill_ground: $('fillground').checked,
     disable_height_limit: $('heightlimit').checked, generate_3d_models: $('m3d').checked,
     bake_lighting: $('bakelight').checked, stream_to_disk: $('streamdisk').checked,
+    trees: $('trees') ? $('trees').checked : true,
+    tree_realm: $('treeRealm') ? $('treeRealm').value : 'auto',
+    tree_sizes: {
+      small: $('szSmall') ? $('szSmall').checked : true,
+      medium: $('szMedium') ? $('szMedium').checked : true,
+      big: $('szBig') ? $('szBig').checked : true,
+      tall: $('szTall') ? $('szTall').checked : true,
+      giant: $('szGiant') ? $('szGiant').checked : false,
+    },
+    vertical_exaggeration: $('vexag') ? (parseFloat($('vexag').value) || 1) : 1,
+    snow_mode: $('snowMode') ? $('snowMode').value : 'peaks',
+    snow_percent: $('snowPct') ? (parseFloat($('snowPct').value) || 6) : 6,
+    snow_y: $('snowY') ? (parseInt($('snowY').value) || 80) : 80,
   });
   refreshState();
 };
@@ -1716,6 +1870,133 @@ $('m3d').addEventListener('change', () => api('/api/settings', { generate_3d_mod
  ['fillground','fill_ground'],['heightlimit','disable_height_limit'],
  ['bakelight','bake_lighting'],['streamdisk','stream_to_disk']].forEach(([id, key]) =>
   $(id).addEventListener('change', () => api('/api/settings', { [key]: $(id).checked })));
+// Tree size tiers auto-save the whole dict so the 5 toggles apply without clicking Save.
+['szSmall','szMedium','szBig','szTall','szGiant'].forEach(id =>
+  $(id) && $(id).addEventListener('change', () => api('/api/settings', { tree_sizes: {
+    small: $('szSmall').checked, medium: $('szMedium').checked, big: $('szBig').checked,
+    tall: $('szTall').checked, giant: $('szGiant').checked } })));
+// Snow: show the % box only for "peaks", the Y box only for "manual", neither for off/realistic.
+function updateSnowFields(){
+  const m = $('snowMode') ? $('snowMode').value : 'peaks';
+  if ($('snowPctWrap')) $('snowPctWrap').style.display = (m === 'peaks') ? '' : 'none';
+  if ($('snowYWrap')) $('snowYWrap').style.display = (m === 'manual') ? '' : 'none';
+}
+if ($('snowMode')) $('snowMode').addEventListener('change', updateSnowFields);
+updateSnowFields();
+// Terrain height + snow auto-save on change.
+['vexag','snowMode','snowPct','snowY'].forEach(id =>
+  $(id) && $(id).addEventListener('change', () => api('/api/settings', {
+    vertical_exaggeration: parseFloat($('vexag').value) || 1,
+    snow_mode: $('snowMode').value,
+    snow_percent: parseFloat($('snowPct').value) || 6,
+    snow_y: parseInt($('snowY').value) || 80 })));
+
+// ── Border & zones (servers) ───────────────────────────────────────────────
+let _borderPreview = null, _countriesLoaded = false;
+function bZoneRow(d){
+  d = d || {};
+  const row = document.createElement('div');
+  row.className = 'zoneRow';
+  row.style = 'display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin:3px 0;padding:3px;border:1px solid var(--line);border-radius:4px';
+  row.innerHTML =
+    '<input class="zName" placeholder="zone name" value="'+(d.name||'')+'" style="width:90px">'+
+    '<input class="zCountries" list="countryList" placeholder="countries (comma)" value="'+(d.countries||'')+'" style="width:150px">'+
+    '<input class="zOwners" placeholder="WG owners (comma)" value="'+(d.owners||'')+'" style="width:120px">'+
+    '<input class="zColor" type="color" value="'+(d.color||'#00e5ff')+'" title="border color" style="width:32px">'+
+    '<button type="button" class="zDel" title="remove zone">x</button>';
+  row.querySelector('.zDel').onclick = () => row.remove();
+  return row;
+}
+function bBuildSpec(){
+  const zones = [...document.querySelectorAll('#zoneList .zoneRow')].map(r => ({
+    name: r.querySelector('.zName').value.trim() || 'zone',
+    countries: r.querySelector('.zCountries').value.split(',').map(s=>s.trim()).filter(Boolean),
+    owners: r.querySelector('.zOwners').value.split(',').map(s=>s.trim()).filter(Boolean),
+    color_actual: r.querySelector('.zColor').value,
+  }));
+  const pts = Math.max(50, Math.min(1000, parseInt($('bPoints').value)||400));
+  return {                                  // soft/hard are GLOBAL: one ring each around the whole clump
+    zones,
+    soft_km: parseFloat($('bSoft').value)||0,
+    hard_km: parseFloat($('bHard').value)||0,
+    points: { actual: pts, soft: pts, hard: pts },   // all rings use the same count so soft/hard are smooth too
+    trim_margin_km: parseFloat($('bTrimKm').value)||0,
+    shared_points: parseInt($('bShared').value)||20,
+    shared_lines: ($('bAutoShared').checked && zones.length>=2) ? [[0,1]] : [],
+  };
+}
+function bSkOpts(){
+  return {
+    generate: $('skGen') ? $('skGen').checked : true,
+    interval: parseInt($('skInterval').value)||60,
+    base: parseInt($('skBase').value)||1,
+    curve: $('skCurve') ? $('skCurve').value : 'double',
+    knockback: parseFloat($('skKnock').value)||1.8,
+    render_radius: parseInt($('skRadius').value)||56,
+    wall_height: parseInt($('skWallH').value)||4,
+    update_ticks: parseInt($('skTicks').value)||8,
+  };
+}
+function bDraw(pv){
+  borderGroup.clearLayers();
+  const flip = ring => ring.map(p => [p[1], p[0]]);   // [lon,lat] -> [lat,lon]
+  (pv.zones||[]).forEach(z => {                         // per-country actual borders
+    if (!z.ll || z.ll.length<2) return;
+    const ll = flip(z.ll); ll.push(ll[0]);
+    L.polyline(ll, { color: z.color, weight:2.5, opacity:0.95 }).bindTooltip(z.label, {sticky:true}).addTo(borderGroup);
+  });
+  (pv.clump||[]).forEach(c => {                          // ONE soft + ONE hard (+ faint trim) around the clump
+    if (!c.ll || c.ll.length<2) return;
+    const ll = flip(c.ll); ll.push(ll[0]);
+    const isTrim = c.key==='trim';
+    L.polyline(ll, { color: c.color, weight: isTrim?1.5:2.5, opacity: isTrim?0.55:0.95,
+                     dashArray: c.key==='soft'?'7 6': isTrim?'2 7':null })
+      .bindTooltip(c.label, {sticky:true}).addTo(borderGroup);
+  });
+  (pv.shared||[]).forEach(s => L.polyline(flip(s.ll), { color: s.color, weight:2, dashArray:'2 6' })
+      .bindTooltip(s.between.join(' / ')+' · '+s.label, {sticky:true}).addTo(borderGroup));
+}
+async function bLoadCountries(){
+  if (_countriesLoaded) return;
+  const r = await api('/api/border/countries');
+  if (r && r.ok){ $('countryList').innerHTML = r.countries.map(c=>'<option value="'+c+'">').join(''); _countriesLoaded=true; }
+}
+async function bInit(){
+  await bLoadCountries();
+  if (!document.querySelector('#zoneList .zoneRow'))
+    $('zoneList').appendChild(bZoneRow({name:'Romania',countries:'Romania',color:'#00e5ff'}));
+}
+if ($('borderCard')) bInit();
+if ($('zoneAdd')) $('zoneAdd').onclick = () => $('zoneList').appendChild(bZoneRow({}));
+if ($('bClear')) $('bClear').onclick = () => { borderGroup.clearLayers(); _borderPreview=null; $('bStatus').textContent=''; };
+if ($('bPreview')) $('bPreview').onclick = async () => {
+  $('bStatus').textContent='building…';
+  const r = await api('/api/border/preview', { spec: bBuildSpec() });
+  if (!r || !r.ok){ $('bStatus').textContent = 'preview failed: '+((r&&r.error)||'?'); return; }
+  _borderPreview = r.preview; bDraw(r.preview);
+  const zc = r.preview.zones.map(z=>z.name+' '+z.count).join(' · ');
+  const cc = (r.preview.clump||[]).map(c=>c.key+' '+c.count).join(' · ');
+  $('bStatus').textContent = 'drawn · zones: '+zc+' · clump: '+cc;
+};
+if ($('bExport')) $('bExport').onclick = async () => {
+  $('bStatus').textContent='exporting…';
+  const r = await api('/api/border/export', { spec: bBuildSpec(), skript: bSkOpts() });
+  $('bStatus').textContent = (r&&r.ok) ? ('exported '+r.files.length+' files → '+r.dir) : ('export failed: '+((r&&r.error)||'?'));
+};
+if ($('bTrim')) $('bTrim').onclick = async () => {
+  const cl = (_borderPreview && _borderPreview.clump) || [];
+  const trim = cl.find(c=>c.key==='trim') || cl.find(c=>c.key==='hard');
+  if (!trim || !trim.ll || trim.ll.length<3){ $('bStatus').textContent='preview first'; return; }
+  if (!(await modalConfirm('Trim world to border',
+    'Set the plan to ONLY the cells inside the trim ring (the country + the trim margin past the hard wall). '+
+    'Cells outside are dropped, so they stay ungenerated void — hidden behind the wall, which flings players '+
+    'back before they reach it. Merged cells are kept, and you can still add or remove cells afterward with the '+
+    'grid tools. Continue?', 'Trim'))) return;
+  await api('/api/grid/clear', { keep_merged: true });
+  const r = await api('/api/grid', { polygons: [trim.ll.map(p => [p[1], p[0]])], mode: 'add' });
+  $('bStatus').textContent = (r&&r.ok) ? ('trimmed: plan = '+r.count+' cells (country + margin; void hidden past the wall)') : ('trim failed: '+((r&&r.error)||'?'));
+  if (typeof refreshState==='function') refreshState();
+};
 
 // Numeric / select settings ALSO auto-save on change (no need to hit Save). Scale change
 // re-tiles (cell geometry depends on scale), so refreshState redraws + re-estimates.

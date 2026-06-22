@@ -6,7 +6,7 @@ Turn an OpenStreetMap selection into one seamless Minecraft world. Meld tiles th
 every tile in parallel, and melds them with no height cliffs and no seams. From a city block to a
 whole continent.
 
-&nbsp;![version](https://img.shields.io/badge/version-1.3.0-blue)
+&nbsp;![version](https://img.shields.io/badge/version-1.4.0-blue)
 &nbsp;![Minecraft](https://img.shields.io/badge/Minecraft%20Java-1.21%2B-brightgreen)
 &nbsp;![Python](https://img.shields.io/badge/Python-3.10%2B-yellow)
 &nbsp;![built on](https://img.shields.io/badge/built%20on-Arnis%20fork-orange)
@@ -39,7 +39,13 @@ water/sand wedges near cell edges. **1.3.0** makes it easy to drive, tunable whi
 measurable: one guided rail, **live mid-run tuning** of workers/threads/CPU budget, and a **benchmark
 report** (machine specs, CPU/RAM and activity graphs, a per-worker timeline, Save as PDF) written
 into every world. Plus fast-first-build defaults (1:10 scale, buildings off), a readable scale, a free
-1 to 64 cell size, and accurate CPU/RAM gauges.
+1 to 64 cell size, and accurate CPU/RAM gauges. **1.4.0** makes the world feel alive and ownable: a
+**region-aware tree pack** (1,959 hand-made models across 10 world regions by
+[paleozoey](https://www.planetminecraft.com/member/paleozoey/), placed by location with density-driven
+groves, five toggleable size tiers, and montane/wetland remaps), **terrain shaping** (vertical
+exaggeration to make mountains taller without widening the map, plus snow modes), and a **Border &
+zones** server tool that turns a country into WorldGuard regions, point files and a ready Skript, then
+trims the world to its border so it feels infinite but is bounded to that country.
 
 **New here?** Read the [docs](https://meldmc.com/docs) or try the
 [live preview](https://meldmc.com/demo), an interactive, simulated copy of the app.
@@ -75,6 +81,9 @@ has the highlights of each release.
 | **Guided rail** (1.3.0) | The right rail is one numbered top-to-bottom flow (steps 1 to 6) with the advanced cards collapsed at the bottom. One-click **Prepare and build** runs the prep then generates. |
 | **Fast first build + readable scale** (1.3.0) | New projects start at 1:10 with buildings off and solid ground; the scale field shows the ratio (1:10) in blocks and metres; cell size is a free 1 to 64 fill-in. |
 | **Accurate gauges + snappier UI** (1.3.0) | CPU% from a background sampler and RAM as Task Manager's "in use"; the rail polls on your actions and idles when nothing runs, so buttons respond instantly. |
+| **Region trees** (1.4.0) | A region-aware schematic tree pack - **1,959 hand-made models across 448 species and 10 world regions**, by [paleozoey](https://www.planetminecraft.com/member/paleozoey/) - placed by location with density-driven groves, **five toggleable size tiers**, and conifer-on-mountains / mangrove-on-coast remaps. Toggle in Settings; ships with Meld. See [docs](https://meldmc.com/docs/tree-packs). |
+| **Terrain height + snow** (1.4.0) | **Vertical exaggeration** makes mountains taller without widening the map; **Snow** has four modes (off, real latitude line, top-N% peaks, or a fixed height). See [docs](https://meldmc.com/docs/terrain-and-snow). |
+| **Border & zones** (1.4.0) | Build country borders for a server: preview concentric rings on the map, export **WorldGuard regions + point files + a ready `border.sk` Skript**, and trim the world so it feels infinite but is bounded to the country. See [docs](https://meldmc.com/docs/border-zones). |
 | **LOD ready** | Chunk lighting is baked in, so distant chunks render lit in Distant Horizons and Voxy without flying the whole world first. |
 | **Resume and retry** | Re-run only unfinished cells after a stop, click one cell to regenerate it, and keep many worlds in your saves folder. |
 
@@ -172,5 +181,9 @@ Built on the open source [Arnis](https://github.com/louis-e/arnis) generator by 
 a [custom Arnis fork](https://github.com/Teddy563/arnis) for the shared OSM prefetch and tile
 invariant rendering that make the tiles line up. Respect the upstream Arnis license for the
 generator.
+
+The bundled region-aware tree models (1.4.0) are created by
+**[paleozoey](https://www.planetminecraft.com/member/paleozoey/)**. Meld bundles and places them with
+attribution; the artistry is theirs.
 
 Not affiliated with Mojang AB or Minecraft.

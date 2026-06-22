@@ -48,6 +48,7 @@ from src.prefetch import (run_prefetch, preview_clumps, run_terrain_prefetch,
 from src import datapack as dp
 from src import osm_pack as op
 from src import osm_grid
+from src import border
 from src import runreport
 from src.merge import (merge_cell_into_master, strip_buffer_regions,
                         MeldCoordinateDriftError, MeldCollisionError)
@@ -2121,7 +2122,7 @@ def api_grid_trim_ocean():
 
 def _submit_cells(cells: list[dict], osm_files: dict | None = None,
                   settings: dict | None = None, origin: dict | None = None,
-                  keep_started: bool = False) -> list[str]:
+                  keep_started: bool = False, reset_timing: bool = False) -> list[str]:
     """Submit a list of {cell_key, bbox} to the pool and (re)start the run clock.
     osm_files maps cell_key -> pre-fetched OSM json path (passed to Arnis as --file).
     settings/origin may be a snapshot taken before a prefetch, so the cells generate
@@ -2129,7 +2130,10 @@ def _submit_cells(cells: list[dict], osm_files: dict | None = None,
     settings change mid-prefetch could leave a cell's bbox outside its chunk file).
     Shared by /api/queue, /api/cell/regenerate and /api/resume."""
     osm_files = osm_files or {}
-    _timing_reset()   # fresh benchmark for this run (per-cell timings + the activity timeline)
+    if reset_timing:
+        # Only a brand-new run wipes the benchmark; resume/regenerate keep + accumulate it,
+        # so the report remembers across people stopping and starting generations.
+        _timing_reset()
     settings = settings if settings is not None else PROJECT.settings()
     origin = origin if origin is not None else PROJECT.origin()
     elevation = PROJECT.elevation()
@@ -2171,7 +2175,7 @@ def _submit_cells(cells: list[dict], osm_files: dict | None = None,
     return queued
 
 
-def _start_generation(cells: list[dict]) -> tuple[list[str], bool]:
+def _start_generation(cells: list[dict], reset_timing: bool = False) -> tuple[list[str], bool]:
     """Pre-fetch the selection's OSM once, then submit the cells. Returns
     (cell_keys, prefetching). When prefetch is enabled the fetch runs in a background
     thread (so the HTTP call returns at once) and the cells are submitted to the pool
@@ -2186,7 +2190,7 @@ def _start_generation(cells: list[dict]) -> tuple[list[str], bool]:
     # (the merged Arnis dropped the CLI flag). The env var is harmless on a binary that
     # doesn't support it, so no capability gate is needed here anymore.
     if not settings.get("prefetch_enabled", True) or not exe or not cells:
-        return _submit_cells(cells, settings=settings, origin=origin), False
+        return _submit_cells(cells, settings=settings, origin=origin, reset_timing=reset_timing), False
 
     # Mark the cells queued now so the grid/overlay shows them during the prefetch.
     for c in cells:
@@ -2300,7 +2304,7 @@ def _start_generation(cells: list[dict]) -> tuple[list[str], bool]:
         _rep = " · ".join(f"{k} {v:.0f}s" for k, v in _phase_t.items())
         log(f"[Prefetch] done in {sum(_phase_t.values()):.0f}s ({_rep}) — "
             f"{len(osm_files)}/{len(cells)} cells share cached OSM; starting generation")
-        _submit_cells(cells, osm_files, settings=settings, origin=origin, keep_started=True)
+        _submit_cells(cells, osm_files, settings=settings, origin=origin, keep_started=True, reset_timing=reset_timing)
 
     threading.Thread(target=_worker, daemon=True).start()
     return [c["cell_key"] for c in cells], True
@@ -2402,7 +2406,9 @@ def api_queue():
     if not drive_ok:
         return jsonify({"ok": False, "error": drive_why}), 409
 
-    queued, prefetching = _start_generation(cells)
+    # Fresh full-world queue: this is the only path that wipes the benchmark. Resume and the
+    # regenerate-* routes keep the prior timings so the report accumulates across stop/start.
+    queued, prefetching = _start_generation(cells, reset_timing=True)
     return jsonify({"ok": True, "queued": queued, "count": len(queued), "note": note,
                     "prefetching": prefetching})
 
@@ -3008,6 +3014,64 @@ def api_recommend():
     return jsonify({"ok": True, "cores": cores, "ram_gb": ram_gb, "disk_mbps": disk_mbps,
                     "drive": drive, "rec_cell": rec_cell, "rec_workers": rec_workers,
                     "rec_threads": rec_threads, "rec_bake": rec_bake, "note": note})
+
+
+# ── Border & zones (Advanced) ────────────────────────────────────────────────
+# Build concentric country/zone rings (in world block coords), preview them on the map, and export
+# WorldGuard regions.yml + per-ring point files. "Trim to ring" reuses /api/grid with the hard ring.
+@app.route("/api/border/countries")
+def api_border_countries():
+    try:
+        return jsonify({"ok": True, "countries": border.list_countries()})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+def _border_inputs():
+    d = request.json or {}
+    origin = PROJECT.origin()
+    if not origin or origin.get("lat") is None:
+        return None, None, None, None, "set origin first"
+    scale = float(PROJECT.settings().get("scale", 1.0))
+    spec = d.get("spec") or {
+        "zones": d.get("zones", []),
+        "shared_lines": d.get("shared_lines", []),
+        "shared_points": int(d.get("shared_points", 20)),
+    }
+    return d, spec, origin, scale, None
+
+
+@app.route("/api/border/preview", methods=["POST"])
+def api_border_preview():
+    _d, spec, origin, scale, err = _border_inputs()
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+    if not spec.get("zones"):
+        return jsonify({"ok": False, "error": "add at least one zone"}), 400
+    try:
+        res = border.build(spec, origin, scale)
+        return jsonify({"ok": True, "preview": border.preview(res)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.route("/api/border/export", methods=["POST"])
+def api_border_export():
+    d, spec, origin, scale, err = _border_inputs()
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+    if not spec.get("zones"):
+        return jsonify({"ok": False, "error": "add at least one zone"}), 400
+    s = PROJECT.settings()
+    min_y = int(d.get("min_y", s.get("ground_level", -64)))
+    max_y = int(d.get("max_y", 2031 if s.get("disable_height_limit") else 320))
+    try:
+        res = border.build(spec, origin, scale)
+        outdir = str(Path(PROJECT.root) / "border")
+        info = border.write_exports(res, outdir, min_y, max_y, d.get("skript") or {})
+        return jsonify({"ok": True, **info, "min_y": min_y, "max_y": max_y})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
 
 
 if __name__ == "__main__":

@@ -21,3 +21,24 @@ __pycache__/
 .pytest_cache/
 
 # Note: arnis.exe (the custom Arnis fork binary) is intentionally committed to this repo.
+
+# Local benchmark scratch (not shipped)
+experimental/bench.py
+experimental/bench_matrix.py
+experimental/sweep.sh
+experimental/bench*.log
+experimental/bench*.json
+experimental/bench*.out
+experimental/sweep*
+experimental/_bench/
+experimental/_cells/
+experimental/_work/
+
+# tree-packs/ ships WITH Meld now (the region-aware schematic tree pack, ~7.4 MB) so it works out of
+# the box. The RAW source art stays out of git (root meld-fork-trees/, gitignored). The Arnis fork
+# stays pack-agnostic - it just loads whatever --tree-pack dir Meld hands it.
+
+# Pack-BUILD tooling - local-only, never shipped. The baked tree-packs/ ship; the scripts that build
+# them do not (they hardcode local scratch paths and need the raw art, so they cannot run for a cloner).
+# Kept on disk for local re-bakes; just untracked from the public repo.
+tools/

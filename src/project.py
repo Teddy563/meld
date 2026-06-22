@@ -46,7 +46,20 @@ def default_settings() -> dict:
         # because Meld builds areas too large to fly through; slower + bigger files.
         "bake_lighting": True,
         "road_detail_level": "auto",       # auto: compact <0.7, clean >=0.7
+        "trees": True,                      # stamp bundled schematic trees (off = procedural)
+        "tree_realm": "auto",               # auto: realm from selection latlon; or a realm code
+        # 5 height tiers to place (small <=6, medium 7-12, big 13-20, tall 21-28, giant 29-40 blocks).
+        # Giant (very tall) is OFF by default + only renders at 1:1; tall is rare. Off tiers fall back.
+        "tree_sizes": {"small": True, "medium": True, "big": True, "tall": True, "giant": False},
         "elevation_mode": "global",         # global = locked range, no cliffs
+        # Vertical exaggeration: multiplies terrain HEIGHT only (not footprint). 1.0 = true scale;
+        # 2-3 = dramatic mountains at the same map size. Auto-compresses to the build height.
+        "vertical_exaggeration": 1.0,
+        # Snow caps: off | realistic (real latitude snow line) | peaks (top N% of world height) |
+        # manual (above snow_y). Default peaks so mountains always get a believable cap.
+        "snow_mode": "peaks",
+        "snow_percent": 6.0,
+        "snow_y": 80,
         "tile_invariant_rendering": True,
         "generate_3d_models": False,        # reserved no-op in this fork (light-docs/05)
         "poi_3d_only": True,                # reserved

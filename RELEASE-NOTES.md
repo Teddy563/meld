@@ -2,6 +2,44 @@
 
 Short, human highlights for each Meld release. Full detail lives in [CHANGELOG.md](CHANGELOG.md).
 
+## v1.4.0
+
+**Real trees, shape the land, and bound a world to a country.**
+
+1.3.0 made Meld easy to drive. 1.4.0 makes the world look alive. Meld now places a region-aware
+schematic tree pack instead of the simpler procedural trees: the right species for the place, scattered
+into natural groves, in five size tiers, anchored on slopes and at water edges. Two new terrain knobs
+let you exaggerate height without widening the map and put snow where you want it. And a new Border &
+zones tool turns a country into a ready, fenced server world.
+
+Highlights:
+
+- **Region trees.** A bundled tree pack of **1,959 hand-made models**, **448 species**, across **10
+  world regions**, placed by location: Africa gets acacia and baobab, Europe oak and spruce, the
+  tropics jungle and palms, with familiar Vanilla+ trees mixed in everywhere. Forests clump into
+  natural groves with clearings, high ground pulls conifers, wetlands pull mangroves and cypress, and
+  trees no longer float on hills or over rivers. The models are by the artist
+  [paleozoey](https://www.planetminecraft.com/member/paleozoey/); Meld bundles and places them. Turn
+  it on with **Schematic trees** in Settings. Guide: [meldmc.com/docs/tree-packs](https://meldmc.com/docs/tree-packs).
+- **Five size tiers you can toggle.** small / medium / big / tall / giant, each on or off in Settings.
+  Giant is off by default and only at 1:1, tall is rare, and a disabled tier falls back to a smaller
+  one instead of leaving a gap.
+- **Make mountains as tall as you want.** A **Terrain height x** knob multiplies height only, not the
+  map size, so relief that flattens at small scales (a 2,280 m range becomes ~114 blocks at 1:20)
+  comes back at x2-2.5. It auto-compresses to the build height.
+- **Snow where you want it.** Four modes: off, realistic (real latitude snow line), peaks (the top N%
+  of the world's height, always capping the tallest terrain), and manual (above a Y you pick). Pairs
+  with the height knob. Guide: [meldmc.com/docs/terrain-and-snow](https://meldmc.com/docs/terrain-and-snow).
+- **Bound a server to a country.** A new **Border & zones** tool: pick one country or several (they
+  combine into one landmass), preview the rings on the map, and export ready WorldGuard regions, point
+  files, and a generated `border.sk` that fences the server with titles, a soft->hard kill-zone, and a
+  fling-back wall. Optionally trim generation to the border so the void hides behind the wall. Guide:
+  [meldmc.com/docs/border-zones](https://meldmc.com/docs/border-zones).
+- **Docs in the app.** A 📖 Docs button in the header opens the full guide index without leaving Meld.
+
+> Engine note: the bundled Arnis fork moves 2.9.1 -> 2.9.2 for the tree pack and terrain flags. Your
+> existing worlds and settings are untouched; the new tree placement applies when Schematic trees is on.
+
 ## v1.3.0
 
 **Guided start, live tuning, and a benchmark report.**

@@ -32,6 +32,32 @@ from .coords import recommended_elev_zoom, ELEV_ZOOM_MIN, ELEV_ZOOM_MAX
 from .osm_grid import OSM_GRID_Z
 
 
+# Biogeographic realm -> tree pack dir, picked from the selection centre (lat, lon). Ordered:
+# the first box that contains the point wins (finer/subset realms first so they take priority).
+# (code, lat_min, lat_max, lon_min, lon_max)
+_REALM_BOXES = [
+    ("fl",  8.0, 31.0,  -90.0, -60.0),   # Florida / SE US / Caribbean (subset of ENA, first)
+    ("ena", 8.0, 62.0, -100.0, -52.0),   # eastern North America
+    ("wna", 25.0, 72.0, -170.0, -100.0), # western North America
+    ("sam", -56.0, 14.0,  -82.0, -34.0), # South America
+    ("eur", 34.0, 72.0,  -25.0,  40.0),  # Europe + Mediterranean (Iceland/Azores to -25; before AFR)
+    ("afr", -36.0, 37.0,  -19.0,  52.0), # Africa
+    ("ind", -11.0, 29.0,   60.0, 155.0), # Indomalaya (tropical S/SE Asia; before ASN)
+    ("asn", 5.0, 75.0,   40.0, 155.0),   # temperate Asia / Palearctic
+    ("aus", -50.0, 0.0,  110.0, 180.0),  # Australia
+    ("aus", -50.0, 32.0, -180.0, -130.0),# Oceania / Pacific / Hawaii (same pack)
+]
+
+
+def realm_for_latlon(lat: float, lon: float) -> str:
+    """Pick the tree-pack realm code for a point. Falls back to 'vanilla-plus' if no realm
+    box contains it (open ocean, polar, or a gap)."""
+    for code, la0, la1, lo0, lo1 in _REALM_BOXES:
+        if la0 <= lat <= la1 and lo0 <= lon <= lo1:
+            return code
+    return "vanilla-plus"
+
+
 def effective_elev_zoom(settings: dict, origin_lat: float = 45.0) -> int:
     """Resolve the project's `elevation_zoom` setting to a concrete terrarium zoom for BOTH the data
     pack (download/coverage/preview) and the Arnis run (via ARNIS_ELEV_ZOOM). "auto"/blank -> the
@@ -86,6 +112,22 @@ def build_arnis_cmd(arnis_exe: str, bbox: dict, output_path: str,
     # Terrain is OFF by default in the fork — turn it on for real elevation.
     if settings.get("terrain", True):
         cmd.append("--terrain")
+        # Vertical exaggeration: scale mountain HEIGHT (not footprint). 1.0 = true scale.
+        try:
+            ve = float(settings.get("vertical_exaggeration", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            ve = 1.0
+        if abs(ve - 1.0) > 1e-9:
+            cmd += ["--vertical-exaggeration", str(ve)]
+        # Snow caps: off | realistic (latitude line) | peaks (top N%) | manual (above a Y).
+        snow_mode = str(settings.get("snow_mode", "realistic") or "realistic").strip().lower()
+        if snow_mode in ("off", "realistic", "peaks", "manual"):
+            cmd += ["--snow-mode", snow_mode]
+            if snow_mode == "peaks":
+                cmd += ["--snow-percent",
+                        str(float(settings.get("snow_percent", 6.0) or 6.0))]
+            elif snow_mode == "manual":
+                cmd += ["--snow-y", str(int(settings.get("snow_y", 80) or 80))]
     cmd += ["--roof", "true" if settings.get("roof", True) else "false"]
     cmd += ["--interior", "true" if settings.get("interior", False) else "false"]
     cmd += ["--land-cover", "true" if settings.get("land_cover", True) else "false"]
@@ -145,6 +187,40 @@ def build_arnis_cmd(arnis_exe: str, bbox: dict, output_path: str,
     # ticked the 3D toggle in the UI.
     if not settings.get("generate_3d_models", False):
         cmd.append("--no-3d")
+
+    # Schematic trees (default on): stamp a bundled region pack so the fork places detailed
+    # schematic trees instead of procedural ones. The realm is picked from the selection centre
+    # (Auto) or forced via the "tree_realm" setting; the fork loads <realm>/region.json and the
+    # sibling vanilla-plus for the 85/12/3 blend. Packs live in light-meld/tree-packs/ (gitignored).
+    if settings.get("trees", True):
+        tp_root = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "tree-packs",
+        )
+        choice = str(settings.get("tree_realm", "auto") or "auto").strip().lower()
+        if choice in ("", "auto"):
+            realm = realm_for_latlon((s + n) / 2.0, (w + e) / 2.0)
+        else:
+            realm = choice
+        pack = os.path.join(tp_root, realm)
+        if not os.path.isdir(pack):
+            pack = os.path.join(tp_root, "vanilla-plus")  # fallback
+        if os.path.isdir(pack):
+            cmd += ["--tree-pack", pack]
+
+        # Size-tier toggle (5 stages: small/medium/big/tall/giant). The UI stores `tree_sizes` as a
+        # dict of bools or a list of enabled tiers; default keeps all but Giant (the very-tall 29+
+        # tier stays off). Giant only renders at 1:1 even when enabled (gated in the fork).
+        TIERS = ("small", "medium", "big", "tall", "giant")
+        ts = settings.get("tree_sizes")
+        if isinstance(ts, dict):
+            enabled = [t for t in TIERS if ts.get(t)]
+        elif isinstance(ts, (list, tuple)):
+            enabled = [str(t).strip().lower() for t in ts if str(t).strip().lower() in TIERS]
+        else:
+            enabled = ["small", "medium", "big", "tall"]
+        if enabled:
+            cmd += ["--tree-sizes", ",".join(enabled)]
     return cmd
 
 
