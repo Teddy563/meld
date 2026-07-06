@@ -3,6 +3,3 @@ Pillow>=10.0   # optional: only needed for the elevation survey (manual range wo
 psutil>=5.9
 osmium>=4.0    # optional: only needed to BAKE a local .pbf into the OSM data pack (offline OSM).
                # Everything else — incl. the OSM grid cache + live Overpass prefetch — runs without it.
-shapely>=2.1.2
-zstd>=1.5.7.3
-zstandard>=0.25.0
