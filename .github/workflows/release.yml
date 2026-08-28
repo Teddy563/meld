@@ -26,7 +26,40 @@ permissions:
   contents: write
 
 jobs:
+  # Three files carry this release's version and they are read by different code:
+  # packaging/build.py NAMES every asset from CHANGELOG.md's first "## " heading,
+  # src/__init__.py is what a running Meld reports about itself, and the tag is what
+  # users think they downloaded. v1.9.8 shipped assets named Meld-1.9.7-* because the
+  # changelog entry was missing and nothing compared the three - and since the upload
+  # step only adds and overwrites, re-running the build left BOTH namings on the
+  # release. Cheap check, runs before anything is built.
+  version-guard:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag, CHANGELOG and __init__ must agree
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"; tag="${tag#meld-v}"
+          changelog=$(grep -m1 '^## ' CHANGELOG.md | sed -E 's/^## +\[?v?([^]) ]+)\]?.*/\1/')
+          module=$(grep -m1 '^__version__' src/__init__.py | cut -d'"' -f2)
+          echo "tag=$tag changelog=$changelog module=$module"
+          if [ "$tag" != "$changelog" ]; then
+            echo "::error::tag $GITHUB_REF_NAME says $tag but CHANGELOG.md's first entry says $changelog - every asset would be named Meld-$changelog-*"
+            exit 1
+          fi
+          if [ "$tag" != "$module" ]; then
+            echo "::error::tag $GITHUB_REF_NAME says $tag but src/__init__.py says $module - the app would misreport its own version"
+            exit 1
+          fi
+          echo "tag, CHANGELOG.md and src/__init__.py all agree on $tag"
+
   test:
+    needs: [version-guard]
+    # version-guard is skipped on workflow_dispatch (no tag to check), and a skipped
+    # dependency would otherwise skip this job too.
+    if: always() && (needs.version-guard.result == 'success' || needs.version-guard.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
