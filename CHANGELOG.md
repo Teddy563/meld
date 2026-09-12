@@ -11,12 +11,13 @@ generator itself advertises, so the same Meld build drives the 3.1.8 fork and a 
 one, and against 3.1.8 the command line is byte-identical to 1.9.8's.
 
 ### Added
-- **Generator 3.2.0 options**, as a plain section of Settings: Voxy LOD pregeneration,
-  Moon and Mars worlds, the Overture vector-tile transport, preset building facades,
-  and the Mapillary street-photograph facades with their mode, detail and resolution.
-  Each row hides itself when the deployed generator does not advertise the matching
-  flag, and the drawer hides entirely when none of them are available - a control that
-  silently does nothing is worse than no control.
+- **Two generator 3.2.0 options, as ordinary settings.** **Celestial body** sits under
+  Elevation mode and **Voxy LOD pregeneration** above Bake lighting, each hidden unless the
+  deployed generator advertises the matching flag - a control that silently does nothing is
+  worse than no control. There is no separate section, no drawer and no Classic/Enhanced
+  switch: that switch gated facades this fork does not ship, so it was a mode that changed
+  nothing. The facade and Overture options are still built and tested behind the same
+  capability gate, so they appear on their own the day a generator advertises them.
 - **`meld --arnis-caps`**: which 3.2.0 options the resolved generator accepts, and the
   version it reports. The direct answer to "why does this toggle do nothing".
 - **`meld --print-arnis-cmd`**: the exact command line one cell of the current project
@@ -28,15 +29,6 @@ one, and against 3.1.8 the command line is byte-identical to 1.9.8's.
   on the world being built - the coordinates were always read on that body, the map just did
   not say so. Earth is unchanged, and the planetary tiles are only fetched while that body is
   selected.
-- **Voxy LOD and the celestial body work in Classic mode**, and the Classic/Enhanced switch
-  only appears while the generator has something it actually gates. Both are asked for by
-  name, one control at a time, and emit nothing at their defaults - Voxy writes a cache
-  beside the world and changes no block in it, and Moon and Mars are not a style applied to
-  a render, they are the render. The switch exists for the other kind: features that change
-  an ordinary Earth render without being asked each time, like the facades upstream turns on
-  by itself once a token exists. Against a generator with none of those - this fork today -
-  the switch is hidden rather than left on screen doing nothing. The stored mode is kept, so
-  installing a facade-capable generator brings it back as the project left it.
 - **Cell visibility is a map control**: an eye button under the paint triangle, open when the
   cells are drawn and struck through when they are hidden. It used to be a checkbox under the
   Generate buttons, where an open dropdown drew over it, and it never belonged in the settings

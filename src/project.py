@@ -259,11 +259,6 @@ def default_settings() -> dict:
         # Voxy LOD pregeneration: the world renders to the horizon on first join instead
         # of needing /voxy import current. Java only, and it implies --bake-lighting
         # because unlit LOD terrain renders black.
-        # Classic renders the way this fork always has: arnis_cmd emits none of the 3.2.0
-        # flags below, whatever they are set to. Enhanced sends them. The switch exists
-        # because everything under it is new and some of it calls an outside service, so
-        # the old path stays one control away.
-        "gen_mode_32": "classic",
         "voxy_lod": False,
         # Which celestial body to generate. moon/mars carry no OSM data and drive their
         # own scale, so every object option is ignored for them.

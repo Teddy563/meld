@@ -491,8 +491,6 @@
     </div>
   </div>
   <div id="map"></div>
-  <!-- Says which world you are looking at, only while it is not Earth. -->
-  <div id="bodyMapNote" style="display:none;position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:900;max-width:min(560px,70vw);padding:6px 12px;font-size:12px;border-radius:var(--r);background:var(--glass);border:1px solid var(--hair);box-shadow:var(--ring);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);pointer-events:none"></div>
   <div id="projOverlay" style="display:none;position:fixed;top:12px;left:312px;width:460px;height:min(86vh,860px);max-width:calc(100vw - 324px);z-index:6000;background:var(--glass);border:1px solid var(--hair);border-radius:var(--r);box-shadow:var(--ring);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);flex-direction:column;overflow:hidden">
     <div id="projGalHeader" style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--hair);cursor:move;user-select:none">
       <div style="font-weight:700;font-size:14px;color:var(--acc2,#d6ba58)" title="Drag to move">🌍 Projects</div>
@@ -598,6 +596,12 @@
       <label>Elevation mode
         <span class="i" title="global = one locked range, no height cliffs across cells. local = per-cell auto-fit (will seam).">i</span>
         <select id="emode"><option>global</option><option>local</option></select></label>
+      <!-- Which world. Hidden unless the generator advertises --body: a body it cannot
+           render would only fail the cell. Picking one also swaps the basemap, because the
+           coordinates are read on THAT body's NASA raster, not on Earth. -->
+      <label class="cap32" data-cap="--body" style="display:none">Celestial body
+        <span class="i" title="Earth is the normal world. Moon and Mars are built from NASA elevation (LRO LOLA, MGS MOLA) at that body's own fixed scale and carry no map data at all, so buildings, roads, trees, caves and props are ignored for them and the scale setting does nothing. The map switches to that body, because the area is read at those coordinates on it.">i</span>
+        <select id="celestialBody"><option value="earth">Earth</option><option value="moon">Moon</option><option value="mars">Mars</option></select></label>
       <div class="stat" style="border-top:1px solid var(--line);margin-top:7px;padding-top:5px;color:var(--acc2);font-weight:600;letter-spacing:.03em">Terrain shaping</div>
       <label>Terrain height &times;
         <span class="i" title="Vertical exaggeration: makes mountains taller WITHOUT widening the map. 1 = true scale, 2-3 = dramatic, 4+ may need 'disable height limit' for headroom. Auto-compresses to fit the build height.">i</span>
@@ -626,71 +630,6 @@
             <span class="i" title="Keeps a pre-parsed copy (.osmbin) next to each cached OSM tile, so repeat renders skip most of the JSON decoding - measured about half a second faster per cell. Costs roughly two thirds extra disk in the OSM cache; the files are cleaned up together with their tiles. Turn off on a tight disk; nothing else changes.">i</span></label>
         </div>
       </details>
-
-      <!-- == Generator 3.2.0 options ==========================================
-           Plain settings, not a drawer: they are ordinary render options and hiding
-           them behind one more click only made them hard to find. The section stays
-           hidden until /api/arnis-caps says the deployed binary advertises at least
-           one of them, and each row hides itself individually - a control that
-           silently does nothing is worse than no control, and "is my generator new
-           enough" is not a question a user should have to answer by reading a
-           version number. -->
-      <div id="gen32Drawer" style="display:none;border-top:1px solid var(--line);margin-top:10px;padding-top:9px">
-        <div style="font-weight:600;color:var(--acc2);font-size:12px;margin-bottom:6px">Generator 3.2.0
-          <span class="i" title="Options the newer generator adds: Voxy LOD pregeneration, Moon and Mars, the Overture transport, and building facades. Only the ones your generator actually supports are shown.">i</span></div>
-        <div>
-          <!-- Outside the Classic/Enhanced switch on purpose. Both are asked for by name,
-               one control at a time, and emit nothing at their defaults: Voxy writes a
-               cache beside the world and changes no block in it, and Moon and Mars are not
-               a style applied to a render, they are the render. What the switch gates is
-               the other kind - features that change an ordinary Earth render without being
-               asked, like the facades upstream turns on by itself once a token exists. -->
-          <label class="cap32" data-cap="--voxy-lod" style="font-size:12px;display:flex;align-items:center;gap:6px;margin-bottom:8px">
-            <input id="voxyLod" type="checkbox" style="width:auto"> Voxy LOD pregeneration
-            <span class="i" title="Builds the Voxy mod's LOD cache while the world is generated, so it renders to the horizon the first time you join instead of needing /voxy import current. Works in Classic too: it writes a cache next to the world and changes no block in it. It forces lighting to be baked - unlit LOD terrain renders black - and costs extra time and disk. One cache per world: a multi-cell render merges many cell worlds into one, and the caches cannot be merged with them, so Meld builds it only for a single-cell render and says so in the log when it skips it.">i</span></label>
-          <label class="cap32" data-cap="--body" style="font-size:12px;margin-top:6px">Celestial body
-            <span class="i" title="Moon and Mars use NASA elevation at their own fixed scale and carry no map data at all, so every object option - buildings, roads, trees, caves, props - is ignored for them. Earth is the normal world.">i</span>
-            <select id="celestialBody" style="width:110px">
-              <option value="earth">Earth</option><option value="moon">Moon</option><option value="mars">Mars</option>
-            </select></label>
-
-          <label id="gen32ModeRow" style="font-size:12px">Generation
-            <span class="i" title="Classic renders exactly the way this fork always has: none of the options below are sent, whatever they are set to, so a project matches the cells it rendered before. Enhanced sends them. The switch exists because everything under it is new, and some of it calls an outside service - keeping the old path one click away is the point.">i</span>
-            <select id="genMode32" style="width:110px">
-              <option value="classic">Classic</option><option value="enhanced">Enhanced</option>
-            </select></label>
-          <div id="gen32Body" style="opacity:0.45;pointer-events:none">
-          <label class="cap32" data-cap="--overture-source" style="font-size:12px;margin-top:6px">Overture source
-            <span class="i" title="Which transport Overture building data is read through. Auto reads vector tiles and falls back to the Parquet partitions. Tiles refuses to fall back, so a broken archive shows up as an error instead of a slow render. Parquet is the old path, and still wins on continent-sized areas.">i</span>
-            <select id="overtureSource" style="width:110px">
-              <option value="auto">auto</option><option value="tiles">tiles</option><option value="parquet">parquet</option>
-            </select></label>
-          <label class="cap32" data-cap="--building-facades" style="font-size:12px;margin-top:6px">Facade source
-            <span class="i" title="Off builds walls the way this fork always has. Preset hangs a premade photograph picked by building type - no account, no download, Java 1.21.4+. Mapillary uses real street-level photographs of that street for wall colours, windows and doors, and needs the free token below. The two sources hang panels on the same walls, so only one can be chosen.">i</span>
-            <select id="facadeSource" style="width:110px">
-              <option value="off">off</option><option value="preset">preset</option><option value="mapillary">Mapillary</option>
-            </select></label>
-          <label class="cap32" data-cap="--mapillary-facades" style="font-size:12px;margin-top:6px">Mapillary token
-            <span class="i" title="A free API token from mapillary.com/developer. With one, buildings get their real wall colours, windows and doors from street-level photographs of that street. Without one, nothing here runs. The token is stored with this project, is never written into a shared preset or into the world folder, and is passed to the generator through its environment rather than on the command line.">i</span>
-            <input id="mapillaryToken" type="password" autocomplete="off" placeholder="MLY|..." style="width:100%;font-size:11px"></label>
-          <label class="cap32" data-cap="--mapillary-facade-mode" style="font-size:12px;margin-top:6px">Facade mode
-            <span class="i" title="Photos hangs the photograph itself as a flat panel on the wall's true line, so a diagonal wall gets one quad instead of a staircase - Java 1.21.4+ only. Blocks picks the nearest palette block for each cell's colour and places windows and doors as real blocks, which works on every world format.">i</span>
-            <select id="mapillaryFacadeMode" style="width:110px">
-              <option value="photos">photos</option><option value="blocks">blocks</option>
-            </select></label>
-          <label class="cap32" data-cap="--facade-detail" style="font-size:12px;margin-top:6px">Facade detail
-            <span class="i" title="How large a texture atlas the facade panels may fill. Standard fits any graphics card the game runs on. High is sharper and wants a modern card on whatever machine opens the world - an atlas that will not fit makes the game drop the world's resource pack entirely.">i</span>
-            <select id="facadeDetail" style="width:110px">
-              <option value="standard">standard</option><option value="high">high</option>
-            </select></label>
-          <label class="cap32" data-cap="--facade-px" style="font-size:12px;margin-top:6px">Facade resolution
-            <span class="i" title="Texture pixels per block on the facade panels. Lowered automatically when the panels would not fit the atlas the detail level allows.">i</span>
-            <select id="facadePx" style="width:110px">
-              <option value="4">4 px</option><option value="8">8 px</option><option value="16">16 px</option><option value="32">32 px</option>
-            </select></label>
-          </div>
-        </div>
-      </div>
 
       <!-- == Generation performance ==============================================
            Every speed knob in ONE place, manual first. The mode picker on top only
@@ -1021,6 +960,9 @@
           <input id="wMaxY" type="number" step="16" min="-2032" max="2031" placeholder="auto" style="width:90px"></label>
         <div class="stat" style="margin:2px 0 0 2px;opacity:.75">Blank = fitted from the terrain. Engine limits: -2032 &hellip; 2031, multiples of 16.</div>
       </div>
+      <label class="cap32" data-cap="--voxy-lod" style="display:none">Voxy LOD pregeneration
+        <span class="i" title="Build the Voxy mod's LOD cache while the world is generated, so it renders to the horizon the first time you join instead of needing /voxy import current. Forces lighting to be baked - unlit LOD terrain renders black - and costs extra time and disk. One cache per world, so Meld only builds it for a single-cell render and says so in the log when it skips it.">i</span>
+        <input id="voxyLod" type="checkbox"></label>
       <label>Bake lighting (LOD mods)
         <span class="i" title="Pre-bake per-chunk light so Voxy / Distant Horizons render distant chunks lit without visiting them (Arnis issue #1071). On by default; slower to generate and bigger region files.">i</span>
         <input id="bakelight" type="checkbox"></label>
@@ -1493,10 +1435,16 @@ const cellRenderer = L.canvas({ padding: 0.5 });
 const BASEMAPS = {
   earth: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
            opts: { maxZoom: 19, attribution: '© OpenStreetMap' } },
+  // maxNativeZoom, not maxZoom: both planetary sets stop at z6 and answer 400 above it,
+  // which paints nothing at all. This way Leaflet keeps upscaling the z6 tile instead, so
+  // the map is blurry past z6 but never blank - and a selection box drawn at city zoom
+  // still has ground under it.
   moon:  { url: 'https://cartocdn-gusc.global.ssl.fastly.net/opmbuilder/api/v1/map/named/opm-moon-basemap-v0-1/1/{z}/{x}/{y}.png',
-           opts: { maxZoom: 9, attribution: 'Moon · NASA LRO / USGS via OpenPlanetaryMap' } },
+           opts: { maxZoom: 19, maxNativeZoom: 6,
+                   attribution: 'Moon · NASA LRO / USGS via OpenPlanetaryMap' } },
   mars:  { url: 'https://cartocdn-gusc.global.ssl.fastly.net/opmbuilder/api/v1/map/named/opm-mars-basemap-v0-2/1/{z}/{x}/{y}.png',
-           opts: { maxZoom: 9, attribution: 'Mars · NASA MGS MOLA / USGS via OpenPlanetaryMap' } },
+           opts: { maxZoom: 19, maxNativeZoom: 6,
+                   attribution: 'Mars · NASA MGS MOLA / USGS via OpenPlanetaryMap' } },
 };
 let baseLayer = null;
 let baseBody = null;
@@ -1509,17 +1457,11 @@ function setBasemap(body) {
   if (baseLayer) map.removeLayer(baseLayer);
   baseLayer = next;
   baseBody = key;
-  // Those basemaps stop well before OSM's zoom 19, and Leaflet keeps the view where it
-  // is - which renders as a blank grey grid. Pull back to what the body actually serves.
-  const max = BASEMAPS[key].opts.maxZoom;
-  if (map.getZoom() > max) map.setZoom(max);
-  const banner = document.getElementById('bodyMapNote');
-  if (banner) {
-    banner.style.display = key === 'earth' ? 'none' : '';
-    banner.textContent = key === 'earth' ? ''
-      : `Showing ${key === 'moon' ? 'the Moon' : 'Mars'}. The area you pick is read at these `
-        + 'coordinates on that body, and it renders terrain only.';
-  }
+  // Past z6 the tile is upscaled, so a city-level view of the Moon is a grey blur. Pull
+  // back to the last sharp zoom when arriving on a body - the areas are huge anyway, both
+  // bodies render at a fixed coarse scale. Earth keeps the view exactly as it was.
+  const native = BASEMAPS[key].opts.maxNativeZoom;
+  if (native && map.getZoom() > native) map.setZoom(native);
 }
 setBasemap('earth');
 
@@ -2559,18 +2501,6 @@ async function refreshState() {
     $('celestialBody').value = st.body || 'earth';
     if (typeof setBasemap === 'function') setBasemap($('celestialBody').value);
   }
-  if ($('overtureSource')) $('overtureSource').value = st.overture_source || 'auto';
-  if ($('genMode32')) $('genMode32').value = st.gen_mode_32 || 'classic';
-  // One source, derived from the two settings the generator actually reads: the presets
-  // win when they are on, else a token with the facades left enabled means Mapillary.
-  if ($('facadeSource'))
-    $('facadeSource').value = st.building_facades ? 'preset'
-      : (st.mapillary_facades === false ? 'off' : (st.mapillary_token ? 'mapillary' : 'off'));
-  if ($('mapillaryToken')) $('mapillaryToken').value = st.mapillary_token || '';
-  applyGen32Mode();
-  if ($('mapillaryFacadeMode')) $('mapillaryFacadeMode').value = st.mapillary_facade_mode || 'photos';
-  if ($('facadeDetail')) $('facadeDetail').value = st.facade_detail || 'standard';
-  if ($('facadePx')) $('facadePx').value = String(st.facade_px || '16');
   if ($('staggerAdaptive')) $('staggerAdaptive').checked = st.cpu_stagger_adaptive !== false;
   // Generation performance: mode + the two new budgets. A server that has never heard of the
   // governor sends none of these keys, _govSupported stays false, and applyGovMode() collapses
@@ -5630,12 +5560,10 @@ if ($('osmSidecars'))
 
 // ── generator 3.2.0 options ────────────────────────────────────────────────────────────
 // One listener per control, and one capability fetch that decides what is on screen at all.
+// The two options this generator actually has. Each is cap-gated above, so a binary that
+// does not advertise one never shows its row and never receives its flag.
 [['voxyLod', 'voxy_lod', 'checked'],
- ['celestialBody', 'body', 'value'],   // also swaps the basemap, see the listener below
- ['overtureSource', 'overture_source', 'value'],
- ['mapillaryFacadeMode', 'mapillary_facade_mode', 'value'],
- ['facadeDetail', 'facade_detail', 'value'],
- ['facadePx', 'facade_px', 'value']].forEach(([id, key, prop]) => {
+ ['celestialBody', 'body', 'value']].forEach(([id, key, prop]) => {
   const el = $(id);
   if (el) el.addEventListener('change', () => api('/api/settings', { [key]: el[prop] }));
 });
@@ -5643,63 +5571,15 @@ if ($('osmSidecars'))
 if ($('celestialBody'))
   $('celestialBody').addEventListener('change', () => setBasemap($('celestialBody').value));
 
-// The token is typed, not picked, so it saves on blur rather than on every keystroke.
-if ($('mapillaryToken'))
-  $('mapillaryToken').addEventListener('change', () => {
-    api('/api/settings', { mapillary_token: $('mapillaryToken').value.trim() });
-  });
-// Greys the whole block out in Classic and, more importantly, tells the server: arnis_cmd
-// drops every 3.2.0 flag unless this says enhanced, so a project can go back to the exact
-// command line it rendered with before by flipping one control.
-function applyGen32Mode() {
-  const on = $('genMode32') && $('genMode32').value === 'enhanced';
-  const body = $('gen32Body');
-  if (body) {
-    body.style.opacity = on ? '' : '0.45';
-    body.style.pointerEvents = on ? '' : 'none';
-  }
-}
-if ($('genMode32'))
-  $('genMode32').addEventListener('change', () => {
-    api('/api/settings', { gen_mode_32: $('genMode32').value });
-    applyGen32Mode();
-  });
-
-// One control, two generator settings. The presets and the Mapillary facades hang panels
-// on the same walls, so exactly one of them can be on; 'off' keeps a stored token but says
-// so out loud (mapillary_facades: false), which is the only half the generator needs told.
-if ($('facadeSource'))
-  $('facadeSource').addEventListener('change', () => {
-    const v = $('facadeSource').value;
-    api('/api/settings', {
-      building_facades: v === 'preset',
-      mapillary_facades: v === 'mapillary' ? null : false,
-    });
-  });
-
-// Hide every row the deployed generator cannot honour, and the whole drawer if it can
-// honour none of them. Failing quietly to "hidden" is deliberate: an old server has no
-// /api/arnis-caps, and showing controls it cannot serve would be the worse guess.
+// Hide every row the deployed generator cannot honour. Failing quietly to "hidden" is
+// deliberate: an old server has no /api/arnis-caps, and showing a control it cannot serve
+// would be the worse guess.
 api('/api/arnis-caps')
   .then(caps => {
     if (!caps || !caps.flags) return;
-    let any = false;
     document.querySelectorAll('.cap32').forEach(el => {
-      const ok = !!caps.flags[el.dataset.cap];
-      el.style.display = ok ? '' : 'none';
-      any = any || ok;
+      el.style.display = caps.flags[el.dataset.cap] ? '' : 'none';
     });
-    const drawer = $('gen32Drawer');
-    if (drawer) drawer.style.display = any ? '' : 'none';
-    // The switch only means something while the generator has one of the features it gates.
-    // This fork ships none of them yet, so showing a Classic/Enhanced control that changes
-    // nothing would be the same lie as showing a dead toggle. Hidden, the stored mode is
-    // untouched: install a generator that has the facades and the switch comes back with
-    // the project still set the way it was left.
-    const gated = ['--building-facades', '--overture-source', '--facade-detail', '--facade-px',
-                   '--mapillary-facades', '--mapillary-facade-mode'];
-    const row = $('gen32ModeRow');
-    if (row) row.style.display = gated.some(f => caps.flags[f]) ? '' : 'none';
   })
   .catch(() => {});
 if ($('staggerAdaptive'))

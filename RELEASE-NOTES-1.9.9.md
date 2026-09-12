@@ -21,24 +21,17 @@ and the whole drawer hides when it knows none of them.
 So one Meld build drives both generations: against the 3.1.8 fork every probe answers no,
 nothing is emitted, and the command line is byte-identical to 1.9.8's.
 
-They are plain rows in Settings under **Generator 3.2.0**, not a drawer.
-
-### About Classic / Enhanced
-
-The switch gates the features that change an ordinary Earth render *without being asked each
-time*: the facades, which upstream turns on by itself as soon as a token exists, and the
-Overture transport, which changes where buildings come from. **This fork ships none of those
-yet**, so against it the switch has nothing to gate and is hidden rather than left on screen
-doing nothing. Install a generator that has them and it comes back, with your project set the
-way you left it.
-
-Voxy LOD and the celestial body are not gated: you ask for each by name, and each emits
-nothing at its default. So Classic with Voxy off and Earth selected is still byte-identical
-to 1.9.8's command line.
+**Celestial body** sits under Elevation mode and **Voxy LOD pregeneration** above Bake
+lighting — ordinary settings rows, in the section they belong to.
 
 No account or API key is needed for anything in this release — the NASA elevation for Moon
 and Mars is public. The only thing that would need a key is the Mapillary facades, and those
 are not in this fork.
+
+There is no Classic/Enhanced switch. An earlier build had one; it gated facades this fork
+does not ship, so it was a mode that changed nothing. Every option here is one you pick by
+name and which sends nothing at its default, so an untouched project still renders 1.9.8's
+command line byte for byte.
 
 Against the 3.2.0 fork as released, two of the ten light up — **Voxy LOD** and
 **celestial body**. The other eight (Overture transport, preset and Mapillary facades and
@@ -82,8 +75,6 @@ Builds the [Voxy](https://modrinth.com/mod/voxy) mod's LOD cache while the world
 generated, so it renders to the horizon the first time you join instead of needing
 `/voxy import current`. It forces lighting to be baked (unlit LOD terrain renders black)
 and costs extra time and disk.
-
-**It works in Classic as well as Enhanced** — see below.
 
 **One cache per world, so Meld builds it only for a single-cell render.** A multi-cell
 render generates each cell into its own world and merges the region files into the master;
