@@ -23,6 +23,10 @@ one, and against 3.1.8 the command line is byte-identical to 1.9.8's.
   runs, built through the same builder the render uses, so it cannot disagree with what
   actually runs.
 - **`/api/arnis-caps`**, the endpoint behind both the drawer and the CLI report.
+- **Cell visibility is a map control**: an eye button under the paint triangle, open when the
+  cells are drawn and struck through when they are hidden. It used to be a checkbox under the
+  Generate buttons, where an open dropdown drew over it, and it never belonged in the settings
+  column either - it changes what you look at, not what gets built.
 - **The generator's Voxy LOD cache now survives the merge.** Arnis writes it into the cell
   world; the merge copies region files, so without this it was built and then deleted with
   the cell folder. It is one database keyed on the world seed, not a set of per-region

@@ -411,6 +411,11 @@
   .leaflet-bar a.meld-brush-btn { font:700 16px/26px system-ui,sans-serif; color:#1a1712; text-align:center; }
   .leaflet-bar a.meld-brush-btn.meld-brush-on { background:#e3a417; color:#fff; }
   .leaflet-bar a.meld-brush-btn.meld-brush-on:hover { background:#e3a417; }
+  /* cell-visibility eye, directly under the paint triangle. Dimmed while the cells are off,
+     so the map says which state it is in without a label. */
+  .leaflet-bar a.meld-eye-btn { color:#1a1712; text-align:center; line-height:26px; }
+  .leaflet-bar a.meld-eye-btn svg { vertical-align:middle; margin-top:-2px; }
+  .leaflet-bar a.meld-eye-btn.meld-eye-off { color:#8a8a8a; }
 </style>
 </head>
 <body>
@@ -1038,10 +1043,6 @@
         <button class="sec" id="btnPickOrigin">📍 Click map to set origin</button>
       </div>
 
-      <!-- Map display, last in Settings. It lived under the Generate buttons, where an
-           open dropdown above it drew straight over the row. -->
-      <label class="stat" style="display:flex;align-items:center;gap:6px;margin-top:9px;border-top:1px solid var(--line);padding-top:9px" title="Uncheck to hide the coloured cell squares so you can see the map underneath while picking a new area. The plan itself is not changed.">
-        <input id="showCells" type="checkbox" checked style="width:auto;margin:0">Show cells on the map</label>
     </div>
 
     <div class="card" id="borderCard">
@@ -1158,6 +1159,11 @@
         </div>
       </div>
     </div>
+
+    <!-- Cell visibility is a map control now (the eye under the paint triangle), not a
+         setting: it changes what you look at, not what gets built. The checkbox stays as
+         the state every draw path already reads, and the eye drives it. -->
+    <input id="showCells" type="checkbox" checked hidden>
 
     <div class="card">
       <h2>Project &amp; world <span class="i" title="Switch project workspaces (each = one world's settings, origin, grid). Below: the name and save location of the world this project builds.">i</span></h2>
@@ -1559,6 +1565,48 @@ const BrushControl = L.Control.extend({
   },
 });
 map.addControl(new BrushControl());
+
+// Cell visibility, under the paint triangle. It belongs on the map: it changes what you
+// see, not what gets generated, and in the settings column it read as a build option.
+const EyeControl = L.Control.extend({
+  options: { position: 'topleft' },
+  onAdd: function () {
+    const bar = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+    const a = L.DomUtil.create('a', 'meld-eye-btn', bar);
+    a.id = 'cellsEyeBtn'; a.href = '#';
+    L.DomEvent.disableClickPropagation(bar);
+    L.DomEvent.on(a, 'click', L.DomEvent.stop);
+    L.DomEvent.on(a, 'click', () => {
+      const box = document.getElementById('showCells');
+      box.checked = !box.checked;
+      box.dispatchEvent(new Event('change'));
+      syncCellsEye();
+    });
+    setTimeout(syncCellsEye, 0);
+    return bar;
+  },
+});
+map.addControl(new EyeControl());
+
+// Open eye when the cells are drawn, struck-through eye when they are hidden.
+const EYE_OPEN = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_SHUT = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/>'
+  + '<line x1="3" y1="21" x2="21" y2="3"/></svg>';
+
+function syncCellsEye() {
+  const a = document.getElementById('cellsEyeBtn');
+  const box = document.getElementById('showCells');
+  if (!a || !box) return;
+  a.innerHTML = box.checked ? EYE_OPEN : EYE_SHUT;
+  a.classList.toggle('meld-eye-off', !box.checked);
+  a.title = box.checked
+    ? 'Cells shown. Hide them to see the map underneath while picking an area (the plan is not changed).'
+    : 'Cells hidden. Click to show them again.';
+}
 
 map.on(L.Draw.Event.CREATED, async e => {
   if (polyLayer) { map.removeLayer(polyLayer); polyLayer = null; }
@@ -6474,6 +6522,7 @@ if ($('showCells')) $('showCells').onchange = () => {
   if (_drawRaf) { cancelAnimationFrame(_drawRaf); _drawRaf = null; }
   _overlaySig = '';   // force a full rebuild when they come back
   ensureCells(_lastGrid);
+  if (typeof syncCellsEye === 'function') syncCellsEye();
 };
 
 // Esc unwinds one level at a time -- whichever painting mode is on first, then the box -- so it

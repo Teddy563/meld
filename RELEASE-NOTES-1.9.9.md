@@ -78,8 +78,9 @@ by other processes on the machine. It is also stripped from shared presets and f
 - **`meld --print-arnis-cmd`** prints the exact command line one cell of the current
   project will run, built through the same builder the render uses, so it cannot disagree
   with what actually runs.
-- **"Show cells on the map" moved** out of the Generate section and into Settings, as the
-  last item. It no longer overlaps an open dropdown.
+- **"Show cells on the map" is now an eye on the map**, under the paint triangle: open when
+  the cells are drawn, struck through when they are hidden. It was a checkbox under the
+  Generate buttons, where an open dropdown drew straight over it.
 - A duplicate capability probe on the server was removed; the drawer and the CLI report now
   read the same one.
 
