@@ -622,7 +622,15 @@ def upstream_3_2_flags(settings: dict, arnis_exe: str) -> list[str]:
     nothing about the command line changes. That is the whole compatibility mechanism -
     no version parsing, because a locally built or side-loaded binary does not report a
     version honestly enough to branch on.
+
+    Classic mode short-circuits the whole thing. It is the default and it is the point of
+    the switch: none of these flags are emitted, whatever the individual settings say, so a
+    project renders the command line it rendered before. Everything below is new, and some
+    of it calls an outside service.
     """
+    if str(settings.get("gen_mode_32") or "classic").strip().lower() != "enhanced":
+        return []
+
     out: list[str] = []
     for key, flag, kind, default, allowed in _UPSTREAM_3_2_OPTIONS:
         if not arnis_supports(arnis_exe, flag):

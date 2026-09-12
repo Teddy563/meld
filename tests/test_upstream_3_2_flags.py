@@ -46,6 +46,9 @@ def _clear_help_cache():
 
 def _cmd(monkeypatch, settings, *, supports=()):
     monkeypatch.setattr(arnis_cmd, "arnis_supports", lambda exe, flag: flag in supports)
+    # These tests are about WHICH flag a setting produces, so they run in enhanced mode;
+    # the classic gate has its own tests at the bottom and sets the key itself.
+    settings = {"gen_mode_32": "enhanced", **settings}
     return arnis_cmd.build_arnis_cmd("arnis.exe", BBOX, "out", settings, ORIGIN, None, 1)
 
 
@@ -172,3 +175,31 @@ def test_the_token_is_stripped_from_a_worlds_metadata_sidecar():
     import server  # noqa: PLC0415
 
     assert "mapillary_token" in server._META_SKIP_SETTINGS
+
+
+# --- the classic / enhanced switch ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("flag", ALL_NEW)
+def test_classic_mode_emits_no_new_flag_even_when_supported(monkeypatch, flag):
+    """The switch is what lets a project go back to the command line it rendered with: in
+    classic none of these are sent, whatever the individual settings say."""
+    settings = {
+        "gen_mode_32": "classic",
+        "voxy_lod": True, "building_facades": True, "body": "mars",
+        "overture_source": "tiles", "facade_detail": "high", "facade_px": "32",
+        "mapillary_facade_mode": "blocks", "mapillary_facades": False,
+    }
+    assert flag not in _cmd(monkeypatch, settings, supports=ALL_NEW)
+
+
+def test_classic_is_the_default_when_the_key_is_absent(monkeypatch):
+    """A project stored before the switch existed has no gen_mode_32 and must stay classic."""
+    monkeypatch.setattr(arnis_cmd, "arnis_supports", lambda exe, flag: flag in ALL_NEW)
+    cmd = arnis_cmd.build_arnis_cmd("arnis.exe", BBOX, "out", {"voxy_lod": True}, ORIGIN, None, 1)
+    assert "--voxy-lod" not in cmd
+
+
+def test_enhanced_mode_lets_them_through(monkeypatch):
+    cmd = _cmd(monkeypatch, {"gen_mode_32": "enhanced", "voxy_lod": True}, supports=ALL_NEW)
+    assert "--voxy-lod" in cmd
