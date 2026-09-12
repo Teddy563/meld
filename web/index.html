@@ -639,7 +639,7 @@
           <div id="gen32Body" style="opacity:0.45;pointer-events:none">
           <label class="cap32" data-cap="--voxy-lod" style="font-size:12px;display:flex;align-items:center;gap:6px">
             <input id="voxyLod" type="checkbox" style="width:auto"> Voxy LOD pregeneration
-            <span class="i" title="Builds the Voxy mod's LOD cache while the world is generated, so it renders to the horizon the first time you join instead of needing /voxy import current. Java only, and it forces lighting to be baked - unlit LOD terrain renders black. Costs extra time and disk per cell.">i</span></label>
+            <span class="i" title="Builds the Voxy mod's LOD cache while the world is generated, so it renders to the horizon the first time you join instead of needing /voxy import current. It forces lighting to be baked - unlit LOD terrain renders black - and costs extra time and disk. One cache per world: a multi-cell render merges many cell worlds into one, and the caches cannot be merged with them, so Meld builds it only for a single-cell render and says so in the log when it skips it.">i</span></label>
           <label class="cap32" data-cap="--body" style="font-size:12px;margin-top:6px">Celestial body
             <span class="i" title="Moon and Mars use NASA elevation at their own fixed scale and carry no map data at all, so every object option - buildings, roads, trees, caves, props - is ignored for them. Earth is the normal world.">i</span>
             <select id="celestialBody" style="width:110px">

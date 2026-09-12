@@ -23,6 +23,12 @@ one, and against 3.1.8 the command line is byte-identical to 1.9.8's.
   runs, built through the same builder the render uses, so it cannot disagree with what
   actually runs.
 - **`/api/arnis-caps`**, the endpoint behind both the drawer and the CLI report.
+- **The generator's Voxy LOD cache now survives the merge.** Arnis writes it into the cell
+  world; the merge copies region files, so without this it was built and then deleted with
+  the cell folder. It is one database keyed on the world seed, not a set of per-region
+  files, so it cannot be merged cell by cell: Meld asks for it only on a single-cell run -
+  on a multi-cell one it would cost time and disk on every cell for a cache that is thrown
+  away - and carries it into the master world when the master has none yet.
 
 ### Security
 - The Mapillary API token is passed to the generator in its environment, never on the

@@ -118,6 +118,7 @@ def merge_cell_into_master(
         "subdirs_merged": [],
         "level_dat": "skipped",
         "datapacks": "skipped",
+        "voxy": "skipped",
     }
 
     # ── PRE-FLIGHT (read-only) ───────────────────────────────────────────────
@@ -219,6 +220,22 @@ def merge_cell_into_master(
         with _MASTER_LOCK:
             master_p.mkdir(parents=True, exist_ok=True)
             result["datapacks"] = _copy_datapacks(cell_p, master_p)
+
+    # voxy/ — the generator's LOD cache, when --voxy-lod built one. The merge is a
+    # file-level copy of region files; this directory is a single database keyed on the
+    # world seed, so it cannot be merged cell by cell. It is carried over only when the
+    # master has none yet, which is the single-cell render the flag is allowed for (see
+    # the gate in server._runner). A world that later grows more cells keeps the LOD it
+    # has and voxy fills the rest when those chunks are visited.
+    if (cell_p / "voxy").is_dir():
+        with _MASTER_LOCK:
+            dst_voxy = master_p / "voxy"
+            if dst_voxy.exists():
+                result["voxy"] = "already present"
+            else:
+                master_p.mkdir(parents=True, exist_ok=True)
+                shutil.copytree(cell_p / "voxy", dst_voxy)
+                result["voxy"] = "copied"
 
     # level.dat — copy once, patch the name. Serialised across concurrent merges.
     src_dat = cell_p / "level.dat"

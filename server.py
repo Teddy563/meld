@@ -307,6 +307,8 @@ MB_PER_REGION = 4   # rough estimate for the size report
 # exactly what happened on 2026-08-16, when 16 of 16 cells lost their additional buildings.
 # Counted here, surfaced in the run report and in the log line at the end of the run.
 _OVERTURE_FAIL: set = set()
+# Said once per run: the Voxy LOD cannot be built for a multi-cell render (see _runner).
+_VOXY_WARNED: set = set()
 
 # ── render queue: generate several projects one after another, unattended ──────
 # Each entry is a project slug; the driver switches to it, plans its cells from the
@@ -2729,8 +2731,26 @@ def _runner(job: dict, state: dict) -> bool:
     # render owns no cell, and has no neighbour to generate the ground its edge would lose.
     from src.arnis_cmd import arnis_version as _arnis_version
     _cr_ok = settings.get("canonical_regions") and _arnis_version(str(exe)) >= (3, 1, 8)
+    # Voxy LOD: one database per world, keyed on the world seed, written as the cells are
+    # written. Meld renders each cell into its own world and merges the REGION FILES into
+    # the master, so N cells produce N caches that cannot be combined - and all but the
+    # first would be thrown away with the cell folder. Asked for on a multi-cell run it
+    # would therefore cost time and disk on every cell for nothing, so it is withheld
+    # there and the user is told why once.
+    _voxy_ok = bool(settings.get("voxy_lod"))
+    if _voxy_ok:
+        with _RUN_LOCK:
+            _total = int(_RUN.get("total") or 1)
+        if _total > 1:
+            _voxy_ok = False
+            if not _VOXY_WARNED:
+                _VOXY_WARNED.add(1)
+                log("  Voxy LOD skipped: it builds one cache per world and this run has "
+                    f"{_total} cells, which merge into a single world. Render a "
+                    "single-cell project to pregenerate the LOD.")
     cmd = build_arnis_cmd(str(exe), arnis_bbox, out,
-                          {**settings, "canonical_regions": bool(_cr_ok)},
+                          {**settings, "canonical_regions": bool(_cr_ok),
+                           "voxy_lod": _voxy_ok},
                           origin, elevation, seed,
                           osm_file=job.get("osm_file"),
                           loot_table=str(_lt) if _lt.exists() else None,
@@ -4798,6 +4818,7 @@ def _submit_cells(cells: list[dict], osm_files: dict | None = None,
                     est_mb=est_regions * _mb_per_region(PROJECT.settings(), PROJECT.elevation()),
                     actual_mb=None, phase="generating")
     _OVERTURE_FAIL.clear()   # per-run counter, see the note next to it
+    _VOXY_WARNED.clear()
     # Hours of work with no input events looks exactly like an idle machine to every power
     # policy there is. Released when the run ends (or is stopped) in _on_cell_complete.
     power.acquire()
@@ -4868,6 +4889,7 @@ def _start_generation(cells: list[dict], reset_timing: bool = False) -> tuple[li
                     est_mb=est_regions * _mb_per_region(PROJECT.settings(), PROJECT.elevation()),
                     actual_mb=None, phase="prefetch")
     _OVERTURE_FAIL.clear()   # per-run counter, see the note next to it
+    _VOXY_WARNED.clear()
     with _PREFETCH_LOCK:
         _PREFETCH.update(active=True, done=False, chunks=[], started=time.time(), phase="osm",
                          terrain={"done": 0, "total": 0, "ok": 0, "failed": 0},
