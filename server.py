@@ -2217,6 +2217,11 @@ _META_SKIP_SETTINGS = {
     # the world byte-identical either way, and phase2_timers only decides whether a log line is
     # printed. Importing a world must never flip any of them on the importing machine.
     "canonical_regions", "osm_sidecars", "parse_fast_json", "phase2_timers",
+    # The Mapillary token. This sidecar is written INTO the world folder, and a world folder
+    # is the thing people zip up and hand to someone else - so a credential must not be in
+    # it. Which facades the world was built with still travels; the key to fetch them again
+    # does not.
+    "mapillary_token",
 }
 
 
@@ -2360,25 +2365,35 @@ def resolve_arnis_exe() -> Path | None:
     return found
 
 
-_ARNIS_HELP_CACHE: dict = {}
+# The generator options Meld only emits when the binary advertises them. The UI asks for
+# this list so a toggle for a flag the deployed generator does not have is hidden rather
+# than shown doing nothing - which is how "the facade checkbox is broken" bug reports get
+# written about a binary that simply predates facades.
+#
+# The probe itself lives in arnis_cmd, beside the code that emits the flags, and its cache
+# is keyed on the exe path. server.py used to carry a second copy of the same probe with a
+# second cache; that one was never called, and two caches over one binary is a way for the
+# UI and the command line to disagree after an update.
+ARNIS_CAP_FLAGS = (
+    "--voxy-lod", "--body", "--overture-source", "--building-facades",
+    "--facade-detail", "--facade-px", "--mapillary-facades", "--mapillary-facade-mode",
+)
 
 
 def _arnis_supports(flag: str) -> bool:
-    """Whether the arnis binary advertises `flag` in --help (cached per exe path). Lets Meld
-    pass new flags like --stream-to-disk only when the deployed binary actually has them, so an
-    older binary never dies on an unknown argument."""
+    """Whether the resolved arnis binary advertises `flag` in its own --help."""
+    return arnis_cmd.arnis_supports(str(resolve_arnis_exe() or ""), flag)
+
+
+@app.route("/api/arnis-caps", methods=["GET"])
+def api_arnis_caps():
+    """Which of the newer generator options this binary accepts, for the settings UI."""
     exe = resolve_arnis_exe()
-    if not exe:
-        return False
-    key = str(exe)
-    if key not in _ARNIS_HELP_CACHE:
-        try:
-            out = subprocess.run([str(exe), "--help"], capture_output=True, text=True,
-                                 timeout=20, encoding="utf-8", errors="replace")
-            _ARNIS_HELP_CACHE[key] = (out.stdout or "") + (out.stderr or "")
-        except Exception:
-            _ARNIS_HELP_CACHE[key] = ""
-    return flag in _ARNIS_HELP_CACHE[key]
+    return jsonify({
+        "exe": str(exe or ""),
+        "version": ".".join(str(p) for p in arnis_cmd.arnis_version(str(exe or ""))),
+        "flags": {f: _arnis_supports(f) for f in ARNIS_CAP_FLAGS},
+    })
 
 
 # ── stop + governor helpers ────────────────────────────────────────────────
@@ -2854,6 +2869,14 @@ def _runner(job: dict, state: dict) -> bool:
         child_env["ARNIS_PHASE_MARKERS"] = "1"
     if settings.get("stream_to_disk") or cell_size >= 8:
         child_env["ARNIS_STREAM_TO_DISK"] = "1"
+    # Mapillary token for arnis >= 3.2.0 facades. Passed through the environment and never
+    # on the command line: argv is readable by any other process on the machine, and this
+    # is a credential. A binary that predates the feature ignores the variable, so there is
+    # nothing to probe. Blank is the same as absent - upstream treats an empty token that
+    # way too, and an empty env var is how people unset one.
+    _mapillary_token = str(settings.get("mapillary_token") or "").strip()
+    if _mapillary_token:
+        child_env["MAPILLARY_TOKEN"] = _mapillary_token
     # Elevation source zoom: caps Arnis's terrain zoom so the whole world generates at the chosen
     # detail (auto = scale-matched). Matches the zoom the data pack downloaded, so it's a cache hit.
     child_env["ARNIS_ELEV_ZOOM"] = str(effective_elev_zoom(settings, float(origin.get("lat", 45.0))))

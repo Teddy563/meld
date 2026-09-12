@@ -622,6 +622,57 @@
         </div>
       </details>
 
+      <!-- == Generator 3.2.0 options ==========================================
+           Options that only exist in newer generators. The whole drawer stays
+           hidden until /api/arnis-caps says the deployed binary advertises at
+           least one of them, and each row hides itself individually - a control
+           that silently does nothing is worse than no control, and "is my
+           generator new enough" is not a question a user should have to answer
+           by reading a version number. -->
+      <details class="drawer" id="gen32Drawer" style="display:none">
+        <summary>Generator options &middot; 3.2.0
+          <span class="i" title="Options the newer generator adds: Voxy LOD pregeneration, Moon and Mars, the Overture transport, and building facades. Only the ones your generator actually supports are shown.">i</span></summary>
+        <div class="dbody">
+          <label class="cap32" data-cap="--voxy-lod" style="font-size:12px;display:flex;align-items:center;gap:6px">
+            <input id="voxyLod" type="checkbox" style="width:auto"> Voxy LOD pregeneration
+            <span class="i" title="Builds the Voxy mod's LOD cache while the world is generated, so it renders to the horizon the first time you join instead of needing /voxy import current. Java only, and it forces lighting to be baked - unlit LOD terrain renders black. Costs extra time and disk per cell.">i</span></label>
+          <label class="cap32" data-cap="--body" style="font-size:12px;margin-top:6px">Celestial body
+            <span class="i" title="Moon and Mars use NASA elevation at their own fixed scale and carry no map data at all, so every object option - buildings, roads, trees, caves, props - is ignored for them. Earth is the normal world.">i</span>
+            <select id="celestialBody" style="width:110px">
+              <option value="earth">Earth</option><option value="moon">Moon</option><option value="mars">Mars</option>
+            </select></label>
+          <label class="cap32" data-cap="--overture-source" style="font-size:12px;margin-top:6px">Overture source
+            <span class="i" title="Which transport Overture building data is read through. Auto reads vector tiles and falls back to the Parquet partitions. Tiles refuses to fall back, so a broken archive shows up as an error instead of a slow render. Parquet is the old path, and still wins on continent-sized areas.">i</span>
+            <select id="overtureSource" style="width:110px">
+              <option value="auto">auto</option><option value="tiles">tiles</option><option value="parquet">parquet</option>
+            </select></label>
+          <label class="cap32" data-cap="--building-facades" style="font-size:12px;margin-top:6px;display:flex;align-items:center;gap:6px">
+            <input id="buildingFacades" type="checkbox" style="width:auto"> Preset building facades
+            <span class="i" title="Hangs a premade facade photograph on every building, picked by what kind of building it is. Needs no account and no download. Java 1.21.4 and newer only. Turns the Mapillary facades off - both hang panels on the same walls.">i</span></label>
+          <label class="cap32" data-cap="--mapillary-facades" style="font-size:12px;margin-top:6px">Mapillary token
+            <span class="i" title="A free API token from mapillary.com/developer. With one, buildings get their real wall colours, windows and doors from street-level photographs of that street. Without one, nothing here runs. The token is stored with this project, is never written into a shared preset or into the world folder, and is passed to the generator through its environment rather than on the command line.">i</span>
+            <input id="mapillaryToken" type="password" autocomplete="off" placeholder="MLY|..." style="width:100%;font-size:11px"></label>
+          <label class="cap32" data-cap="--mapillary-facades" style="font-size:12px;margin-top:6px;display:flex;align-items:center;gap:6px">
+            <input id="mapillaryFacadesOff" type="checkbox" style="width:auto"> Keep the token, skip the facades
+            <span class="i" title="The facades switch themselves on as soon as a token is present. Tick this to keep the token stored - for the coverage probe, or for a later run - without spending the download and the extra work on this one.">i</span></label>
+          <label class="cap32" data-cap="--mapillary-facade-mode" style="font-size:12px;margin-top:6px">Facade mode
+            <span class="i" title="Photos hangs the photograph itself as a flat panel on the wall's true line, so a diagonal wall gets one quad instead of a staircase - Java 1.21.4+ only. Blocks picks the nearest palette block for each cell's colour and places windows and doors as real blocks, which works on every world format.">i</span>
+            <select id="mapillaryFacadeMode" style="width:110px">
+              <option value="photos">photos</option><option value="blocks">blocks</option>
+            </select></label>
+          <label class="cap32" data-cap="--facade-detail" style="font-size:12px;margin-top:6px">Facade detail
+            <span class="i" title="How large a texture atlas the facade panels may fill. Standard fits any graphics card the game runs on. High is sharper and wants a modern card on whatever machine opens the world - an atlas that will not fit makes the game drop the world's resource pack entirely.">i</span>
+            <select id="facadeDetail" style="width:110px">
+              <option value="standard">standard</option><option value="high">high</option>
+            </select></label>
+          <label class="cap32" data-cap="--facade-px" style="font-size:12px;margin-top:6px">Facade resolution
+            <span class="i" title="Texture pixels per block on the facade panels. Lowered automatically when the panels would not fit the atlas the detail level allows.">i</span>
+            <select id="facadePx" style="width:110px">
+              <option value="4">4 px</option><option value="8">8 px</option><option value="16">16 px</option><option value="32">32 px</option>
+            </select></label>
+        </div>
+      </details>
+
       <!-- == Generation performance ==============================================
            Every speed knob in ONE place, manual first. The mode picker on top only
            decides WHO turns them; the numbers stay visible and readable in all three
@@ -2398,6 +2449,19 @@ async function refreshState() {
   }
   if ($('staggerOn')) $('staggerOn').checked = st.cpu_stagger_enabled !== false;
   if ($('osmSidecars')) $('osmSidecars').checked = st.osm_sidecars !== false;
+  // Generator 3.2.0 options. Each default matches the generator's own, so a project that
+  // never touches one keeps rendering the world it rendered before.
+  if ($('voxyLod')) $('voxyLod').checked = !!st.voxy_lod;
+  if ($('celestialBody')) $('celestialBody').value = st.body || 'earth';
+  if ($('overtureSource')) $('overtureSource').value = st.overture_source || 'auto';
+  if ($('buildingFacades')) $('buildingFacades').checked = !!st.building_facades;
+  if ($('mapillaryToken')) $('mapillaryToken').value = st.mapillary_token || '';
+  // Tri-state: null follows the token (the generator's own behaviour), false is the only
+  // answer that has to be said out loud, so the box means "off" and nothing else.
+  if ($('mapillaryFacadesOff')) $('mapillaryFacadesOff').checked = st.mapillary_facades === false;
+  if ($('mapillaryFacadeMode')) $('mapillaryFacadeMode').value = st.mapillary_facade_mode || 'photos';
+  if ($('facadeDetail')) $('facadeDetail').value = st.facade_detail || 'standard';
+  if ($('facadePx')) $('facadePx').value = String(st.facade_px || '16');
   if ($('staggerAdaptive')) $('staggerAdaptive').checked = st.cpu_stagger_adaptive !== false;
   // Generation performance: mode + the two new budgets. A server that has never heard of the
   // governor sends none of these keys, _govSupported stays false, and applyGovMode() collapses
@@ -5454,6 +5518,47 @@ if ($('staggerOn'))
   $('staggerOn').addEventListener('change', () => { api('/api/settings', { cpu_stagger_enabled: $('staggerOn').checked }); syncStaggerStep(); });
 if ($('osmSidecars'))
   $('osmSidecars').addEventListener('change', () => { api('/api/settings', { osm_sidecars: $('osmSidecars').checked }); });
+
+// ── generator 3.2.0 options ────────────────────────────────────────────────────────────
+// One listener per control, and one capability fetch that decides what is on screen at all.
+[['voxyLod', 'voxy_lod', 'checked'],
+ ['celestialBody', 'body', 'value'],
+ ['overtureSource', 'overture_source', 'value'],
+ ['buildingFacades', 'building_facades', 'checked'],
+ ['mapillaryFacadeMode', 'mapillary_facade_mode', 'value'],
+ ['facadeDetail', 'facade_detail', 'value'],
+ ['facadePx', 'facade_px', 'value']].forEach(([id, key, prop]) => {
+  const el = $(id);
+  if (el) el.addEventListener('change', () => api('/api/settings', { [key]: el[prop] }));
+});
+// The token is typed, not picked, so it saves on blur rather than on every keystroke.
+if ($('mapillaryToken'))
+  $('mapillaryToken').addEventListener('change', () => {
+    api('/api/settings', { mapillary_token: $('mapillaryToken').value.trim() });
+  });
+// null, not true, for the unticked half: "follow the token" is what the generator does on
+// its own, and storing true would pin the answer if that default ever moved.
+if ($('mapillaryFacadesOff'))
+  $('mapillaryFacadesOff').addEventListener('change', () => {
+    api('/api/settings', { mapillary_facades: $('mapillaryFacadesOff').checked ? false : null });
+  });
+
+// Hide every row the deployed generator cannot honour, and the whole drawer if it can
+// honour none of them. Failing quietly to "hidden" is deliberate: an old server has no
+// /api/arnis-caps, and showing controls it cannot serve would be the worse guess.
+api('/api/arnis-caps')
+  .then(caps => {
+    if (!caps || !caps.flags) return;
+    let any = false;
+    document.querySelectorAll('.cap32').forEach(el => {
+      const ok = !!caps.flags[el.dataset.cap];
+      el.style.display = ok ? '' : 'none';
+      any = any || ok;
+    });
+    const drawer = $('gen32Drawer');
+    if (drawer) drawer.style.display = any ? '' : 'none';
+  })
+  .catch(() => {});
 if ($('staggerAdaptive'))
   $('staggerAdaptive').addEventListener('change', () => api('/api/settings', { cpu_stagger_adaptive: $('staggerAdaptive').checked }));
 syncStaggerStep();

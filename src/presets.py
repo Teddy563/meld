@@ -93,6 +93,10 @@ _MACHINE_KEYS = frozenset({
     # renders and measures, and a shared preset must not flip a stranger's build onto an
     # experimental parser or an unbuilt region-write path.
     "canonical_regions", "osm_sidecars", "parse_fast_json", "phase2_timers",
+    # A Mapillary API token. A preset is made to be shared - posted in a Discord thread,
+    # mailed to someone rebuilding the same city - and a credential must not ride along in
+    # it. The recipient supplies their own; the free tier costs them nothing.
+    "mapillary_token",
     # Filesystem paths (also caught by the suffix rule; named here so the list reads whole).
     "master_world_dir",
 })

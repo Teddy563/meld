@@ -91,6 +91,76 @@ def version() -> str:
     return ""
 
 
+# The generator options Meld knows how to drive that arrived after the 3.1.8 fork, so
+# `--arnis-caps` can say in one screen which generation a binary belongs to. Listing them
+# here rather than probing every flag Meld emits keeps the report about the question people
+# actually have - "will my facades/Voxy/Moon toggles do anything with this binary?".
+_CAP_FLAGS_3_2 = (
+    "--voxy-lod", "--body", "--overture-source", "--building-facades",
+    "--building-facades-dir", "--facade-detail", "--facade-px",
+    "--mapillary-facades", "--mapillary-facade-mode", "--mapillary-probe",
+)
+
+
+def arnis_caps() -> int:
+    """`--arnis-caps`: which arnis 3.2.0 options the resolved generator advertises.
+
+    Meld gates every new flag on the binary's own --help, so a toggle that appears to do
+    nothing is almost always a binary that predates the flag. This prints that answer
+    directly instead of leaving it to be inferred from a silent render.
+    """
+    import server  # noqa: PLC0415
+    from src import arnis_cmd  # noqa: PLC0415
+    applog.setup()
+    exe = server.resolve_arnis_exe()
+    if not exe:
+        print("arnis NOT FOUND")
+        return 1
+    print(f"arnis       {exe}")
+    ver = arnis_cmd.arnis_version(exe)
+    print(f"version     {'.'.join(str(p) for p in ver) if ver else '(unreported)'}")
+    have = [f for f in _CAP_FLAGS_3_2 if arnis_cmd.arnis_supports(exe, f)]
+    for flag in _CAP_FLAGS_3_2:
+        print(f"  {'yes' if flag in have else ' no'}  {flag}")
+    print(f"\n{len(have)}/{len(_CAP_FLAGS_3_2)} of the 3.2.0 options are available.")
+    return 0
+
+
+def print_arnis_cmd(argv: list[str]) -> int:
+    """`--print-arnis-cmd`: the exact command line one cell of the current project runs.
+
+    The thing people reach for when a render comes out wrong and the question is whether
+    Meld asked for what they ticked. It builds the real command through the real builder -
+    a reimplementation here would be able to disagree with what actually runs, which is the
+    one thing this command must not do.
+
+    No token can leak: build_arnis_cmd never puts MAPILLARY_TOKEN on the command line, and
+    this prints nothing but the command line.
+    """
+    import shlex  # noqa: PLC0415
+
+    import server  # noqa: PLC0415
+    from src import arnis_cmd  # noqa: PLC0415
+    applog.setup()
+    exe = server.resolve_arnis_exe()
+    if not exe:
+        print("arnis NOT FOUND")
+        return 1
+    data = server.PROJECT.load()
+    settings = server.PROJECT.settings()
+    sel = server.PROJECT.load_selection()
+    bbox = (sel or {}).get("bbox") or {}
+    if any(bbox.get(k) is None for k in ("south", "west", "north", "east")):
+        print("No area selected in this project - open Meld and pick one first.")
+        return 1
+    out = _arg_value(argv, "--output-dir") or str(server.PROJECT.cells_dir / "cli-preview")
+    cmd = arnis_cmd.build_arnis_cmd(
+        exe, bbox, out, settings, data.get("origin") or {},
+        data.get("elevation"), int((data.get("elevation") or {}).get("seed") or 0))
+    print(" ".join(shlex.quote(a) for a in cmd))
+    return 0
+
+
 def check() -> int:
     """`--check`: say what is present without starting or installing anything."""
     import platform
@@ -124,6 +194,13 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--check" in argv:
         return check()
+    # Both are read-only reports about the generator, and both sit above the single-instance
+    # lock for the same reason --pick-folder does: asking what the binary supports must work
+    # while a render is running, which is exactly when the question comes up.
+    if "--arnis-caps" in argv:
+        return arnis_caps()
+    if "--print-arnis-cmd" in argv:
+        return print_arnis_cmd(argv)
     if "--pick-folder" in argv:
         # A folder picker, as a mode of THIS executable.
         #

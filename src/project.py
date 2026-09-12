@@ -250,6 +250,36 @@ def default_settings() -> dict:
         # carriageway ramps instead of stepping on terrain contours.
         "river_bed_v1": False,
         "road_grade": False,
+        # ── arnis 3.2.0 options ───────────────────────────────────────────────────────
+        # Every one of these needs a generator that advertises the matching flag; against
+        # the 3.1.8 fork arnis_cmd drops them all and the command line is 1.9.8's exactly.
+        # Defaults chosen to match the generator's own, so a project that never touches
+        # them renders the same world before and after the version bump.
+        #
+        # Voxy LOD pregeneration: the world renders to the horizon on first join instead
+        # of needing /voxy import current. Java only, and it implies --bake-lighting
+        # because unlit LOD terrain renders black.
+        "voxy_lod": False,
+        # Which celestial body to generate. moon/mars carry no OSM data and drive their
+        # own scale, so every object option is ignored for them.
+        "body": "earth",
+        # Which transport Overture buildings are read through: auto (vector tiles falling
+        # back to Parquet), tiles (no fallback, so a broken archive is visible rather than
+        # merely slow), or parquet.
+        "overture_source": "auto",
+        # Premade facade photographs picked by building type. Needs no token, Java 1.21.4+
+        # only, and it turns the Mapillary facades off - both hang panels on the same wall.
+        "building_facades": False,
+        # Mapillary street-level facades. The token alone turns them on, which is why the
+        # switch is a tri-state: None follows the token, False keeps the token and skips
+        # the download. The token itself is a credential - it is never written into a
+        # preset or a world's metadata, and it reaches the generator through the child's
+        # environment rather than on the command line.
+        "mapillary_token": "",
+        "mapillary_facades": None,
+        "mapillary_facade_mode": "photos",
+        "facade_detail": "standard",
+        "facade_px": "16",
         # Pre-parsed OSM tile sidecars (.osmbin next to each cached tile .json). Cuts the
         # repeat-render decode cost (measured 946 -> 429 ms/cell) at the price of roughly
         # two thirds extra OSM cache size. On by default; turn off on tight disks. The

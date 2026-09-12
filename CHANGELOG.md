@@ -4,6 +4,37 @@ All notable changes to Meld are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Meld follows
 [Semantic Versioning](https://semver.org).
 
+## [1.9.9] - 2026-09-12
+
+Talks to the arnis 3.2.0 fork. Every option this release adds is gated on what the
+generator itself advertises, so the same Meld build drives the 3.1.8 fork and a 3.2.0
+one, and against 3.1.8 the command line is byte-identical to 1.9.8's.
+
+### Added
+- **Generator 3.2.0 options**, in their own settings drawer: Voxy LOD pregeneration,
+  Moon and Mars worlds, the Overture vector-tile transport, preset building facades,
+  and the Mapillary street-photograph facades with their mode, detail and resolution.
+  Each row hides itself when the deployed generator does not advertise the matching
+  flag, and the drawer hides entirely when none of them are available - a control that
+  silently does nothing is worse than no control.
+- **`meld --arnis-caps`**: which 3.2.0 options the resolved generator accepts, and the
+  version it reports. The direct answer to "why does this toggle do nothing".
+- **`meld --print-arnis-cmd`**: the exact command line one cell of the current project
+  runs, built through the same builder the render uses, so it cannot disagree with what
+  actually runs.
+- **`/api/arnis-caps`**, the endpoint behind both the drawer and the CLI report.
+
+### Security
+- The Mapillary API token is passed to the generator in its environment, never on the
+  command line, because argv is readable by other processes on the machine. It is also
+  stripped from shared presets and from the `meld-world.json` sidecar written into the
+  world folder - both are things people hand to someone else.
+
+### Changed
+- `server.py` carried a second, never-called copy of the generator capability probe with
+  its own cache. Removed; there is now one probe and one cache, so the settings UI and
+  the command line cannot disagree about what the binary supports after an update.
+
 ## [1.9.8] - 2026-08-27
 
 Bundles arnis fork 3.1.8. Generation is much faster and tunes itself, a long

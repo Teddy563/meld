@@ -584,7 +584,69 @@ def build_arnis_cmd(arnis_exe: str, bbox: dict, output_path: str,
         um = _mix_spec(settings.get("untagged_mix"))
         if um:
             cmd += ["--land-mix", um]
+    cmd += upstream_3_2_flags(settings, arnis_exe)
     return cmd
+
+
+# Options that arrived with upstream arnis 3.2.0 and do not exist in the 3.1.8 fork.
+#
+#   (settings key, flag, kind, generator default, allowed values)
+#
+# "bool"  emits the bare flag when the setting is truthy.
+# "value" emits flag + value only when the value is an allowed one that is NOT the
+#         generator's own default - so a project that leaves these alone produces the
+#         exact command line Meld 1.9.8 produced, and the byte-identical-output
+#         guarantee survives the version bump.
+#
+# --mapillary-token is deliberately absent: it is a credential, and argv is readable
+# by any other process on the machine (ps, Task Manager, a crash dumper). It goes to
+# the child's environment as MAPILLARY_TOKEN instead, which upstream reads and which
+# clap is told to keep out of --help.
+_UPSTREAM_3_2_OPTIONS: tuple[tuple[str, str, str, str | None, tuple[str, ...] | None], ...] = (
+    ("voxy_lod", "--voxy-lod", "bool", None, None),
+    ("building_facades", "--building-facades", "bool", None, None),
+    ("body", "--body", "value", "earth", ("earth", "moon", "mars")),
+    ("overture_source", "--overture-source", "value", "auto", ("auto", "tiles", "parquet")),
+    ("facade_detail", "--facade-detail", "value", "standard", ("standard", "high")),
+    ("facade_px", "--facade-px", "value", "16", ("4", "8", "16", "32")),
+    ("mapillary_facade_mode", "--mapillary-facade-mode", "value",
+     "photos", ("blocks", "photos")),
+)
+
+
+def upstream_3_2_flags(settings: dict, arnis_exe: str) -> list[str]:
+    """The arnis 3.2.0 options this binary actually advertises.
+
+    Every flag is gated on arnis_supports(), so one Meld build drives both the 3.1.8
+    fork and a 3.2.0 one: against 3.1.8 each probe answers False, this returns [], and
+    nothing about the command line changes. That is the whole compatibility mechanism -
+    no version parsing, because a locally built or side-loaded binary does not report a
+    version honestly enough to branch on.
+    """
+    out: list[str] = []
+    for key, flag, kind, default, allowed in _UPSTREAM_3_2_OPTIONS:
+        if not arnis_supports(arnis_exe, flag):
+            continue
+        raw = settings.get(key)
+        if kind == "bool":
+            if raw:
+                out.append(flag)
+            continue
+        if raw in (None, ""):
+            continue
+        val = str(raw).strip().lower()
+        if allowed and val not in allowed:
+            continue
+        if val != default:
+            out += [flag, val]
+    # Tri-state. Upstream turns the facades on by default as soon as a token exists, so
+    # there is nothing to emit to enable them - only an explicit "I have a token and I
+    # do not want to spend the download on this run" needs saying. None means "follow
+    # the token", which is upstream's own behaviour and the setting's default.
+    if (settings.get("mapillary_facades") is False
+            and arnis_supports(arnis_exe, "--mapillary-facades")):
+        out += ["--mapillary-facades", "false"]
+    return out
 
 
 # Tree size tiers in display order + their default weight (giant off = 0, like the old checkbox).

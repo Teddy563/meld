@@ -7,4 +7,4 @@ rule the Arnis fork obeys after the transform_point fix
 (light-docs/03-seam-merge-and-unrendered-regions.md).
 """
 
-__version__ = "1.9.8"
+__version__ = "1.9.9"
