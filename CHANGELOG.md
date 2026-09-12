@@ -11,7 +11,7 @@ generator itself advertises, so the same Meld build drives the 3.1.8 fork and a 
 one, and against 3.1.8 the command line is byte-identical to 1.9.8's.
 
 ### Added
-- **Generator 3.2.0 options**, in their own settings drawer: Voxy LOD pregeneration,
+- **Generator 3.2.0 options**, as a plain section of Settings: Voxy LOD pregeneration,
   Moon and Mars worlds, the Overture vector-tile transport, preset building facades,
   and the Mapillary street-photograph facades with their mode, detail and resolution.
   Each row hides itself when the deployed generator does not advertise the matching
@@ -23,6 +23,14 @@ one, and against 3.1.8 the command line is byte-identical to 1.9.8's.
   runs, built through the same builder the render uses, so it cannot disagree with what
   actually runs.
 - **`/api/arnis-caps`**, the endpoint behind both the drawer and the CLI report.
+- **The map shows the body you are generating.** Pick Moon or Mars and the basemap becomes
+  that body's shaded relief (NASA LRO / MGS MOLA via OpenPlanetaryMap), so the area is picked
+  on the world being built - the coordinates were always read on that body, the map just did
+  not say so. Earth is unchanged, and the planetary tiles are only fetched while that body is
+  selected.
+- **Voxy LOD works in Classic mode.** It writes a cache beside the world and changes no block
+  in it, so gating it behind Enhanced only hid a render option behind a look-of-the-world
+  switch. The Classic guarantee is unchanged: with the toggle off, nothing is emitted.
 - **Cell visibility is a map control**: an eye button under the paint triangle, open when the
   cells are drawn and struck through when they are hidden. It used to be a checkbox under the
   Generate buttons, where an open dropdown drew over it, and it never belonged in the settings

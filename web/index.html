@@ -491,6 +491,8 @@
     </div>
   </div>
   <div id="map"></div>
+  <!-- Says which world you are looking at, only while it is not Earth. -->
+  <div id="bodyMapNote" style="display:none;position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:900;max-width:min(560px,70vw);padding:6px 12px;font-size:12px;border-radius:var(--r);background:var(--glass);border:1px solid var(--hair);box-shadow:var(--ring);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);pointer-events:none"></div>
   <div id="projOverlay" style="display:none;position:fixed;top:12px;left:312px;width:460px;height:min(86vh,860px);max-width:calc(100vw - 324px);z-index:6000;background:var(--glass);border:1px solid var(--hair);border-radius:var(--r);box-shadow:var(--ring);backdrop-filter:var(--blur);-webkit-backdrop-filter:var(--blur);flex-direction:column;overflow:hidden">
     <div id="projGalHeader" style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--hair);cursor:move;user-select:none">
       <div style="font-weight:700;font-size:14px;color:var(--acc2,#d6ba58)" title="Drag to move">🌍 Projects</div>
@@ -626,25 +628,30 @@
       </details>
 
       <!-- == Generator 3.2.0 options ==========================================
-           Options that only exist in newer generators. The whole drawer stays
-           hidden until /api/arnis-caps says the deployed binary advertises at
-           least one of them, and each row hides itself individually - a control
-           that silently does nothing is worse than no control, and "is my
-           generator new enough" is not a question a user should have to answer
-           by reading a version number. -->
-      <details class="drawer" id="gen32Drawer" style="display:none">
-        <summary>Generator options &middot; 3.2.0
-          <span class="i" title="Options the newer generator adds: Voxy LOD pregeneration, Moon and Mars, the Overture transport, and building facades. Only the ones your generator actually supports are shown.">i</span></summary>
-        <div class="dbody">
+           Plain settings, not a drawer: they are ordinary render options and hiding
+           them behind one more click only made them hard to find. The section stays
+           hidden until /api/arnis-caps says the deployed binary advertises at least
+           one of them, and each row hides itself individually - a control that
+           silently does nothing is worse than no control, and "is my generator new
+           enough" is not a question a user should have to answer by reading a
+           version number. -->
+      <div id="gen32Drawer" style="display:none;border-top:1px solid var(--line);margin-top:10px;padding-top:9px">
+        <div style="font-weight:600;color:var(--acc2);font-size:12px;margin-bottom:6px">Generator 3.2.0
+          <span class="i" title="Options the newer generator adds: Voxy LOD pregeneration, Moon and Mars, the Overture transport, and building facades. Only the ones your generator actually supports are shown.">i</span></div>
+        <div>
+          <!-- Outside the Classic/Enhanced switch on purpose: Voxy writes a cache beside
+               the world and changes no block in it, so it is a render option, not a
+               generation style. -->
+          <label class="cap32" data-cap="--voxy-lod" style="font-size:12px;display:flex;align-items:center;gap:6px;margin-bottom:8px">
+            <input id="voxyLod" type="checkbox" style="width:auto"> Voxy LOD pregeneration
+            <span class="i" title="Builds the Voxy mod's LOD cache while the world is generated, so it renders to the horizon the first time you join instead of needing /voxy import current. Works in Classic too: it writes a cache next to the world and changes no block in it. It forces lighting to be baked - unlit LOD terrain renders black - and costs extra time and disk. One cache per world: a multi-cell render merges many cell worlds into one, and the caches cannot be merged with them, so Meld builds it only for a single-cell render and says so in the log when it skips it.">i</span></label>
+
           <label style="font-size:12px">Generation
             <span class="i" title="Classic renders exactly the way this fork always has: none of the options below are sent, whatever they are set to, so a project matches the cells it rendered before. Enhanced sends them. The switch exists because everything under it is new, and some of it calls an outside service - keeping the old path one click away is the point.">i</span>
             <select id="genMode32" style="width:110px">
               <option value="classic">Classic</option><option value="enhanced">Enhanced</option>
             </select></label>
           <div id="gen32Body" style="opacity:0.45;pointer-events:none">
-          <label class="cap32" data-cap="--voxy-lod" style="font-size:12px;display:flex;align-items:center;gap:6px">
-            <input id="voxyLod" type="checkbox" style="width:auto"> Voxy LOD pregeneration
-            <span class="i" title="Builds the Voxy mod's LOD cache while the world is generated, so it renders to the horizon the first time you join instead of needing /voxy import current. It forces lighting to be baked - unlit LOD terrain renders black - and costs extra time and disk. One cache per world: a multi-cell render merges many cell worlds into one, and the caches cannot be merged with them, so Meld builds it only for a single-cell render and says so in the log when it skips it.">i</span></label>
           <label class="cap32" data-cap="--body" style="font-size:12px;margin-top:6px">Celestial body
             <span class="i" title="Moon and Mars use NASA elevation at their own fixed scale and carry no map data at all, so every object option - buildings, roads, trees, caves, props - is ignored for them. Earth is the normal world.">i</span>
             <select id="celestialBody" style="width:110px">
@@ -680,7 +687,7 @@
             </select></label>
           </div>
         </div>
-      </details>
+      </div>
 
       <!-- == Generation performance ==============================================
            Every speed knob in ONE place, manual first. The mode picker on top only
@@ -1475,8 +1482,43 @@ const map = L.map('map').setView([46.0, 25.0], 6);
 const cellRenderer = L.canvas({ padding: 0.5 });
 // Default OpenStreetMap basemap (standard texture) in both themes. Dark mode only
 // dims the tiles via the .leaflet-tile CSS filter; the texture stays OSM.
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+// Basemaps, one per body. Moon and Mars are generated from NASA elevation at the
+// coordinates you pick, so picking them on an Earth street map is guesswork: select
+// Moon and the map becomes the Moon, and the latitude and longitude under the cursor
+// are the ones the generator reads off the LOLA / MOLA rasters. Tiles are
+// OpenPlanetaryMap's (NASA/USGS data); they only load while that body is selected.
+const BASEMAPS = {
+  earth: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+           opts: { maxZoom: 19, attribution: '© OpenStreetMap' } },
+  moon:  { url: 'https://cartocdn-gusc.global.ssl.fastly.net/opmbuilder/api/v1/map/named/opm-moon-basemap-v0-1/1/{z}/{x}/{y}.png',
+           opts: { maxZoom: 9, attribution: 'Moon · NASA LRO / USGS via OpenPlanetaryMap' } },
+  mars:  { url: 'https://cartocdn-gusc.global.ssl.fastly.net/opmbuilder/api/v1/map/named/opm-mars-basemap-v0-2/1/{z}/{x}/{y}.png',
+           opts: { maxZoom: 9, attribution: 'Mars · NASA MGS MOLA / USGS via OpenPlanetaryMap' } },
+};
+let baseLayer = null;
+let baseBody = null;
+
+function setBasemap(body) {
+  const key = BASEMAPS[body] ? body : 'earth';
+  if (key === baseBody) return;
+  const next = L.tileLayer(BASEMAPS[key].url, BASEMAPS[key].opts);
+  next.addTo(map);
+  if (baseLayer) map.removeLayer(baseLayer);
+  baseLayer = next;
+  baseBody = key;
+  // Those basemaps stop well before OSM's zoom 19, and Leaflet keeps the view where it
+  // is - which renders as a blank grey grid. Pull back to what the body actually serves.
+  const max = BASEMAPS[key].opts.maxZoom;
+  if (map.getZoom() > max) map.setZoom(max);
+  const banner = document.getElementById('bodyMapNote');
+  if (banner) {
+    banner.style.display = key === 'earth' ? 'none' : '';
+    banner.textContent = key === 'earth' ? ''
+      : `Showing ${key === 'moon' ? 'the Moon' : 'Mars'}. The area you pick is read at these `
+        + 'coordinates on that body, and it renders terrain only.';
+  }
+}
+setBasemap('earth');
 
 // Live cursor coordinates: lat/lon + Minecraft block X/Z (origin-anchored, same
 // formula as meld/coords.block_x/z).
@@ -1589,13 +1631,14 @@ const EyeControl = L.Control.extend({
 map.addControl(new EyeControl());
 
 // Open eye when the cells are drawn, struck-through eye when they are hidden.
-const EYE_OPEN = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
-  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-  + '<path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/></svg>';
-const EYE_SHUT = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" '
-  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-  + '<path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3"/>'
-  + '<line x1="3" y1="21" x2="21" y2="3"/></svg>';
+const EYE_SVG = s => '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" '
+  + 'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + s + '</svg>';
+// Open: a wide almond with a filled pupil. Closed: the same lid dropped onto the lash line,
+// with three lashes - the shape reads as "shut", where a slash reads as "forbidden".
+const EYE_OPEN = EYE_SVG('<path d="M2 12s3.8-6.2 10-6.2S22 12 22 12s-3.8 6.2-10 6.2S2 12 2 12z"/>'
+  + '<circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/>');
+const EYE_SHUT = EYE_SVG('<path d="M2.4 10.2S6.1 15.6 12 15.6s9.6-5.4 9.6-5.4"/>'
+  + '<path d="M12 15.6V19"/><path d="M5.6 13.7 3.9 16.5"/><path d="M18.4 13.7 20.1 16.5"/>');
 
 function syncCellsEye() {
   const a = document.getElementById('cellsEyeBtn');
@@ -2509,7 +2552,10 @@ async function refreshState() {
   // Generator 3.2.0 options. Each default matches the generator's own, so a project that
   // never touches one keeps rendering the world it rendered before.
   if ($('voxyLod')) $('voxyLod').checked = !!st.voxy_lod;
-  if ($('celestialBody')) $('celestialBody').value = st.body || 'earth';
+  if ($('celestialBody')) {
+    $('celestialBody').value = st.body || 'earth';
+    if (typeof setBasemap === 'function') setBasemap($('celestialBody').value);
+  }
   if ($('overtureSource')) $('overtureSource').value = st.overture_source || 'auto';
   if ($('genMode32')) $('genMode32').value = st.gen_mode_32 || 'classic';
   // One source, derived from the two settings the generator actually reads: the presets
@@ -5582,7 +5628,7 @@ if ($('osmSidecars'))
 // ── generator 3.2.0 options ────────────────────────────────────────────────────────────
 // One listener per control, and one capability fetch that decides what is on screen at all.
 [['voxyLod', 'voxy_lod', 'checked'],
- ['celestialBody', 'body', 'value'],
+ ['celestialBody', 'body', 'value'],   // also swaps the basemap, see the listener below
  ['overtureSource', 'overture_source', 'value'],
  ['mapillaryFacadeMode', 'mapillary_facade_mode', 'value'],
  ['facadeDetail', 'facade_detail', 'value'],
@@ -5590,6 +5636,10 @@ if ($('osmSidecars'))
   const el = $(id);
   if (el) el.addEventListener('change', () => api('/api/settings', { [key]: el[prop] }));
 });
+// Picking a body swaps what the map shows, so the area is picked on the world being built.
+if ($('celestialBody'))
+  $('celestialBody').addEventListener('change', () => setBasemap($('celestialBody').value));
+
 // The token is typed, not picked, so it saves on blur rather than on every keystroke.
 if ($('mapillaryToken'))
   $('mapillaryToken').addEventListener('change', () => {

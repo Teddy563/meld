@@ -614,6 +614,12 @@ _UPSTREAM_3_2_OPTIONS: tuple[tuple[str, str, str, str | None, tuple[str, ...] | 
 )
 
 
+# Options Classic mode still allows. Voxy LOD only writes a renderer's cache beside the
+# world - no block in the world differs with it on - so it is a render option, not part of
+# the generation style the Classic/Enhanced switch exists to pin.
+_ALWAYS_AVAILABLE_3_2: frozenset[str] = frozenset({"voxy_lod"})
+
+
 def upstream_3_2_flags(settings: dict, arnis_exe: str) -> list[str]:
     """The arnis 3.2.0 options this binary actually advertises.
 
@@ -623,16 +629,21 @@ def upstream_3_2_flags(settings: dict, arnis_exe: str) -> list[str]:
     no version parsing, because a locally built or side-loaded binary does not report a
     version honestly enough to branch on.
 
-    Classic mode short-circuits the whole thing. It is the default and it is the point of
-    the switch: none of these flags are emitted, whatever the individual settings say, so a
-    project renders the command line it rendered before. Everything below is new, and some
-    of it calls an outside service.
+    Classic mode short-circuits everything the switch is actually about: the facades and
+    the Overture transport, which rewrite how the world looks and call outside services.
+    Those are the reason a one-click way back to the old command line exists.
+
+    `_ALWAYS_AVAILABLE_3_2` is the exception. Voxy LOD writes a separate cache next to the
+    world and does not change a single block in it, so gating it behind Enhanced only hid a
+    render option behind a look-of-the-world switch. The Classic guarantee still holds: with
+    the toggle off nothing is emitted, and the toggle is off by default.
     """
-    if str(settings.get("gen_mode_32") or "classic").strip().lower() != "enhanced":
-        return []
+    enhanced = str(settings.get("gen_mode_32") or "classic").strip().lower() == "enhanced"
 
     out: list[str] = []
     for key, flag, kind, default, allowed in _UPSTREAM_3_2_OPTIONS:
+        if not enhanced and key not in _ALWAYS_AVAILABLE_3_2:
+            continue
         if not arnis_supports(arnis_exe, flag):
             continue
         raw = settings.get(key)
@@ -651,7 +662,8 @@ def upstream_3_2_flags(settings: dict, arnis_exe: str) -> list[str]:
     # there is nothing to emit to enable them - only an explicit "I have a token and I
     # do not want to spend the download on this run" needs saying. None means "follow
     # the token", which is upstream's own behaviour and the setting's default.
-    if (settings.get("mapillary_facades") is False
+    if (enhanced
+            and settings.get("mapillary_facades") is False
             and arnis_supports(arnis_exe, "--mapillary-facades")):
         out += ["--mapillary-facades", "false"]
     return out

@@ -180,10 +180,15 @@ def test_the_token_is_stripped_from_a_worlds_metadata_sidecar():
 # --- the classic / enhanced switch ---------------------------------------------------------
 
 
-@pytest.mark.parametrize("flag", ALL_NEW)
-def test_classic_mode_emits_no_new_flag_even_when_supported(monkeypatch, flag):
+# Voxy writes a cache beside the world and changes no block in it, so the switch does not
+# gate it: it is a render option, not part of the generation style Classic pins.
+CLASSIC_GATED = tuple(f for f in ALL_NEW if f != "--voxy-lod")
+
+
+@pytest.mark.parametrize("flag", CLASSIC_GATED)
+def test_classic_mode_emits_no_world_changing_flag_even_when_supported(monkeypatch, flag):
     """The switch is what lets a project go back to the command line it rendered with: in
-    classic none of these are sent, whatever the individual settings say."""
+    classic none of the flags that change the world are sent, whatever the settings say."""
     settings = {
         "gen_mode_32": "classic",
         "voxy_lod": True, "building_facades": True, "body": "mars",
@@ -193,11 +198,26 @@ def test_classic_mode_emits_no_new_flag_even_when_supported(monkeypatch, flag):
     assert flag not in _cmd(monkeypatch, settings, supports=ALL_NEW)
 
 
+def test_classic_still_allows_voxy(monkeypatch):
+    """It does not change the world, so hiding it behind Enhanced only hid a render option
+    behind a look-of-the-world switch."""
+    settings = {"gen_mode_32": "classic", "voxy_lod": True}
+    assert "--voxy-lod" in _cmd(monkeypatch, settings, supports=ALL_NEW)
+
+
+def test_classic_with_voxy_off_emits_nothing(monkeypatch):
+    """The Classic guarantee: with the toggle off the command line is 1.9.8's, byte for byte."""
+    settings = {"gen_mode_32": "classic", "voxy_lod": False, "body": "mars"}
+    cmd = _cmd(monkeypatch, settings, supports=ALL_NEW)
+    assert not [a for a in cmd if a in ALL_NEW]
+
+
 def test_classic_is_the_default_when_the_key_is_absent(monkeypatch):
-    """A project stored before the switch existed has no gen_mode_32 and must stay classic."""
+    """A project stored before the switch existed has no gen_mode_32 and must stay classic:
+    its world-changing flags stay off, and it never had voxy_lod set either."""
     monkeypatch.setattr(arnis_cmd, "arnis_supports", lambda exe, flag: flag in ALL_NEW)
-    cmd = arnis_cmd.build_arnis_cmd("arnis.exe", BBOX, "out", {"voxy_lod": True}, ORIGIN, None, 1)
-    assert "--voxy-lod" not in cmd
+    cmd = arnis_cmd.build_arnis_cmd("arnis.exe", BBOX, "out", {"body": "mars"}, ORIGIN, None, 1)
+    assert "--body" not in cmd
 
 
 def test_enhanced_mode_lets_them_through(monkeypatch):

@@ -21,6 +21,8 @@ and the whole drawer hides when it knows none of them.
 So one Meld build drives both generations: against the 3.1.8 fork every probe answers no,
 nothing is emitted, and the command line is byte-identical to 1.9.8's.
 
+They are plain rows in Settings under **Generator 3.2.0**, not a drawer.
+
 Against the 3.2.0 fork as released, two of the ten light up — **Voxy LOD** and
 **celestial body**. The other eight (Overture transport, preset and Mapillary facades and
 their mode, detail and resolution settings) are ready for a generator that has them; the
@@ -47,12 +49,26 @@ Pick Moon or Mars under **Generator options · 3.2.0** and the cell renders NASA
 elevation at that body's fixed scale. They carry no map data, so every object option —
 buildings, roads, trees, caves, props — is ignored for them, by the generator, deliberately.
 
+## The map becomes the Moon, or Mars
+
+Picking a body used to leave an Earth street map on screen, which made the selection a guess:
+the latitude and longitude are read on *that body's* NASA raster, so 48.85, 2.35 with Moon
+selected is a place on the Moon, not Paris.
+
+Now the basemap follows the body — LRO shaded relief for the Moon, MGS MOLA for Mars, from
+OpenPlanetaryMap — and a line across the top says what you are looking at. Earth is
+untouched, and the planetary tiles are fetched only while that body is selected.
+
 ## Voxy LOD pregeneration
 
 Builds the [Voxy](https://modrinth.com/mod/voxy) mod's LOD cache while the world is
 generated, so it renders to the horizon the first time you join instead of needing
 `/voxy import current`. It forces lighting to be baked (unlit LOD terrain renders black)
 and costs extra time and disk.
+
+**It works in Classic as well as Enhanced.** It writes a cache beside the world and changes
+no block in it, so it is a render option, not a generation style — and the Classic guarantee
+still holds, because with the toggle off nothing is emitted at all.
 
 **One cache per world, so Meld builds it only for a single-cell render.** A multi-cell
 render generates each cell into its own world and merges the region files into the master;
