@@ -639,24 +639,27 @@
         <div style="font-weight:600;color:var(--acc2);font-size:12px;margin-bottom:6px">Generator 3.2.0
           <span class="i" title="Options the newer generator adds: Voxy LOD pregeneration, Moon and Mars, the Overture transport, and building facades. Only the ones your generator actually supports are shown.">i</span></div>
         <div>
-          <!-- Outside the Classic/Enhanced switch on purpose: Voxy writes a cache beside
-               the world and changes no block in it, so it is a render option, not a
-               generation style. -->
+          <!-- Outside the Classic/Enhanced switch on purpose. Both are asked for by name,
+               one control at a time, and emit nothing at their defaults: Voxy writes a
+               cache beside the world and changes no block in it, and Moon and Mars are not
+               a style applied to a render, they are the render. What the switch gates is
+               the other kind - features that change an ordinary Earth render without being
+               asked, like the facades upstream turns on by itself once a token exists. -->
           <label class="cap32" data-cap="--voxy-lod" style="font-size:12px;display:flex;align-items:center;gap:6px;margin-bottom:8px">
             <input id="voxyLod" type="checkbox" style="width:auto"> Voxy LOD pregeneration
             <span class="i" title="Builds the Voxy mod's LOD cache while the world is generated, so it renders to the horizon the first time you join instead of needing /voxy import current. Works in Classic too: it writes a cache next to the world and changes no block in it. It forces lighting to be baked - unlit LOD terrain renders black - and costs extra time and disk. One cache per world: a multi-cell render merges many cell worlds into one, and the caches cannot be merged with them, so Meld builds it only for a single-cell render and says so in the log when it skips it.">i</span></label>
-
-          <label style="font-size:12px">Generation
-            <span class="i" title="Classic renders exactly the way this fork always has: none of the options below are sent, whatever they are set to, so a project matches the cells it rendered before. Enhanced sends them. The switch exists because everything under it is new, and some of it calls an outside service - keeping the old path one click away is the point.">i</span>
-            <select id="genMode32" style="width:110px">
-              <option value="classic">Classic</option><option value="enhanced">Enhanced</option>
-            </select></label>
-          <div id="gen32Body" style="opacity:0.45;pointer-events:none">
           <label class="cap32" data-cap="--body" style="font-size:12px;margin-top:6px">Celestial body
             <span class="i" title="Moon and Mars use NASA elevation at their own fixed scale and carry no map data at all, so every object option - buildings, roads, trees, caves, props - is ignored for them. Earth is the normal world.">i</span>
             <select id="celestialBody" style="width:110px">
               <option value="earth">Earth</option><option value="moon">Moon</option><option value="mars">Mars</option>
             </select></label>
+
+          <label id="gen32ModeRow" style="font-size:12px">Generation
+            <span class="i" title="Classic renders exactly the way this fork always has: none of the options below are sent, whatever they are set to, so a project matches the cells it rendered before. Enhanced sends them. The switch exists because everything under it is new, and some of it calls an outside service - keeping the old path one click away is the point.">i</span>
+            <select id="genMode32" style="width:110px">
+              <option value="classic">Classic</option><option value="enhanced">Enhanced</option>
+            </select></label>
+          <div id="gen32Body" style="opacity:0.45;pointer-events:none">
           <label class="cap32" data-cap="--overture-source" style="font-size:12px;margin-top:6px">Overture source
             <span class="i" title="Which transport Overture building data is read through. Auto reads vector tiles and falls back to the Parquet partitions. Tiles refuses to fall back, so a broken archive shows up as an error instead of a slow render. Parquet is the old path, and still wins on continent-sized areas.">i</span>
             <select id="overtureSource" style="width:110px">
@@ -5688,6 +5691,15 @@ api('/api/arnis-caps')
     });
     const drawer = $('gen32Drawer');
     if (drawer) drawer.style.display = any ? '' : 'none';
+    // The switch only means something while the generator has one of the features it gates.
+    // This fork ships none of them yet, so showing a Classic/Enhanced control that changes
+    // nothing would be the same lie as showing a dead toggle. Hidden, the stored mode is
+    // untouched: install a generator that has the facades and the switch comes back with
+    // the project still set the way it was left.
+    const gated = ['--building-facades', '--overture-source', '--facade-detail', '--facade-px',
+                   '--mapillary-facades', '--mapillary-facade-mode'];
+    const row = $('gen32ModeRow');
+    if (row) row.style.display = gated.some(f => caps.flags[f]) ? '' : 'none';
   })
   .catch(() => {});
 if ($('staggerAdaptive'))

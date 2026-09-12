@@ -23,6 +23,23 @@ nothing is emitted, and the command line is byte-identical to 1.9.8's.
 
 They are plain rows in Settings under **Generator 3.2.0**, not a drawer.
 
+### About Classic / Enhanced
+
+The switch gates the features that change an ordinary Earth render *without being asked each
+time*: the facades, which upstream turns on by itself as soon as a token exists, and the
+Overture transport, which changes where buildings come from. **This fork ships none of those
+yet**, so against it the switch has nothing to gate and is hidden rather than left on screen
+doing nothing. Install a generator that has them and it comes back, with your project set the
+way you left it.
+
+Voxy LOD and the celestial body are not gated: you ask for each by name, and each emits
+nothing at its default. So Classic with Voxy off and Earth selected is still byte-identical
+to 1.9.8's command line.
+
+No account or API key is needed for anything in this release — the NASA elevation for Moon
+and Mars is public. The only thing that would need a key is the Mapillary facades, and those
+are not in this fork.
+
 Against the 3.2.0 fork as released, two of the ten light up — **Voxy LOD** and
 **celestial body**. The other eight (Overture transport, preset and Mapillary facades and
 their mode, detail and resolution settings) are ready for a generator that has them; the
@@ -66,9 +83,7 @@ generated, so it renders to the horizon the first time you join instead of needi
 `/voxy import current`. It forces lighting to be baked (unlit LOD terrain renders black)
 and costs extra time and disk.
 
-**It works in Classic as well as Enhanced.** It writes a cache beside the world and changes
-no block in it, so it is a render option, not a generation style — and the Classic guarantee
-still holds, because with the toggle off nothing is emitted at all.
+**It works in Classic as well as Enhanced** — see below.
 
 **One cache per world, so Meld builds it only for a single-cell render.** A multi-cell
 render generates each cell into its own world and merges the region files into the master;

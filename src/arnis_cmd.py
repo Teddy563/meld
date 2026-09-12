@@ -614,10 +614,18 @@ _UPSTREAM_3_2_OPTIONS: tuple[tuple[str, str, str, str | None, tuple[str, ...] | 
 )
 
 
-# Options Classic mode still allows. Voxy LOD only writes a renderer's cache beside the
-# world - no block in the world differs with it on - so it is a render option, not part of
-# the generation style the Classic/Enhanced switch exists to pin.
-_ALWAYS_AVAILABLE_3_2: frozenset[str] = frozenset({"voxy_lod"})
+# Options Classic mode still allows: the ones the user asks for by name, one control at a
+# time, and that emit nothing at all when left alone.
+#
+#   voxy_lod - writes a renderer's cache beside the world; no block in the world differs.
+#   body     - Moon and Mars are not a style applied to a render, they ARE the render, and
+#              the default (earth) emits nothing.
+#
+# What the switch is actually for is the other direction: features that change how an
+# ORDINARY Earth render looks without being asked each time - upstream turns the facades on
+# by itself as soon as a token exists, and the Overture transport changes where buildings
+# come from. Those stay gated.
+_ALWAYS_AVAILABLE_3_2: frozenset[str] = frozenset({"voxy_lod", "body"})
 
 
 def upstream_3_2_flags(settings: dict, arnis_exe: str) -> list[str]:
@@ -633,10 +641,10 @@ def upstream_3_2_flags(settings: dict, arnis_exe: str) -> list[str]:
     the Overture transport, which rewrite how the world looks and call outside services.
     Those are the reason a one-click way back to the old command line exists.
 
-    `_ALWAYS_AVAILABLE_3_2` is the exception. Voxy LOD writes a separate cache next to the
-    world and does not change a single block in it, so gating it behind Enhanced only hid a
-    render option behind a look-of-the-world switch. The Classic guarantee still holds: with
-    the toggle off nothing is emitted, and the toggle is off by default.
+    `_ALWAYS_AVAILABLE_3_2` is the exception: options the user picks explicitly, one control
+    at a time, which emit nothing when left at their default. The Classic guarantee still
+    holds for them - Voxy off and Earth selected produce no flag at all - and gating them
+    only hid deliberate choices behind a look-of-the-world switch.
     """
     enhanced = str(settings.get("gen_mode_32") or "classic").strip().lower() == "enhanced"
 

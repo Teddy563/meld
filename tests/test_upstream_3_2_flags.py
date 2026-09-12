@@ -180,9 +180,11 @@ def test_the_token_is_stripped_from_a_worlds_metadata_sidecar():
 # --- the classic / enhanced switch ---------------------------------------------------------
 
 
-# Voxy writes a cache beside the world and changes no block in it, so the switch does not
-# gate it: it is a render option, not part of the generation style Classic pins.
-CLASSIC_GATED = tuple(f for f in ALL_NEW if f != "--voxy-lod")
+# The switch gates the features that change an ordinary Earth render without being asked -
+# the facades and the Overture transport. What the user picks by name (Voxy, the body) is
+# not gated: those emit nothing at all when left alone.
+CLASSIC_FREE = ("--voxy-lod", "--body")
+CLASSIC_GATED = tuple(f for f in ALL_NEW if f not in CLASSIC_FREE)
 
 
 @pytest.mark.parametrize("flag", CLASSIC_GATED)
@@ -205,19 +207,28 @@ def test_classic_still_allows_voxy(monkeypatch):
     assert "--voxy-lod" in _cmd(monkeypatch, settings, supports=ALL_NEW)
 
 
-def test_classic_with_voxy_off_emits_nothing(monkeypatch):
-    """The Classic guarantee: with the toggle off the command line is 1.9.8's, byte for byte."""
-    settings = {"gen_mode_32": "classic", "voxy_lod": False, "body": "mars"}
+def test_classic_still_allows_the_body(monkeypatch):
+    """Moon and Mars are not a style applied to a render, they are the render."""
+    settings = {"gen_mode_32": "classic", "body": "mars"}
+    cmd = _cmd(monkeypatch, settings, supports=ALL_NEW)
+    assert cmd[cmd.index("--body") + 1] == "mars"
+
+
+def test_classic_left_alone_emits_nothing(monkeypatch):
+    """The Classic guarantee: untouched, the command line is 1.9.8's, byte for byte - the
+    two ungated options emit nothing at their defaults."""
+    settings = {"gen_mode_32": "classic", "voxy_lod": False, "body": "earth"}
     cmd = _cmd(monkeypatch, settings, supports=ALL_NEW)
     assert not [a for a in cmd if a in ALL_NEW]
 
 
 def test_classic_is_the_default_when_the_key_is_absent(monkeypatch):
     """A project stored before the switch existed has no gen_mode_32 and must stay classic:
-    its world-changing flags stay off, and it never had voxy_lod set either."""
+    the gated features stay off, whatever its settings happen to hold."""
     monkeypatch.setattr(arnis_cmd, "arnis_supports", lambda exe, flag: flag in ALL_NEW)
-    cmd = arnis_cmd.build_arnis_cmd("arnis.exe", BBOX, "out", {"body": "mars"}, ORIGIN, None, 1)
-    assert "--body" not in cmd
+    settings = {"building_facades": True, "overture_source": "tiles", "facade_detail": "high"}
+    cmd = arnis_cmd.build_arnis_cmd("arnis.exe", BBOX, "out", settings, ORIGIN, None, 1)
+    assert not [a for a in cmd if a in CLASSIC_GATED]
 
 
 def test_enhanced_mode_lets_them_through(monkeypatch):

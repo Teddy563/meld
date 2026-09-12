@@ -28,9 +28,15 @@ one, and against 3.1.8 the command line is byte-identical to 1.9.8's.
   on the world being built - the coordinates were always read on that body, the map just did
   not say so. Earth is unchanged, and the planetary tiles are only fetched while that body is
   selected.
-- **Voxy LOD works in Classic mode.** It writes a cache beside the world and changes no block
-  in it, so gating it behind Enhanced only hid a render option behind a look-of-the-world
-  switch. The Classic guarantee is unchanged: with the toggle off, nothing is emitted.
+- **Voxy LOD and the celestial body work in Classic mode**, and the Classic/Enhanced switch
+  only appears while the generator has something it actually gates. Both are asked for by
+  name, one control at a time, and emit nothing at their defaults - Voxy writes a cache
+  beside the world and changes no block in it, and Moon and Mars are not a style applied to
+  a render, they are the render. The switch exists for the other kind: features that change
+  an ordinary Earth render without being asked each time, like the facades upstream turns on
+  by itself once a token exists. Against a generator with none of those - this fork today -
+  the switch is hidden rather than left on screen doing nothing. The stored mode is kept, so
+  installing a facade-capable generator brings it back as the project left it.
 - **Cell visibility is a map control**: an eye button under the paint triangle, open when the
   cells are drawn and struck through when they are hidden. It used to be a checkbox under the
   Generate buttons, where an open dropdown drew over it, and it never belonged in the settings
