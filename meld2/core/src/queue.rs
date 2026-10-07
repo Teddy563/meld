@@ -31,7 +31,7 @@ pub enum Note<'a> {
     Stopping,
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Summary {
     pub done: usize,
     pub skipped: usize,
@@ -46,6 +46,8 @@ pub enum Decision {
     Refuse(&'static str),
 }
 
+const CHANGED: &str = "a partial job was started with other settings; restore them to resume it, or start over with `meld2 run --rebuild <id>`";
+
 /// What to do with a selection given its saved state and its command now.
 pub fn decide(prev: Option<&SelState>, command: &[String]) -> Decision {
     let Some(prev) = prev else {
@@ -55,16 +57,12 @@ pub fn decide(prev: Option<&SelState>, command: &[String]) -> Decision {
     match prev.status {
         Status::Done if same => Decision::Skip("already built"),
         Status::Done => Decision::Skip(
-            "built with other settings; Meld does not rebuild a built area on its own",
+            "built with other settings; Meld does not rebuild a built area unless asked (--rebuild <id>)",
         ),
         // Arnis resumes a job by area and piece size, not by settings, so a partial
         // job finished with other settings would mix two worlds.
-        Status::Running | Status::Stopped if !same => Decision::Refuse(
-            "a partial job was started with other settings; restore them to resume it",
-        ),
-        _ if !same && prev.pieces_done > 0 => Decision::Refuse(
-            "a partial job was started with other settings; restore them to resume it",
-        ),
+        Status::Running | Status::Stopped if !same => Decision::Refuse(CHANGED),
+        _ if !same && prev.pieces_done > 0 => Decision::Refuse(CHANGED),
         _ => Decision::Run,
     }
 }

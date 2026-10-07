@@ -5,7 +5,7 @@
 
 use crate::args::{self, Share};
 use crate::arnis::Arnis;
-use crate::project::Project;
+use crate::project::{Project, Selection};
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::collections::BTreeSet;
@@ -65,6 +65,23 @@ impl Plan {
     pub fn todo_mb(&self) -> f64 {
         mb(self.todo_chunks())
     }
+
+    /// The job's block rectangle, the union of its pieces; Arnis keeps a
+    /// partial job's state in `arnis_one_world/jobs/<rect>_n<N>/`.
+    pub fn job_dir(&self) -> String {
+        let r = self
+            .units
+            .iter()
+            .fold([i64::MAX, i64::MAX, i64::MIN, i64::MIN], |a, u| {
+                [
+                    a[0].min(u.rect[0]),
+                    a[1].min(u.rect[1]),
+                    a[2].max(u.rect[2]),
+                    a[3].max(u.rect[3]),
+                ]
+            });
+        format!("{}_{}_{}_{}_n{}", r[0], r[1], r[2], r[3], self.unit_regions)
+    }
 }
 
 /// Estimated megabytes of Java regions for `chunks` chunks.
@@ -83,23 +100,25 @@ pub fn parse(stdout: &str) -> Result<Plan> {
 
 /// Every selection's plan, in project order.
 pub fn project(project: &Project, arnis: &Arnis) -> Result<Vec<(String, Plan)>> {
-    let saves = project.output_dir();
     project
         .selections
         .iter()
-        .map(|sel| {
-            let settings = project.settings_for(sel);
-            let mut argv = args::build(sel, &settings, &saves, Share::default()).args;
-            argv.extend([
-                "--plan-units".into(),
-                args::unit_regions(&settings).to_string(),
-            ]);
-            let out = arnis
-                .output(&argv)
-                .with_context(|| format!("planning selection {}", sel.id))?;
-            Ok((sel.id.clone(), parse(&out)?))
-        })
+        .map(|sel| Ok((sel.id.clone(), selection(project, sel, arnis)?)))
         .collect()
+}
+
+/// One selection's plan.
+pub fn selection(project: &Project, sel: &Selection, arnis: &Arnis) -> Result<Plan> {
+    let settings = project.settings_for(sel);
+    let mut argv = args::build(sel, &settings, &project.output_dir(), Share::default()).args;
+    argv.extend([
+        "--plan-units".into(),
+        args::unit_regions(&settings).to_string(),
+    ]);
+    let out = arnis
+        .output(&argv)
+        .with_context(|| format!("planning selection {}", sel.id))?;
+    parse(&out)
 }
 
 #[derive(Debug, PartialEq)]
@@ -185,6 +204,7 @@ mod tests {
         assert_eq!(p.chunks(), 4 * 1024 + 4 * 96 + 4 * 128 + 4 * 12);
         assert_eq!(p.todo_chunks(), p.chunks());
         assert_eq!(p.regions(), 16);
+        assert_eq!(p.job_dir(), "-576_-560_575_559_n1");
         assert!(parse("banner only\n").is_err());
     }
 

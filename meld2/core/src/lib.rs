@@ -7,4 +7,5 @@ pub mod plan;
 pub mod progress;
 pub mod project;
 pub mod queue;
+pub mod report;
 pub mod state;
