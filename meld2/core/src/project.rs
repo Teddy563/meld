@@ -231,6 +231,10 @@ settings = { caves = true, snow_mode = "peaks" }
             ),
             (GOOD.replace("caves = false", "caves = \"no\""), "caves"),
             (
+                GOOD.replace("caves = false", "region_format = \"blinear\""),
+                "refuses",
+            ),
+            (
                 GOOD.replace("name = \"Demo\"", "name = \"Demo\"\ncolour = 1"),
                 "colour",
             ),

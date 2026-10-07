@@ -46,8 +46,6 @@ const OPTS: &[Opt] = &[
     opt("height_multiplier", "--height-multiplier", None, Val),
     opt("origin", "--origin", Some("origin"), Val),
     opt("disable_height_limit", "--disable-height-limit", None, Switch),
-    opt("min_y", "--min-y", Some("min-y"), Val),
-    opt("max_y", "--max-y", Some("max-y"), Val),
     opt("seed", "--seed", Some("seed"), Val),
     opt("climate_mode", "--climate-mode", Some("climate-mode"), Val),
     // objects
@@ -80,7 +78,6 @@ const OPTS: &[Opt] = &[
     opt("grass_texture", "--grass-texture", Some("grass-texture"), Switch),
     opt("land_texture", "--land-texture", Some("land-texture"), Switch),
     // output
-    opt("region_format", "--region-format", Some("region-format"), Val),
     opt("bake_lighting", "--bake-lighting", None, Switch),
     opt("map_item", "--map-item", None, Val),
     opt("world_border", "--world-border", Some("world-border"), Switch),
@@ -115,6 +112,11 @@ pub fn check(settings: &Settings) -> Result<()> {
             EXTRA_ARGS => value
                 .as_array()
                 .is_some_and(|a| a.iter().all(Value::is_str)),
+            // Every Meld 2 selection builds a One World, which fixes its own
+            // height and region format (Arnis y_bounds.rs, --region-format help).
+            "min_y" | "max_y" | "region_format" => {
+                bail!("{key}: Arnis 3.4 refuses it with --one-world, which Meld 2 builds")
+            }
             _ => match OPTS.iter().find(|o| o.key == key) {
                 Some(o) if o.kind == Val => scalar(value).is_some(),
                 Some(_) => value.is_bool(),
