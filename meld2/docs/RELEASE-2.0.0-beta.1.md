@@ -5,6 +5,7 @@ Meld 2 is a rewrite of Meld in Rust. It turns real places into Minecraft worlds 
 ## What Meld 2 does
 
 - **Projects.** A project is a set of selections on the map, rectangles or polygons. Each selection has its own settings and builds into a named world. Selections that share a world extend it one after another. Selections in different worlds build at the same time.
+- **Arnis at Scale's options.** Cave style, ores and biomes, Cell Size and Selection Snap, Bake CPU Usage, tree realm, sizes and packs, fields, grass and land texture, props, loot table and more, under the same names as in Arnis.
 - **Builds that resume.** Arnis builds every world in pieces. If you stop a run, close Meld or the machine goes down, the next run skips what is already built and carries on.
 - **A plan before each build.** Meld asks Arnis how many pieces and chunks the build has and estimates its size on disk. A run that would not fit on the disk is refused.
 - **Your machine's budget.** Meld splits the CPU and RAM you allow between the jobs that run. The machine does not sleep while it builds.
@@ -15,7 +16,7 @@ Meld 2 is a rewrite of Meld in Rust. It turns real places into Minecraft worlds 
 
 ## Three ways to use it
 
-- **The desktop app (Meld).** The layout is Meld 1's: build status and workers on the left, the map in the middle, and every setting on the right. Draw selections on the map. Each setting applies to the whole project or to one selection. Then plan, generate, stop and resume. The progress bars follow Arnis's live percentages, piece by piece. Closing the window during a run or while the server runs hides Meld to the tray, and the run keeps going. Quit from the tray.
+- **The desktop app (Meld).** The layout is Meld 1's, including its animated wordmark: build status and workers on the left, the map in the middle, and every setting on the right. The settings use the new Arnis's sections, labels, switches and preview pictures (World, Generation, Terrain & Nature, …, Extra Features with Meld Generation and Caves & Water, OSM Data Source), so the names match between the two apps. Draw selections on the map. Each setting applies to the whole project or to one selection. Then plan, generate, stop and resume. The progress bars follow Arnis's live percentages, piece by piece. Closing the window during a run or while the server runs hides Meld to the tray, and the run keeps going. Quit from the tray.
 - **The command line (`meld2`).** Use `run`, `plan`, `status`, `stop`, `import`, `convert`, `export`, `server setup|start|stop|status|send`, `arnis status|install` and `caps`.
 - **Headless (`meld2 serve`).** The same page and JSON API run on a server, with a token on every request.
 
@@ -45,7 +46,7 @@ The builds are unsigned. On Windows, SmartScreen asks on first run: choose *More
 - **No client join test yet.** The server boots with the built worlds and loads them, and WorldGuard reads Meld's regions. Nobody has joined it with a Minecraft client yet, including on a B_Linear world.
 - **The map needs the internet.** It loads OpenStreetMap tiles and Leaflet from public CDNs. So does Arnis, unless you bake or prewarm first.
 - **First use needs the internet** too, to download Arnis.
-- **The UI is a beta.** It follows Meld 1's layout and Arnis's colours, and it will change before 2.0.0. There is no in-app updater yet, and no CPU/RAM graph.
+- **The UI is a beta.** It follows Meld 1's layout with Arnis at Scale's look, and it will change before 2.0.0. Option pictures are Arnis's static ones, not live previews. There is no in-app updater yet, and no CPU/RAM graph.
 - **Quitting from the tray** stops any run (it resumes next time) and kills a running Minecraft server without saving it. Stop the server first.
 - **A world backup** taken while the server runs is only as fresh as the last save. Send `save-all flush` first.
 - The Windows build was tested end to end. Paper and the Voxy server plugin have not been run.

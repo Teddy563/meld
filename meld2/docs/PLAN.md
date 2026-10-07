@@ -483,14 +483,28 @@ Each world records exactly one area.
 |---|---|
 | core | `trust.rs` (executables over the API), `export.rs` (world zip with a disk check), `server send` through a console inbox, empty projects allowed |
 | cli / API | Untrusted `arnis` / `[server] java` refused on PUT and on every API load. New: JSON `model` PUT, polygon `parts`, `/api/options`, `/api/arnis`, `/api/arnis/install`, `server/send`, `export`. New CLI commands: `meld2 server send`, `meld2 export`. cli is also a library |
-| UI | The page `serve` and the app show, rebuilt on Meld 1's layout and CSS: left build/workers/log, middle map, right settings rail covering the whole project model |
+| UI | The page `serve` and the app show: Meld 1's frame (left build/workers/log, middle map, right rail) and animated wordmark, skinned with Arnis at Scale's components and sections, covering the whole project model with Arnis's labels |
+| Arnis options | New keys for every at-Scale flag the pinned Arnis has: `max_tree_size`, `canopy_height`, `tree_pack_dir`/`_mode`, `props_min_scale`, `loot_table`, `cave_biomes`, `cave_datum_y`, `grass_mix`, `land_mix`, `world_type`. New Meld keys: `snap = "fit"|"cover"` (Selection Snap) and `[run] bake_cpu` (Bake CPU Usage). Built-in `/assets/` |
 | app | `gui/` Tauri 2: in-process `serve` on loopback, tray, single instance, close to the tray while busy |
 | ci | `release.yml` on this branch: `v2.*` builds the CLI and the app for Windows, Linux x86_64 and macOS universal |
 | release | version 2.0.0-beta.1, README, this plan, `docs/RELEASE-2.0.0-beta.1.md` |
 
 **Desktop app: one code path.** The app starts `meld2::serve` on `127.0.0.1:0` with a fresh token and loads its page in a Tauri window. It has no Tauri commands: every action is the same HTTP call a browser or curl makes. Rust reads only `Ctx::busy()` (a run or a Minecraft server in this process), to decide whether closing the window hides it.
 
-**UI.** The UI keeps Meld 1's layout, as the user asked: it is Meld 1's `web/index.html` structure and CSS, with the Arnis accent `#fecc44` and Lucide icons. The settings rail lists every `args::OPTS` key plus `unit_regions`, `prewarm` and `extra_args`, in Meld 1's order of groups and drawers. Any key Arnis adds later shows under "Other" from `/api/options`. A value is set for the project's `[defaults]` or for one selection; a blank field inherits. Edits save as you make them through the JSON `model` PUT, which keeps no comments; the Project file card edits the raw TOML.
+**UI.** The user asked for Meld 1's layout and then for Arnis at Scale's look and settings, so the page combines the two:
+- **Frame (Meld 1):** the status rail on the left with Meld 1's animated wordmark, ported as it was (same images, timing and reduced-motion fallback); the full-bleed Leaflet map; the settings rail on the right with search.
+- **Skin (Arnis at Scale `arnis-scale-phase-6`):** its tokens (`#333`/`#2a2a2a`/`#3a3a3a`/`#424242`, accent `#fecc44`), its Lucide sprite (copied), setting tiles, `input.switch`, segmented controls, radio option lists, the realm grid with swatches, and preview cards with Arnis's own pictures (Apache-2.0, built into the binary).
+- **Settings:** Arnis's sections and groups, with Arnis's labels: World, Generation, Terrain & Nature, Building Facades, Map & Input, Advanced, Extra Features (Performance & Large Worlds; Meld Generation: Terrain, Roads & Buildings, Fields & Trees, Caves & Water; Experimental) and OSM Data Source. They cover every `args::OPTS` key, `unit_regions` (Cell Size), `snap` (Selection Snap), `prewarm`, `extra_args` and `[run]` (Jobs at Once, CPU Usage, Memory Budget, Keep Free on Disk, Bake CPU Usage). Any key Arnis adds later shows under "Other Arnis Settings".
+
+A value is set for the project's `[defaults]` or for one selection. A row at its default (or at the inherited value) writes nothing. Edits save as you make them through the JSON `model` PUT, which keeps no comments; the Project File card edits the raw TOML.
+
+Arnis options Meld does not mirror:
+- Square Selection: a draw-time aid in Arnis's map.
+- Region Format and World Floor/Ceiling: One World refuses them; B_Linear is `[server] format`.
+- The Source picker and Local File: the separate keys cover the sources Meld drives.
+- The climate and cave zone map previews.
+- Live 2D/3D previews: Meld shows Arnis's static pictures.
+- Arnis's facade source and token rows: the token is an environment variable.
 
 **Security fix (Phase 4 carry-over).** A project's `arnis` and `[server] java` may come over the API, and so through the app, only if:
 - Meld installed it: the pinned Arnis download;
@@ -501,13 +515,18 @@ Paths are compared after canonicalising, so `..` cannot dodge the check. A PUT t
 
 **Arnis: downloaded, not bundled.** The app does not ship Arnis as a sidecar. Phase 2's pinned download, checked by sha256, already serves the CLI and `serve`, so one verified copy serves all three, and the installers stay small (NSIS 5 MB). The app's Arnis card has Install, and a first run downloads it on its own.
 
-**Gates:** `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` (with the gui crate) and `cargo test` pass: 34 tests on Windows (32 core, 2 cli). New tests cover trusted executables, the zip export with the disk refusal, the console inbox order, and the API refusing `arnis` / `java` by TOML and by model plus the JSON model round-trip and `/api/options`. `node --check` passes on the page's script. `npx @tauri-apps/cli build --bundles nsis` produced `Meld_2.0.0-beta.1_x64-setup.exe`.
+**Gates:** `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` (with the gui crate) and `cargo test` pass: 35 tests on Windows (33 core, 2 cli). New tests cover:
+- trusted executables;
+- the zip export, with the disk refusal;
+- the console inbox order;
+- Selection Snap (fit inside cover, on the lattice, too small refused) and the Bake CPU share;
+- the API refusing `arnis` / `java` by TOML and by model, the JSON model round-trip, `/api/options`, and `/assets/` without the token (and no path escape). `node --check` passes on the page's script. `npx @tauri-apps/cli build --bundles nsis` produced `Meld_2.0.0-beta.1_x64-setup.exe`.
 
 **e2e in the real window** (`work/meld2-e2e/p5/`: `drive.cjs` over WebView2's debugging port, `win.ps1` for native size, capture and close; screenshots in `shots/`, Meld 1 beside them as `meld1-*.png` and `compare-*.png`). Fresh `MELD2_HOME`, release build, Java 21.
 
 | Step | Result |
 |---|---|
-| Arnis card, Install | "none yet", then downloaded and verified (`4218e239…`), "3.4.0-beta.1 ok", 44 capabilities |
+| Arnis card, Install | "none yet", then downloaded and verified (`4218e239…`), "3.4.0-beta.1 ok", 44 capabilities. The whole table ran twice: on the first skin with `home/`, and on the final one with a fresh `home2/`; the rows are the final run |
 | Projects overlay, New `p5e2e` | created empty; opened |
 | draw on the map with the mouse | a rectangle over Vaduz (`s1`) and a 4-point polygon over Schaan (`s2`); `s2` became 4 dashed parts |
 | settings rail | `[run] jobs = 2`; per selection `world` (Vaduz, Schaan) and `unit_regions = 1`; the TOML shows all of it |
@@ -519,13 +538,15 @@ Paths are compared after canonicalising, so `..` cannot dodge the check. A PUT t
 | console | `say hello from the Meld window` reached the server log; `mv list` listed Schaan and Vaduz; `save-all flush` saved |
 | Back up Vaduz | `exports/Vaduz-<unix>.zip`, 141 files, 3.4 MB, `testzip` clean |
 | Stop | console `stop`, "server exited 0", "not running" |
-| 1280 and 1600 wide | every card shot at both widths; native window captures with the title bar |
+| Settings rail (`uicheck.cjs`) | a new project; the Caves switch, Cave Style More Mix, Ores More, Cell Size 1x1, Selection Snap Cover. The cave preview became `cave-style-more-mix-more-ores`; the TOML got the five keys; Plan: the Vaduz box became 4 whole pieces of 1,024 chunks (324 chunks unsnapped) |
+| wordmark | plays in the real window: at 0.94 s the letters are placed (D mid-flash) and ARNIS WORLDS has not risen yet; at 4.4 s the finished title (`mm-full` opacity 1, letters 0) |
+| 1280 and 1600 wide | every card shot at both widths (`shots/5x-*`); native window captures with the title bar (`30-*`); Meld 1 (`meld1-*`) and Arnis at Scale (`arnis-p6-*`) references beside them, side by side in `compare-*.png` |
 
 **Deferred** (to rc.1 or later):
 - the updater plugin and its signing;
 - CPU/RAM graphs in the left rail;
 - place search on the map;
-- presets UI and Meld 1's tree, field and cave mix sliders (the keys are text fields today);
+- presets UI; sliders for Farm Crops and the grass and land mixes, which are text fields today (Tree Sizes and Cave Biomes have Arnis's per-name rows);
 - tar.zst export;
 - detaching `server start` from the CLI, and start scripts;
 - Skript walls, buffered rings and country lookups; WorldGuard flags;

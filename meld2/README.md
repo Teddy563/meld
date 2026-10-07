@@ -19,17 +19,17 @@ A `v2.*` tag builds all of it on GitHub Actions (`.github/workflows/release.yml`
 
 ## The desktop app
 
-The app keeps Meld 1's layout:
-- **Left:** the build. You see the estimated size and the disk check, the progress across the project with pieces and an ETA, one row per running job (workers) with its live percentage and pieces, and the log.
-- **Middle:** the map. Draw rectangles and polygons to add selections, and edit or delete them with the map tools. Polygon selections show the dashed piece-aligned parts Meld builds.
-- **Right:** the settings rail, with Meld 1's search box and cards:
-  1. **Settings.** Every key of the project model, for the project's `[defaults]` or for one selection, in Meld 1's groups and drawers: terrain, OSM source, generation performance with `[run]`, props, buildings, facades, trees, farmland, caves and output.
-  2. **Prepare data.** `[[bake]]` entries.
-  3. **Generate.** Generate, Plan, Stop and Rebuild.
-  - **Selections / worlds.**
-  - **Server setup.** The `[server]` fields, Set up with the EULA box, Start, Stop, the live console with a command box, and a zip backup per world.
-  - **Arnis.** Which Arnis is in use, its version and capabilities, and Install.
-  - **Project file.** The raw TOML editor.
+The app keeps Meld 1's frame and is skinned with Arnis at Scale's own components (the `arnis-scale-phase-6` GUI): its dark surfaces, the #fecc44 accent, its Lucide sprite, setting tiles, switches, segmented controls and preview cards.
+- **Left:** Meld 1's animated wordmark, then the build: the estimated size and disk check, the progress across the project with pieces and an ETA, one row per running job (workers) with its live percentage and pieces, and the log.
+- **Middle:** the map, with Meld 1's Leaflet and leaflet.draw setup. Draw rectangles and polygons to add selections, and edit or delete them with the map tools. Polygon parts and snapped boxes show dashed, as Meld builds them.
+- **Right:** a search box, **Generate** (Generate World, Plan, Stop, Rebuild) and **Selections**. Below them, *Settings for* picks the project's `[defaults]` or one selection. Then Arnis's settings sections, with Arnis's labels: World, Generation, Terrain & Nature, Building Facades, Map & Input, Advanced, **Extra Features** and **OSM Data Source**:
+  - **Extra Features** has Performance & Large Worlds (CPU Usage, Threads, Memory Budget, Parallel Workers, Cell Size, Selection Snap, plus Meld's Jobs at Once and Keep Free on Disk), Meld Generation (Terrain, Roads & Buildings, Fields & Trees, Caves & Water) and Experimental.
+  - **OSM Data Source** includes Bake CPU Usage and the bakes.
+  - Options with a picture in Arnis show it here too: snow, scatter, roads, fields, tree realm, tree size, cave style and ores, climate, river bed, water and grass/land texture.
+  - Every key Meld passes to Arnis has a row. A key a newer Arnis adds shows under "Other Arnis Settings".
+  - Last come **Server** (the `[server]` fields, the EULA, Set Up, Start, Stop, the live console with a command box, and a zip backup per world), **Arnis** (which Arnis is in use, its version and capabilities, and Install) and **Project File** (the raw TOML).
+
+The wordmark images and the option pictures are built into the binary (`cli/assets/`, served at `/assets/` without the token). The pictures are Arnis's, Apache-2.0.
 
 Settings save as you change them, through the same `PUT` the API takes. The app runs `meld2 serve`'s server in-process on `127.0.0.1` with a fresh token and shows its page, so the app, a browser and curl all use one code path. If a run or a Minecraft server is going, closing the window hides it to the tray; otherwise the app quits. A second launch brings the running app's window back. The tray offers Open and Quit; Quit stops runs, which resume next time, and servers. The app uses `MELD2_HOME` and the data folder below, like the CLI.
 
@@ -247,6 +247,7 @@ jobs = 2                          # Arnis processes at once
 cpu_target = 90                   # % of cores, split between the jobs running
 # ram_budget_mb = 16000           # split the same way; unset: 80 % of free RAM
 # min_free_mb = 1024              # disk to keep free after the estimated build
+# bake_cpu = 50                   # % of the cores for bakes and prewarms (Bake CPU Usage)
 
 [defaults]                        # every selection starts from these
 scale = 1.0
@@ -260,5 +261,7 @@ settings = { caves = true, snow_mode = "peaks" }
 ```
 
 Settings use the names of the Arnis flags in snake case, e.g. `snow_mode` for `--snow-mode`, `buildings = false` for `--no-buildings` and `use_3d = false` for `--no-3d`. The full list is the `OPTS` table in `core/src/args.rs`. `min_y`, `max_y`, `region_format`, `rotation` and `body` are refused: Arnis refuses them with One World (B_Linear comes from `[server] format`).
+
+`snap = "fit"` or `"cover"` (Arnis's Selection Snap) snaps a bbox selection to whole pieces on its world's lattice, inside the box or covering it, and pins the world's `origin`. It is Meld's, not passed to Arnis.
 
 Arnis validates the values. Meld checks the key names and value types, and checks that the Arnis build lists the capability each setting needs. `extra_args = ["--flag", "value"]` passes flags that Meld does not model, unchecked.
