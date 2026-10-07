@@ -2,6 +2,7 @@
 
 pub mod args;
 pub mod arnis;
+pub mod convert;
 pub mod frame;
 pub mod import;
 pub mod install;

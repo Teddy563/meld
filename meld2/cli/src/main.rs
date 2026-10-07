@@ -3,6 +3,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use meld_core::arnis::Arnis;
+use meld_core::convert;
 use meld_core::import;
 use meld_core::install::{self, Found, Probe};
 use meld_core::plan::{self, Disk};
@@ -71,6 +72,22 @@ enum Cmd {
         /// Where to write `<slug>/project.toml` and `presets/<slug>.toml`.
         #[arg(long, default_value = ".")]
         out: PathBuf,
+    },
+    /// Convert a built world to B_Linear (Leaf 1.21.11+) in a `<World> [BLinear]`
+    /// sibling, read a sample back and swap the regions in only when all is done.
+    Convert {
+        /// The world folder (with level.dat and region/).
+        world: PathBuf,
+        /// Where to write [default: `<world> [BLinear]` beside it].
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Replace the region files of an existing folder Meld did not write,
+        /// or one changed since.
+        #[arg(long)]
+        force: bool,
+        /// Regions converted at once [default: the cores].
+        #[arg(long)]
+        threads: Option<usize>,
     },
     /// Which Arnis Meld uses, and installing the pinned release.
     #[command(subcommand)]
@@ -149,6 +166,33 @@ fn real_main() -> Result<()> {
             Ok(())
         }
         Cmd::Arnis(cmd) => arnis_cmd(cmd),
+        Cmd::Convert {
+            world,
+            out,
+            force,
+            threads,
+        } => {
+            let dest = out.unwrap_or_else(|| convert::sibling(&world));
+            let threads = threads
+                .unwrap_or_else(|| std::thread::available_parallelism().map_or(4, |n| n.get()));
+            let mut tenth = usize::MAX;
+            let c = convert::convert(&world, &dest, threads, force, &|| false, &mut |d, of| {
+                if of > 0 && d * 10 / of != tenth {
+                    tenth = d * 10 / of;
+                    println!("converted {d}/{of} region file(s)");
+                }
+            })?;
+            println!(
+                "{}: {} region file(s), {} chunks, {:.1} MB -> {:.1} MB; {} read back chunk for chunk",
+                dest.display(),
+                c.regions,
+                c.chunks,
+                c.mca_bytes as f64 / 1e6,
+                c.blinear_bytes as f64 / 1e6,
+                c.verified
+            );
+            Ok(())
+        }
         Cmd::Serve { bind, dir, arnis } => {
             let token = match std::env::var("MELD2_TOKEN") {
                 Ok(t) if t.len() >= 16 => t,
