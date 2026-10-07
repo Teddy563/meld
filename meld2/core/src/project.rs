@@ -19,6 +19,11 @@
 //! world = "Alps"
 //! settings = { caves = true, prewarm = true }   # prewarm: a cache-filling step first
 //!
+//! [[selection]]               # a shape instead of a bbox: rings of [lat, lng]
+//! id = "li"
+//! polygon = [[[47.05, 9.47], [47.27, 9.53], [47.06, 9.63]]]
+//! world = "Alps"
+//!
 //! [[bake]]                    # a country .osm.pbf cut once, before the builds that read it
 //! id = "li"
 //! osm_pbf = "geofabrik"       # the selections' own `osm_pbf` value
@@ -89,7 +94,13 @@ impl Default for Budget {
 pub struct Selection {
     pub id: String,
     /// min_lat, min_lng, max_lat, max_lng: the order of Arnis's --bbox.
+    #[serde(default)]
     pub bbox: [f64; 4],
+    /// Instead of `bbox`: rings of `[lat, lng]` points; their union is the area.
+    /// Arnis takes only a bbox, so on load it becomes selections `<id>-1`, `<id>-2`, ...:
+    /// one bbox per row of piece-sized cells that touch the shape.
+    #[serde(default)]
+    pub polygon: Vec<Vec<[f64; 2]>>,
     /// One World folder in `output`. Selections sharing a world extend it one after another.
     pub world: String,
     #[serde(default)]
@@ -153,7 +164,8 @@ impl Project {
             Some(n) => bail!("unknown project format {n}"),
             None => bail!("missing `format = {FORMAT}`"),
         }
-        let project: Self = table.try_into()?;
+        let mut project: Self = table.try_into()?;
+        project.cover_polygons()?;
         project.validate()?;
         Ok(project)
     }
@@ -197,6 +209,55 @@ impl Project {
                 None => {}
             }
         }
+        Ok(())
+    }
+
+    /// Replaces each polygon selection with the bboxes that cover it.
+    fn cover_polygons(&mut self) -> Result<()> {
+        let mut out = Vec::with_capacity(self.selections.len());
+        for sel in std::mem::take(&mut self.selections) {
+            if sel.polygon.is_empty() {
+                out.push(sel);
+                continue;
+            }
+            if sel.bbox != [0.0; 4] {
+                bail!("selection {}: give a bbox or a polygon, not both", sel.id);
+            }
+            let pts = || sel.polygon.iter().flatten();
+            let ok = sel.polygon.iter().all(|r| r.len() >= 3)
+                && pts().all(|[lat, lng]| {
+                    (-90.0..=90.0).contains(lat) && (-180.0..=180.0).contains(lng)
+                });
+            if !ok {
+                bail!(
+                    "selection {}: polygon rings need 3+ [lat, lng] points",
+                    sel.id
+                );
+            }
+            // Cells the size of a piece: (unit_regions x 512 blocks) / scale metres.
+            let settings = self.settings_for(&sel);
+            let scale = settings
+                .get("scale")
+                .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
+                .unwrap_or(1.0)
+                .max(0.01);
+            let side_m = args::unit_regions(&settings) as f64 * 512.0 / scale;
+            let mid = pts().map(|p| p[0]).sum::<f64>() / pts().count() as f64;
+            let dlat = side_m / 111_320.0;
+            let dlon = dlat / mid.to_radians().cos().max(0.01);
+            let boxes =
+                cover(&sel.polygon, dlat, dlon).with_context(|| format!("selection {}", sel.id))?;
+            for (i, bbox) in boxes.into_iter().enumerate() {
+                out.push(Selection {
+                    id: format!("{}-{}", sel.id, i + 1),
+                    bbox,
+                    polygon: vec![],
+                    world: sel.world.clone(),
+                    settings: sel.settings.clone(),
+                });
+            }
+        }
+        self.selections = out;
         Ok(())
     }
 
@@ -256,6 +317,97 @@ impl Project {
         s.extend(sel.settings.clone());
         s
     }
+}
+
+/// Bboxes covering the union of `rings` (`[lat, lng]`): a grid of
+/// `dlat` x `dlon` cells from the rings' south-west corner, keeping every cell
+/// that overlaps a ring, merged into one bbox per run of cells in a row.
+// ponytail: cells are piece-sized, not snapped to Arnis's piece lattice (that
+// needs the world's origin); neighbours share a world, so their seams match.
+// No antimeridian crossing.
+pub fn cover(rings: &[Vec<[f64; 2]>], dlat: f64, dlon: f64) -> Result<Vec<[f64; 4]>> {
+    let pts = || rings.iter().flatten();
+    let fold = |f: fn(f64, f64) -> f64, i: usize, init: f64| pts().map(|p| p[i]).fold(init, f);
+    let (s, w) = (fold(f64::min, 0, 90.0), fold(f64::min, 1, 180.0));
+    let (n, e) = (fold(f64::max, 0, -90.0), fold(f64::max, 1, -180.0));
+    let rows = ((n - s) / dlat).ceil().max(1.0) as usize;
+    let cols = ((e - w) / dlon).ceil().max(1.0) as usize;
+    if rows.saturating_mul(cols) > 4_000_000 {
+        bail!("polygon spans {rows} x {cols} cells; raise unit_regions or lower scale");
+    }
+    let mut out = vec![];
+    for r in 0..rows {
+        let mut run: Option<usize> = None;
+        for c in 0..=cols {
+            let cell = [
+                s + r as f64 * dlat,
+                w + c as f64 * dlon,
+                s + (r + 1) as f64 * dlat,
+                w + (c + 1) as f64 * dlon,
+            ];
+            let hit = c < cols && overlaps(rings, cell);
+            match (hit, run) {
+                (true, None) => run = Some(c),
+                (false, Some(c0)) => {
+                    out.push([cell[0], w + c0 as f64 * dlon, cell[2], cell[1]].map(|v| {
+                        // Rounded to ~1 cm, so the bboxes read cleanly in the project and logs.
+                        (v * 1e7).round() / 1e7
+                    }));
+                    run = None;
+                }
+                _ => {}
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Whether a `[s, w, n, e]` cell and the union of `rings` share some area:
+/// its centre is inside a ring, or a ring edge crosses it. The cell is shrunk
+/// a hair first, so a ring that only runs along its border does not count.
+fn overlaps(rings: &[Vec<[f64; 2]>], cell: [f64; 4]) -> bool {
+    let (ilat, ilon) = ((cell[2] - cell[0]) * 1e-6, (cell[3] - cell[1]) * 1e-6);
+    let r = [
+        cell[0] + ilat,
+        cell[1] + ilon,
+        cell[2] - ilat,
+        cell[3] - ilon,
+    ];
+    let c = [(r[0] + r[2]) / 2.0, (r[1] + r[3]) / 2.0];
+    rings.iter().any(|ring| {
+        let edges = || ring.iter().zip(ring.iter().cycle().skip(1));
+        // Even-odd: a ray from the centre towards +lng crosses the ring an odd number of times.
+        let inside = edges()
+            .filter(|(a, b)| (a[0] > c[0]) != (b[0] > c[0]))
+            .filter(|(a, b)| c[1] < a[1] + (c[0] - a[0]) * (b[1] - a[1]) / (b[0] - a[0]))
+            .count()
+            % 2
+            == 1;
+        inside || edges().any(|(a, b)| crosses(*a, *b, r))
+    })
+}
+
+/// Liang-Barsky: whether segment `a`-`b` meets the rectangle `[s, w, n, e]`.
+fn crosses(a: [f64; 2], b: [f64; 2], r: [f64; 4]) -> bool {
+    let d = [b[0] - a[0], b[1] - a[1]];
+    let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+    for (p, q) in [
+        (-d[0], a[0] - r[0]),
+        (d[0], r[2] - a[0]),
+        (-d[1], a[1] - r[1]),
+        (d[1], r[3] - a[1]),
+    ] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return false;
+            }
+        } else if p < 0.0 {
+            t0 = t0.max(q / p);
+        } else {
+            t1 = t1.min(q / p);
+        }
+    }
+    t0 <= t1
 }
 
 #[cfg(test)]
@@ -339,5 +491,46 @@ osm_pbf = \"geofabrik\"
             let err = format!("{:#}", Project::parse(&text).unwrap_err());
             assert!(err.contains(want), "{want:?} not in {err:?}");
         }
+    }
+
+    #[test]
+    fn polygons_become_covering_bboxes() {
+        // An L: the bottom row is two cells wide, the top row one. A ring that
+        // runs along a cell's border does not take the cell; a thin sliver does.
+        let l = vec![vec![
+            [0.0, 0.0],
+            [0.0, 2.0],
+            [1.0, 2.0],
+            [1.0, 1.0],
+            [2.0, 1.0],
+            [2.0, 0.0],
+        ]];
+        assert_eq!(
+            cover(&l, 1.0, 1.0).unwrap(),
+            [[0.0, 0.0, 1.0, 2.0], [1.0, 0.0, 2.0, 1.0]]
+        );
+        let sliver = vec![
+            vec![[0.0, 0.0], [0.0, 3.0], [0.01, 3.0], [0.01, 0.0]],
+            vec![[2.5, 2.5], [2.6, 2.5], [2.6, 2.6]],
+        ];
+        assert_eq!(
+            cover(&sliver, 1.0, 1.0).unwrap(),
+            [[0.0, 0.0, 1.0, 3.0], [2.0, 2.0, 3.0, 3.0]]
+        );
+        // In a project: piece-sized rows in the selection's world and settings.
+        let text = GOOD.replace(
+            "bbox = [47.15, 9.52, 47.16, 9.53]",
+            "polygon = [[[47.15, 9.52], [47.25, 9.52], [47.15, 9.66]]]",
+        );
+        let p = Project::parse(&text).unwrap();
+        let ids: Vec<_> = p.selections.iter().map(|s| s.id.as_str()).collect();
+        assert!(ids.len() > 2 && ids[1] == "b-1", "{ids:?}");
+        let b1 = &p.selections[1];
+        assert_eq!(
+            (b1.world.as_str(), b1.settings["caves"].as_bool()),
+            ("One", Some(true))
+        );
+        // scale 0.5, 4-region pieces: 4096 m rows, ~0.037 degrees.
+        assert!((b1.bbox[2] - b1.bbox[0] - 4096.0 / 111_320.0).abs() < 1e-6);
     }
 }
