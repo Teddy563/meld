@@ -40,7 +40,8 @@ pub struct Conf {
     pub ram_mb: u32,
     /// Link the worlds into the folder (a junction on Windows) instead of copying them.
     pub link: bool,
-    /// Modrinth project slugs, e.g. "worldguard", "worldedit", "voxy-server-side".
+    /// Modrinth project slugs, e.g. "worldguard", "worldedit", "voxy-server-side";
+    /// `slug@version` pins a build (e.g. one that runs on the Java you have).
     pub plugins: Vec<String>,
     /// Datapack zips or folders for the main level's `datapacks/`.
     pub datapacks: Vec<PathBuf>,
@@ -121,7 +122,11 @@ impl Conf {
         if self.format == Format::Blinear && self.flavor != Flavor::Leaf {
             bail!("[server] format = \"blinear\": only Leaf (1.21.11 or newer) reads B_Linear");
         }
-        if let Some(s) = self.plugins.iter().find(|s| !plain(s, &['-', '_'])) {
+        let spec = |s: &str| match s.split_once('@') {
+            Some((slug, v)) => plain(slug, &['-', '_']) && plain(v, &['-', '_', '.', '+']),
+            None => plain(s, &['-', '_']),
+        };
+        if let Some(s) = self.plugins.iter().find(|s| !spec(s)) {
             bail!("[server] plugins: {s:?} is not a Modrinth slug");
         }
         if let Some(w) = self.worlds.iter().find(|w| !worlds.contains(w)) {
@@ -170,6 +175,8 @@ struct Meta {
     level: String,
     /// Console commands for the first start, sent once after `Done (`.
     first_start: Vec<String>,
+    /// The plugin jars Meld put in `plugins/`; one no longer wanted goes.
+    plugins: Vec<String>,
 }
 
 /// What `status` reports.
@@ -251,10 +258,18 @@ impl<'a> Server<'a> {
         std::fs::create_dir_all(dir.join("plugins"))?;
         let level = level_name(&self.conf.worlds[0]);
         let mut first_start = vec![];
+        // Worlds Multiverse already holds: `Name:` (4.x) or `minecraft:name:` (5.x).
+        let known = std::fs::read_to_string(dir.join("plugins/Multiverse-Core/worlds.yml"))
+            .unwrap_or_default();
+        let imported = |n: &str| {
+            known
+                .lines()
+                .any(|l| l == format!("{n}:") || l.eq_ignore_ascii_case(&format!("minecraft:{n}:")))
+        };
         for (i, w) in self.conf.worlds.iter().enumerate() {
             let name = level_name(w);
             self.place(&self.source(w), &dir.join(&name), force, say)?;
-            if i > 0 {
+            if i > 0 && !imported(&name) {
                 first_start.push(format!("mv import {name} normal"));
             }
             let regions = dir
@@ -321,9 +336,12 @@ impl<'a> Server<'a> {
         meta.first_start = first_start;
         if download {
             let jar = jar(self.conf.flavor, &self.conf.version)?;
-            if !dir.join(&jar.name).is_file() {
+            let file = dir.join(&jar.name);
+            if file.is_file() {
+                crate::install::verify(&file, Sum::Sha256(&jar.sha256))?;
+            } else {
                 say(format!("downloading {}", jar.url));
-                crate::install::download(&jar.url, &dir.join(&jar.name), Sum::Sha256(&jar.sha256))?;
+                crate::install::download(&jar.url, &file, Sum::Sha256(&jar.sha256))?;
             }
             say(format!("server jar {} (sha256 verified)", jar.name));
             meta.jar = jar.name;
@@ -331,14 +349,26 @@ impl<'a> Server<'a> {
             if self.conf.worlds.len() > 1 && !plugins.iter().any(|p| p == "multiverse-core") {
                 plugins.push("multiverse-core".into());
             }
+            let mut installed = vec![];
             for slug in &plugins {
                 let p = plugin(slug, &self.conf.version)?;
+                installed.push(p.file.clone());
                 let to = dir.join("plugins").join(&p.file);
-                if !to.is_file() {
+                if to.is_file() {
+                    crate::install::verify(&to, Sum::Sha512(&p.sha512))?;
+                } else {
                     crate::install::download(&p.url, &to, Sum::Sha512(&p.sha512))?;
                 }
                 say(format!("plugin {} {} (sha512 verified)", slug, p.file));
             }
+            for old in meta.plugins.iter().filter(|f| !installed.contains(f)) {
+                if std::fs::remove_file(dir.join("plugins").join(old)).is_ok() {
+                    say(format!(
+                        "removed plugin {old} (no longer in [server] plugins)"
+                    ));
+                }
+            }
+            meta.plugins = installed;
         } else if meta.jar.is_empty() {
             say(
                 "no server jar: run setup without --no-download before `meld2 server start`".into(),
@@ -362,15 +392,20 @@ impl<'a> Server<'a> {
         if let Ok(m) = std::fs::symlink_metadata(dest) {
             if m.file_type().is_symlink() {
                 remove_link(dest)?;
-            } else if force {
+            } else if force && dest.join("level.dat").is_file() {
                 std::fs::remove_dir_all(dest)
                     .with_context(|| format!("removing {}", dest.display()))?;
-            } else {
+            } else if dest.join("level.dat").is_file() {
                 say(format!(
                     "kept {} (a world is there; --force replaces it)",
                     dest.display()
                 ));
                 return Ok(());
+            } else {
+                bail!(
+                    "{} is in the way and is not a world; move it",
+                    dest.display()
+                );
             }
         }
         let src = std::path::absolute(src)?;
@@ -529,6 +564,13 @@ impl<'a> Server<'a> {
         )?;
         let java = find_java(java.or(self.conf.java.clone()), self.java_major())?;
         let _ = std::fs::remove_file(dir.join(STOP));
+        on_line(&format!(
+            "[meld] {} -jar {} with {} MB, in {}",
+            java.display(),
+            meta.jar,
+            self.conf.ram_mb,
+            dir.display()
+        ));
 
         let mut cmd = std::process::Command::new(&java);
         let heap = format!("{}M", self.conf.ram_mb);
@@ -723,6 +765,14 @@ struct Download {
 
 /// The newest build of a Leaf or Paper version.
 fn jar(flavor: Flavor, version: &str) -> Result<Download> {
+    let d = newest_jar(flavor, version)?;
+    if !d.name.ends_with(".jar") || d.name.contains(['/', '\\']) || d.name.starts_with('.') {
+        bail!("the {flavor:?} API named an unexpected file {:?}", d.name);
+    }
+    Ok(d)
+}
+
+fn newest_jar(flavor: Flavor, version: &str) -> Result<Download> {
     let get = |url: &str| json(ureq::get(url)).with_context(|| format!("asking {url}"));
     let missing = || format!("no {flavor:?} build for {version}");
     match flavor {
@@ -765,8 +815,11 @@ struct Plugin {
 }
 
 /// The newest Modrinth build of `slug` for `version` (a stable one first),
-/// else for its family (`1.21`): Meld 1's `resolve_plugin`.
-fn plugin(slug: &str, version: &str) -> Result<Plugin> {
+/// else for its family (`1.21`): Meld 1's `resolve_plugin`. `slug@x` is build x.
+fn plugin(spec: &str, version: &str) -> Result<Plugin> {
+    let (slug, pin) = spec
+        .split_once('@')
+        .map_or((spec, None), |(s, v)| (s, Some(v)));
     let loaders = r#"["paper","bukkit","spigot","folia"]"#;
     let list = |game: Option<&str>| -> Result<Vec<serde_json::Value>> {
         let url = format!("{MODRINTH_API}/project/{slug}/version");
@@ -784,21 +837,27 @@ fn plugin(slug: &str, version: &str) -> Result<Plugin> {
             .or(vs.first())
             .cloned()
     };
-    let v = match pick(list(Some(version))?) {
-        Some(v) => v,
-        None => pick(
-            list(None)?
-                .into_iter()
-                .filter(|v| {
-                    v["game_versions"].as_array().is_some_and(|g| {
-                        g.iter()
-                            .filter_map(|g| g.as_str())
-                            .any(|g| g == family || g.starts_with(&format!("{family}.")))
+    let v = match pin {
+        Some(pin) => list(None)?
+            .into_iter()
+            .find(|v| v["version_number"] == pin)
+            .with_context(|| format!("{slug}: no build {pin} on Modrinth"))?,
+        None => match pick(list(Some(version))?) {
+            Some(v) => v,
+            None => pick(
+                list(None)?
+                    .into_iter()
+                    .filter(|v| {
+                        v["game_versions"].as_array().is_some_and(|g| {
+                            g.iter()
+                                .filter_map(|g| g.as_str())
+                                .any(|g| g == family || g.starts_with(&format!("{family}.")))
+                        })
                     })
-                })
-                .collect(),
-        )
-        .with_context(|| format!("{slug}: no build for Minecraft {version} on Modrinth"))?,
+                    .collect(),
+            )
+            .with_context(|| format!("{slug}: no build for Minecraft {version} on Modrinth"))?,
+        },
     };
     let files = v["files"].as_array().context("no files")?;
     let f = files
@@ -827,48 +886,50 @@ pub fn java_major(text: &str) -> Option<u32> {
     }
 }
 
-/// The first Java of at least `need`: the one given, `JAVA_HOME`, the
-/// Modrinth app's runtimes, then `java` on PATH.
+/// The Java to run the server: the one given (at least `need`), else the
+/// newest of `JAVA_HOME`, the Modrinth app's runtimes and `java` on PATH,
+/// since plugins move to new Java before servers do (WorldEdit 7.4.5 needs 25).
 pub fn find_java(given: Option<PathBuf>, need: u32) -> Result<PathBuf> {
     let exe = if cfg!(windows) { "java.exe" } else { "java" };
-    let mut candidates: Vec<PathBuf> = given.into_iter().collect();
+    let major = |c: &Path| {
+        let o = std::process::Command::new(c)
+            .arg("-version")
+            .output()
+            .ok()?;
+        java_major(&(String::from_utf8_lossy(&o.stderr) + String::from_utf8_lossy(&o.stdout)))
+    };
+    if let Some(c) = given {
+        return match major(&c) {
+            Some(m) if m >= need => Ok(c),
+            m => bail!(
+                "{} is Java {m:?}; this server needs {need} or newer",
+                c.display()
+            ),
+        };
+    }
+    let mut candidates: Vec<PathBuf> = vec![];
     if let Some(home) = std::env::var_os("JAVA_HOME") {
         candidates.push(PathBuf::from(home).join("bin").join(exe));
     }
     if let Some(appdata) = std::env::var_os("APPDATA") {
         let meta = PathBuf::from(appdata).join("ModrinthApp/meta/java_versions");
-        let mut found: Vec<PathBuf> = std::fs::read_dir(meta)
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| e.path().join("bin").join(exe))
-            .collect();
-        found.sort();
-        candidates.extend(found.into_iter().rev());
+        for e in std::fs::read_dir(meta).into_iter().flatten().flatten() {
+            candidates.push(e.path().join("bin").join(exe));
+        }
     }
     candidates.push(PathBuf::from("java"));
-    let mut seen = vec![];
-    for c in candidates {
-        let out = std::process::Command::new(&c).arg("-version").output();
-        if let Ok(o) = out {
-            let text = String::from_utf8_lossy(&o.stderr).into_owned()
-                + &String::from_utf8_lossy(&o.stdout);
-            if let Some(m) = java_major(&text) {
-                if m >= need {
-                    return Ok(c);
-                }
-                seen.push(format!("{} is Java {m}", c.display()));
-            }
-        }
+    let found: Vec<(u32, PathBuf)> = candidates
+        .into_iter()
+        .filter_map(|c| Some((major(&c)?, c)))
+        .collect();
+    let newest = found.iter().max_by_key(|(m, _)| *m);
+    match newest {
+        Some((m, c)) if *m >= need => Ok(c.clone()),
+        _ => bail!(
+            "no Java {need} or newer found ({:?}); install one, or set [server] java or --java",
+            found
+        ),
     }
-    bail!(
-        "no Java {need} or newer found ({}); install one, or set [server] java or --java",
-        if seen.is_empty() {
-            "none at all".into()
-        } else {
-            seen.join(", ")
-        }
-    )
 }
 
 #[cfg(test)]
@@ -922,6 +983,44 @@ mod tests {
             assert!(yml.contains(want), "{want} not in\n{yml}");
         }
         assert!(!s.status(5).running && s.request_stop().is_err());
+
+        // Setup (no downloads): a foreign folder needs --force, a non-world in
+        // a world's place is never removed, and the EULA stays unaccepted.
+        std::fs::write(world.join("level.dat"), b"").unwrap();
+        let srv = dir.join("server");
+        std::fs::create_dir_all(srv.join("Vaduz")).unwrap();
+        std::fs::write(srv.join("Vaduz/notes.txt"), b"mine").unwrap();
+        let mut said = vec![];
+        let err = s
+            .setup(false, false, false, &mut |l| said.push(l))
+            .unwrap_err();
+        assert!(err.to_string().contains("did not set it up"), "{err}");
+        let err = s
+            .setup(true, false, false, &mut |l| said.push(l))
+            .unwrap_err();
+        assert!(err.to_string().contains("not a world"), "{err}");
+        assert!(srv.join("Vaduz/notes.txt").is_file());
+        std::fs::remove_dir_all(srv.join("Vaduz")).unwrap();
+        s.setup(true, false, false, &mut |l| said.push(l)).unwrap();
+        // Now it is Meld's folder: a second setup needs no --force.
+        s.setup(false, false, false, &mut |l| said.push(l)).unwrap();
+        let props = std::fs::read_to_string(srv.join("server.properties")).unwrap();
+        assert!(
+            props.contains(
+                "level-name=Vaduz
+"
+            ) && props.contains(
+                "online-mode=false
+"
+            )
+        );
+        assert!(std::fs::read_to_string(srv.join("eula.txt"))
+            .unwrap()
+            .contains("eula=false"));
+        assert!(srv.join("Vaduz/arnis_one_world.json").is_file(), "linked");
+        assert!(srv
+            .join("plugins/WorldGuard/worlds/Vaduz/regions.yml")
+            .is_file());
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
