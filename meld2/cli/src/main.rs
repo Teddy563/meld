@@ -166,6 +166,8 @@ fn arnis_cmd(cmd: ArnisCmd) -> Result<()> {
 
 fn run(path: &Path, arnis: Option<PathBuf>) -> Result<()> {
     let project = Project::load(path)?;
+    let dir = state::project_dir(&project);
+    let _lock = state::lock(&dir)?;
     let (arnis, found, probe) = resolve(arnis, Some(&project))?;
     let caps = probe.caps;
     println!(
@@ -179,7 +181,6 @@ fn run(path: &Path, arnis: Option<PathBuf>) -> Result<()> {
     );
     show_plan(&project, &arnis)?;
 
-    let dir = state::project_dir(&project);
     let stop_file = dir.join("stop");
     let _ = std::fs::remove_file(&stop_file);
     let mut tenths: HashMap<String, i64> = HashMap::new();

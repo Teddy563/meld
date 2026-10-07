@@ -96,6 +96,21 @@ pub fn project_dir(project: &Project) -> PathBuf {
         .join(format!("{slug}-{:08x}", hash as u32))
 }
 
+/// Holds `run.lock` in a project's state folder for as long as the file
+/// lives, so one project has one run at a time. The OS drops the lock when
+/// the process ends, however it ends.
+pub fn lock(dir: &Path) -> Result<std::fs::File> {
+    std::fs::create_dir_all(dir)?;
+    let file = std::fs::File::create(dir.join("run.lock"))?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(std::fs::TryLockError::WouldBlock) => anyhow::bail!(
+            "this project is already running in another meld2; `meld2 stop` it or wait"
+        ),
+        Err(std::fs::TryLockError::Error(e)) => Err(e).context("locking run.lock"),
+    }
+}
+
 impl State {
     pub fn load(dir: &Path) -> Result<Self> {
         let file = dir.join("state.json");
@@ -121,6 +136,19 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_second_run_is_refused() {
+        let dir = std::env::temp_dir().join(format!("meld2-lock-{}", std::process::id()));
+        let first = lock(&dir).unwrap();
+        assert!(lock(&dir)
+            .unwrap_err()
+            .to_string()
+            .contains("already running"));
+        drop(first);
+        drop(lock(&dir).unwrap());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn round_trips_through_disk() {

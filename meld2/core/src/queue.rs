@@ -110,6 +110,20 @@ fn available_ram_mb() -> Option<u64> {
     }
 }
 
+/// Keeps Windows from sleeping while this thread runs builds; it lapses
+/// when the run returns and its thread ends, or when Meld exits.
+// ponytail: Windows only; Linux/macOS (systemd-inhibit, caffeinate) in Phase 3.
+fn keep_awake() {
+    #[cfg(windows)]
+    // SAFETY: a plain flag call with no pointers.
+    unsafe {
+        use windows_sys::Win32::System::Power::{
+            SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED,
+        };
+        SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+    }
+}
+
 enum Msg {
     Event(Event),
     Exit(std::io::Result<std::process::ExitStatus>),
@@ -123,6 +137,7 @@ struct Job {
 
 /// Runs every selection that is not built yet. `stop` is polled twice a
 /// second; when it says so, running jobs are killed and kept as `stopped`.
+/// The caller holds `state::lock(dir)` around it.
 pub fn run(
     project: &Project,
     arnis: &Arnis,
@@ -131,6 +146,7 @@ pub fn run(
     stop: &dyn Fn() -> bool,
     on: &mut dyn FnMut(&str, Note),
 ) -> Result<Summary> {
+    keep_awake();
     let mut state = State::load(dir)?;
     state.project = project.path.clone();
     state.name = project.name.clone();
