@@ -3,85 +3,922 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meld 2</title>
+<title>Meld</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <style>
-  :root { --bg: #fff; --fg: #1d1d1f; --mute: #6e6e73; --line: #d2d2d7; --bar: #2f7d4f; --bad: #b3261e; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #161617; --fg: #f5f5f7; --mute: #a1a1a6; --line: #3a3a3c; --bar: #4fb477; --bad: #f2867f; } }
-  body { margin: 0 auto; max-width: 960px; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
-  h1 { font-size: 18px; } h2 { font-size: 15px; margin: 0 0 6px; }
-  section { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
-  table { width: 100%; border-collapse: collapse; } td { padding: 3px 6px 3px 0; vertical-align: middle; }
-  .mute { color: var(--mute); } .bad { color: var(--bad); }
-  .bar { height: 6px; background: var(--line); border-radius: 3px; min-width: 80px; }
-  .bar > div { height: 100%; background: var(--bar); border-radius: 3px; }
-  button { font: inherit; margin-right: 6px; }
-  pre { max-height: 240px; overflow: auto; font-size: 12px; background: var(--line); padding: 6px; border-radius: 6px; white-space: pre-wrap; }
+  /* Meld 1.9.9's layout and styles (web/index.html), with the Arnis accent #fecc44. */
+  @font-face { font-family:'Monocraft'; src:url('https://cdn.jsdelivr.net/gh/IdreesInc/Monocraft@main/dist/Monocraft-ttf/Monocraft.ttf') format('truetype'); font-weight:400 700; font-display:swap; }
+  :root { --bg:#0b0a08; --line:rgba(255,255,255,.10); --fg:#f0e9da; --mut:#9a9079;
+          --acc:#fecc44; --acc2:#ffd970; --ok:#86b45a; --run:#cf9f3c; --bad:#cf5a3e; --plan:#6b6253;
+          --pixel:'Monocraft','system-ui',sans-serif;
+          --glass:#121110; --raise:rgba(255,255,255,.05); --hair:rgba(255,255,255,.14); --hair2:rgba(255,255,255,.07);
+          --ring:0 0 0 1px rgba(0,0,0,.55); color-scheme:dark; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; overflow:hidden; font:14px/1.45 system-ui,Segoe UI,sans-serif; background:var(--bg); color:var(--fg); }
+  #app { position:relative; height:100vh; width:100vw; overflow:hidden; }
+  #map { position:absolute; inset:0; z-index:1; background:var(--bg); }
+  .leaflet-container { background:var(--bg); }
+  .leaflet-top.leaflet-left, .leaflet-bottom.leaflet-left { margin-left:312px; }
+  .leaflet-top.leaflet-right, .leaflet-bottom.leaflet-right { margin-right:352px; }
+  .leaflet-tile { filter: brightness(0.78) saturate(0.9) contrast(1.04); }
+  #side { position:absolute; top:0; right:0; bottom:0; width:340px; z-index:15; border-left:1px solid var(--hair);
+          background:#0d0c0a; box-shadow:inset 1px 0 0 rgba(255,255,255,.04); overflow-y:auto; overflow-x:hidden; padding:14px;
+          display:flex; flex-direction:column; }
+  #sideL { position:absolute; top:0; left:0; bottom:0; width:300px; z-index:15; border-right:1px solid var(--hair);
+           background:#0d0c0a; box-shadow:inset -1px 0 0 rgba(255,255,255,.04); overflow-y:auto; overflow-x:hidden; padding:14px; }
+  * { scrollbar-width: thin; scrollbar-color: var(--acc) #060504; }
+  ::-webkit-scrollbar { width:10px; height:10px; }
+  ::-webkit-scrollbar-track { background:#060504; }
+  ::-webkit-scrollbar-thumb { background:var(--acc); border-radius:0; border:2px solid #060504; }
+  .wordmark { font-family:var(--pixel); font-weight:700; font-size:46px; line-height:1; color:var(--acc); letter-spacing:.06em; text-shadow:3px 3px 0 #3a2c08; }
+  .icon { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-2px; margin-right:6px; flex:none; }
+  .sub { color:var(--mut); font-size:12px; margin-bottom:12px; }
+  .card { background:transparent; border:0; padding:10px 2px; margin-bottom:0; border-bottom:1px solid var(--hair2); }
+  .card h2 { font-family:var(--pixel); font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--acc2); margin:0 0 9px; }
+  .card h2 + .stat, .card h2 + .sub { margin-top:6px; }
+  #side .card > h2 { cursor:pointer; user-select:none; margin:0 -14px 9px; padding:7px 14px; display:flex; align-items:center; transition:background .12s, color .12s; }
+  #side .card > h2:hover { background:rgba(254,204,68,.07); color:#ffe08a; }
+  #side .card > h2::before { content:''; flex:none; width:0; height:0; margin:0 9px 0 0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:9px solid var(--acc); transition:transform .15s ease; }
+  #side .card.collapsed > h2 { margin-bottom:0; }
+  #side .card.collapsed > h2::before { transform:rotate(-90deg); }
+  #side .card.collapsed > :not(h2) { display:none; }
+  #side .card:last-of-type { border-bottom:0; }
+  .stepnum { display:inline-block; color:var(--acc2); font-size:10px; border:1px solid #5a4a1e; padding:0 5px; margin-right:7px; font-family:var(--pixel); }
+  #side a, #sideL a { color:var(--acc2); text-underline-offset:2px; }
+  label { display:flex; justify-content:space-between; align-items:center; gap:8px; margin:8px 0; font-size:13px; }
+  .i { color:var(--mut); cursor:help; font-size:11px; border:1px solid var(--line); display:inline-block; font-style:normal; font-family:system-ui,Segoe UI,sans-serif; border-radius:50%; width:15px; height:15px; text-align:center; line-height:13px; flex:none; }
+  label .lt { display:flex; align-items:center; gap:6px; min-width:0; }
+  input,select,textarea { background:rgba(0,0,0,.30); color:var(--fg); border:1px solid var(--hair); padding:5px 8px; width:120px; font:inherit; }
+  select { background:#151209; }
+  select option { background:#151209; color:var(--fg); }
+  input::placeholder { color:#6f6757; }
+  input:focus,select:focus,textarea:focus { outline:none; border-color:var(--acc); box-shadow:0 0 0 1px rgba(254,204,68,.6); }
+  button { display:inline-flex; align-items:center; justify-content:center; background:#141416; color:var(--acc2); border:1px solid var(--hair); padding:8px 10px; font-family:var(--pixel); font-weight:700; letter-spacing:.02em; cursor:pointer; width:100%; margin-top:6px; font-size:13px; }
+  button:hover { border-color:var(--acc); background:#1a1a1d; }
+  button:active { transform:translateY(1px); }
+  button.sec { background:var(--raise); color:var(--fg); }
+  button.sec:hover { border-color:var(--acc); color:var(--acc2); background:rgba(254,204,68,.10); }
+  button.go { background:var(--acc); color:#1a1408; border-color:var(--acc); }
+  button.go:hover { background:var(--acc2); border-color:var(--acc2); color:#1a1408; }
+  button.xbtn { background:var(--bad); color:#fff; }
+  button.small { width:auto; margin:0; padding:3px 8px; font-size:11px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  input[type=checkbox] { appearance:none; -webkit-appearance:none; width:18px; height:18px; margin:0; padding:0; border:1px solid var(--hair); background:rgba(0,0,0,.30) center/12px no-repeat; cursor:pointer; flex:0 0 auto; }
+  input[type=checkbox]:hover { border-color:var(--acc); }
+  input[type=checkbox]:checked { border-color:#9a6a12; background-color:var(--acc); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23241a02' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-6.5'/%3E%3C/svg%3E"); }
+  .row { display:flex; gap:6px; align-items:center; }
+  .row button { margin-top:0; }
+  .chip { display:inline-block; padding:2px 7px; font-size:10px; font-family:var(--pixel); letter-spacing:.04em; text-transform:uppercase; background:rgba(0,0,0,.30); border:1px solid var(--hair); }
+  details.drawer { border:none; background:transparent; margin:7px 0; }
+  details.drawer > summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px; user-select:none; font-size:12px; font-weight:700; color:var(--fg); padding:8px 10px; border:1px solid var(--hair); background:var(--raise); }
+  details.drawer > summary::-webkit-details-marker { display:none; }
+  details.drawer > summary::before { content:''; flex:none; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:9px solid var(--acc); transform:rotate(-90deg); transition:transform .15s ease; }
+  details.drawer > summary:hover { border-color:var(--acc); color:var(--acc2); background:rgba(254,204,68,.10); }
+  details.drawer[open] > summary { background:transparent; border:none; padding:4px 0; color:var(--acc2); }
+  details.drawer[open] > summary::before { transform:none; }
+  .grouphead { border-top:1px solid var(--line); margin-top:7px; padding-top:5px; color:var(--acc2); font-weight:600; letter-spacing:.03em; font-size:12px; }
+  .govhead { color:var(--acc2); font-weight:600; font-size:12px; letter-spacing:.03em; margin:10px 0 4px; font-family:var(--pixel); text-transform:uppercase; border-top:1px solid var(--line); padding-top:9px; }
+  .search-hit { background:rgba(254,204,68,.13) !important; }
+  .legend span { display:inline-flex; align-items:center; gap:4px; margin-right:8px; font-size:11px; }
+  .dot { width:9px; height:9px; border-radius:2px; display:inline-block; }
+  #log { font:11px/1.4 ui-monospace,Consolas,monospace; color:var(--mut); white-space:pre-wrap; max-height:220px; overflow-y:auto; overflow-wrap:anywhere; }
+  .stat { font-size:12px; color:var(--mut); margin:2px 0; overflow-wrap:anywhere; }
+  .stat b { color:var(--fg); font-weight:600; }
+  .bar { height:10px; background:#1c1916; border:1px solid var(--line); border-radius:2px; overflow:hidden; margin-top:4px; }
+  .bar > i { display:block; height:100%; background:var(--run); width:0; transition:width .3s ease; }
+  .bar > i.ok { background:var(--ok); } .bar > i.bad { background:var(--bad); }
+  .report { background:var(--bg); border:2px solid var(--line); border-radius:2px; padding:9px 11px; margin:4px 0 8px; }
+  .report .big { font-family:var(--pixel); font-size:18px; font-weight:700; color:var(--acc2); }
+  .report .lbl { color:var(--mut); font-size:11px; }
+  .wjob { display:flex; gap:8px; align-items:flex-start; padding:6px 0; border-bottom:1px solid var(--line); }
+  .wjob:last-child { border-bottom:0; }
+  .wnum { flex:0 0 auto; min-width:34px; text-align:center; font-family:var(--pixel); font-size:12px; padding:4px 6px; border-radius:2px; color:#241a02; background:var(--mut); }
+  .wnum.running { background:var(--acc); } .wnum.done, .wnum.skipped { background:var(--ok); } .wnum.failed { background:var(--bad); color:#fff; }
+  .wjbody { flex:1 1 auto; min-width:0; }
+  .wjtop { display:flex; justify-content:space-between; align-items:baseline; gap:6px; }
+  .wjkey { font-size:12px; color:var(--fg); overflow-wrap:anywhere; }
+  .wjpct { flex:0 0 auto; font-family:var(--pixel); font-size:12px; color:var(--acc2); font-variant-numeric:tabular-nums; }
+  .wjmsg { font-size:11px; color:var(--mut); overflow-wrap:anywhere; margin-top:2px; }
+  .pieces { display:flex; flex-wrap:wrap; gap:2px; margin-top:4px; }
+  .pieces i { width:8px; height:8px; background:var(--plan); }
+  .pieces i.start, .pieces i.retry { background:var(--run); }
+  .pieces i.done, .pieces i.skipped { background:var(--ok); }
+  .pieces i.failed { background:var(--bad); }
+  .wrow { display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:12px; padding:4px 0; border-bottom:1px solid var(--line); min-width:0; cursor:pointer; }
+  .wrow.on { color:var(--acc2); }
+  .wrow > span:first-child { min-width:0; overflow-wrap:anywhere; }
+  #coordbox { position:fixed; left:310px; bottom:10px; z-index:600; pointer-events:none; background:#141210; color:var(--fg); border:1px solid var(--line); padding:4px 9px; font:11px/1.3 ui-monospace,Consolas,monospace; }
+  #credit { position:fixed; left:310px; bottom:40px; z-index:600; background:#141210; color:var(--mut); border:1px solid var(--line); padding:3px 8px; font:10.5px/1.3 ui-monospace,Consolas,monospace; }
+  #credit a { color:var(--acc2); text-decoration:none; }
+  #projOverlay { display:none; position:fixed; top:12px; left:312px; width:460px; height:min(86vh,860px); max-width:calc(100vw - 664px); min-width:300px; z-index:6000; background:var(--glass); border:1px solid var(--hair); box-shadow:var(--ring); flex-direction:column; overflow:hidden; }
+  #projOverlay.on { display:flex; }
+  .pcard { border:1px solid var(--hair); background:var(--raise); padding:8px 10px; cursor:pointer; }
+  .pcard:hover { border-color:var(--acc); }
+  .pcard.on { border-color:var(--acc); background:rgba(254,204,68,.08); }
+  pre.console { font:11px/1.4 ui-monospace,Consolas,monospace; color:var(--mut); white-space:pre-wrap; overflow-wrap:anywhere; height:220px; overflow-y:auto; background:var(--bg); border:1px solid var(--line); padding:6px; margin:6px 0; }
+  textarea { width:100%; min-height:300px; resize:vertical; font:11.5px/1.45 ui-monospace,Consolas,monospace; }
+  .railfoot { order:99; text-align:center; color:var(--mut); font-size:11px; padding:14px 0 4px; }
+  .msg { font-size:12px; color:var(--mut); margin-top:5px; min-height:16px; overflow-wrap:anywhere; }
+  .msg.bad, .bad { color:#f08a70; } .good { color:var(--ok); }
 </style>
 </head>
 <body>
-<h1>Meld 2 <span class="mute" id="conn">connecting…</span></h1>
-<div id="projects"></div>
-<h2>Log</h2>
-<pre id="log"></pre>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+  <symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
+  <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01"/><path d="M10 16h.01"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></symbol>
+</svg>
+
+<div id="app">
+  <div id="sideL">
+    <div class="wordmark">MELD</div>
+    <div class="sub" style="font-size:10px;line-height:1.3;margin:6px 0 8px">Arnis worlds, at scale. From a city block to a whole continent, in Minecraft.</div>
+    <button class="sec" id="btnProjects"><svg class="icon"><use href="#i-globe"/></svg>Projects</button>
+    <div class="sub" style="margin:12px 0 4px">Live status <span id="conn" style="float:right">connecting…</span></div>
+    <div class="card">
+      <h2>Build</h2>
+      <div class="stat" id="projLine">No project open.</div>
+      <div class="report">
+        <div><span id="estSize" class="big">–</span> <span class="lbl">estimated size</span></div>
+        <div class="stat" id="estSub">Plan to see the pieces and size.</div>
+        <div class="stat" id="diskLine"></div>
+        <div class="stat" id="runLine" style="margin-top:6px"></div>
+        <div class="bar"><i id="runBar"></i></div>
+        <div class="stat" id="etaLine"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Workers <span id="workersCount" class="chip" style="float:right">idle</span></h2>
+      <div id="workersState"><div class="stat">Idle. Generate to see live workers here.</div></div>
+    </div>
+    <div class="card">
+      <h2>Log</h2>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="projOverlay">
+    <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--hair)">
+      <div style="font-weight:700;font-size:14px;color:var(--acc2)">Projects</div>
+      <input id="projSearch" placeholder="filter…" style="flex:1;min-width:0;padding:4px 8px;font-size:12px">
+      <button class="small xbtn" id="projClose" title="Close"><svg class="icon" style="margin:0"><use href="#i-x"/></svg></button>
+    </div>
+    <div style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line)">
+      <input id="newName" placeholder="new project: letters, digits, - and _" maxlength="64" style="flex:1;min-width:0;width:auto">
+      <button class="sec small" id="newBtn" style="padding:5px 9px"><svg class="icon"><use href="#i-plus"/></svg>New</button>
+    </div>
+    <div class="msg" id="newMsg" style="padding:0 12px"></div>
+    <div id="projCards" style="flex:1;overflow:auto;padding:8px 10px;display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+
+  <div id="coordbox">move the mouse over the map</div>
+  <div id="credit">Arnis by <a href="https://github.com/louis-e/arnis" target="_blank" rel="noopener">louis-e</a> · Meld by <a href="https://github.com/Teddy563/meld" target="_blank" rel="noopener">Teddy563</a></div>
+
+  <div id="side">
+    <div style="order:-1;margin-bottom:10px">
+      <input id="railSearch" type="text" placeholder="Search settings…" autocomplete="off" style="width:100%;padding:7px 9px;font-size:12px">
+    </div>
+
+    <div class="card collapsed" id="cardSettings">
+      <h2><span class="stepnum">1</span>Settings</h2>
+      <label><span class="lt">Settings for <span class="i" title="Project defaults apply to every selection; a selection's own value wins. Blank fields inherit.">i</span></span>
+        <select id="target" style="width:170px"></select></label>
+      <div id="settingsForm"></div>
+      <div class="msg" id="saveMsg"></div>
+    </div>
+
+    <div class="card collapsed" id="cardPrep">
+      <h2><span class="stepnum">2</span>Prepare data</h2>
+      <div class="stat">A bake cuts an .osm.pbf extract once, before the builds that read it. The selections need the same <b>osm_pbf</b> (and <b>osm_pbf_url</b>) under Settings › OSM source, where prewarm and offline are too.</div>
+      <div id="bakeList"></div>
+      <button class="sec" id="bakeAdd"><svg class="icon"><use href="#i-plus"/></svg>Add a bake</button>
+    </div>
+
+    <div class="card" id="cardGen">
+      <h2><span class="stepnum">3</span>Generate</h2>
+      <div class="legend">
+        <span><i class="dot" style="background:var(--acc)"></i>planned</span>
+        <span><i class="dot" style="background:var(--run)"></i>running</span>
+        <span><i class="dot" style="background:var(--ok)"></i>built</span>
+        <span><i class="dot" style="background:var(--bad)"></i>failed</span>
+        <span><i class="dot" style="background:var(--mut)"></i>stopped</span>
+      </div>
+      <button id="btnRun" class="go"><svg class="icon"><use href="#i-play"/></svg>Generate world</button>
+      <button id="btnPlan" class="sec" title="Arnis's dry run: pieces, chunks and size per selection, against free disk."><svg class="icon"><use href="#i-ruler"/></svg>Plan</button>
+      <div class="row" style="margin-top:6px">
+        <button class="sec" id="btnStop"><svg class="icon"><use href="#i-square"/></svg>Stop</button>
+        <button class="sec" id="btnRebuild" title="Build every selection again from scratch." style="width:auto;flex:0 0 auto;padding:8px 12px"><svg class="icon" style="margin:0"><use href="#i-rotate"/></svg></button>
+      </div>
+      <div class="stat" style="margin-top:6px">Stop keeps what is built; Generate resumes.</div>
+      <div id="planOut" class="stat" style="white-space:pre-wrap;margin-top:4px"></div>
+    </div>
+
+    <div class="card" id="cardSel">
+      <h2>Selections / worlds</h2>
+      <div class="stat">Draw a rectangle or polygon on the map to add one; edit or delete it with the map tools. Click one to give it its own settings.</div>
+      <div id="selList"></div>
+    </div>
+
+    <div class="card collapsed" id="cardServer">
+      <h2>Server setup</h2>
+      <div id="serverBody"></div>
+    </div>
+
+    <div class="card collapsed" id="cardArnis">
+      <h2>Arnis</h2>
+      <div id="arnisBody" class="stat">…</div>
+    </div>
+
+    <div class="card collapsed" id="cardToml">
+      <h2>Project file</h2>
+      <div class="stat">The project as TOML: everything the forms set, plus comments. Saving checks it first.</div>
+      <textarea id="toml" spellcheck="false"></textarea>
+      <button class="sec" id="tomlSave">Save</button>
+      <div class="msg" id="tomlMsg"></div>
+    </div>
+
+    <div class="railfoot"><a href="https://github.com/Teddy563/meld" target="_blank" rel="noopener">Meld 2</a> · not affiliated with Mojang AB or Minecraft. Built on the open source Arnis generator.</div>
+  </div>
+</div>
+
 <script>
+"use strict";
 const token = new URLSearchParams(location.search).get("token") || "";
-const api = (path, opt = {}) =>
-  fetch(path, { ...opt, headers: { "X-Meld-Token": token } }).then(r => r.json());
-const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const logEl = document.getElementById("log");
-function log(line) {
-  logEl.textContent += line + "\n";
-  logEl.scrollTop = logEl.scrollHeight;
-}
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const icon = (n) => `<svg class="icon"><use href="#i-${n}"/></svg>`;
+const r6 = (x) => Math.round(x * 1e6) / 1e6;
+const tip = (t) => (t ? ` <span class="i" title="${esc(t)}">i</span>` : "");
 
-async function refresh() {
-  const list = await api("/api/projects");
-  document.getElementById("projects").innerHTML = list.map(p => {
-    if (p.error) return `<section><h2>${esc(p.name)}</h2><div class="bad">${esc(p.error)}</div></section>`;
-    const rows = Object.entries(p.state || {}).map(([id, s]) => {
-      const pct = Math.max(0, Math.min(100, s.progress || 0));
-      const pieces = s.pieces ? `${s.pieces_done}/${s.pieces} pieces` : "";
-      return `<tr><td>${esc(id)}</td><td>${esc(s.status)}</td><td>${pieces}</td>
-        <td><div class="bar"><div style="width:${pct}%"></div></div></td>
-        <td class="bad">${esc(s.error)}</td></tr>`;
-    }).join("");
-    return `<section><h2>${esc(p.title)} <span class="mute">${esc(p.name)}${p.running ? " · running" : ""}</span></h2>
-      <button onclick="act('${esc(p.name)}','run')">Run</button>
-      <button onclick="act('${esc(p.name)}','stop')">Stop</button>
-      <button onclick="plan('${esc(p.name)}')">Plan</button>
-      <table>${rows || `<tr><td class="mute">${p.selections.length} selection(s), not run yet</td></tr>`}</table></section>`;
-  }).join("") || `<p class="mute">No projects in the workspace yet.</p>`;
+async function api(path, opt = {}) {
+  const r = await fetch(path, { ...opt, headers: { "X-Meld-Token": token, ...(opt.headers || {}) } });
+  let data = null;
+  try { data = await r.json(); } catch (_) { /* empty body */ }
+  if (!r.ok) throw new Error((data && data.error) || `HTTP ${r.status}`);
+  return data;
 }
+const post = (path, body) => api(path, { method: "POST", body });
+const say = (el, text, bad) => { const e = $(el); if (e) { e.textContent = text; e.className = "msg" + (bad ? " bad" : ""); } };
 
-async function act(name, what) {
-  const r = await api(`/api/projects/${name}/${what}`, { method: "POST" });
-  log(`${name}: ${what} ${r.error ? "failed: " + r.error : "ok"}`);
-  refresh();
+// ---- the settings rail: every key a selection may set, in Meld 1's order ----
+// [key, label, type, tip]; type: num | text | bool (off unless set) | on (on unless false) | list | [choices]
+const B = ["", "true", "false"];
+const SETTINGS = [
+  { rows: [
+    ["scale", "Scale", "num", "Blocks per metre: 1 = 1:1, 0.1 = 1:10. Arnis default 1."],
+    ["unit_regions", "Cell size (regions)", "num", "Side of each piece in 512-block regions. Pieces are what Arnis builds in parallel and what resumes. Default 4."],
+    ["ground_level", "Ground level", "num", "Arnis default -62."],
+    ["road_detail", "Road detail", ["", "clean", "compact"], "clean simplifies lane markings (from about scale 0.7); compact also leaves out footways, paths and service roads."],
+    ["mode", "Generation mode", ["", "geo-terrain", "geo-only", "terrain-only"], "geo-terrain: map objects on real terrain (default); geo-only: flat ground; terrain-only: no map objects."],
+    ["origin", "Origin lat, lon", "text", "Pins the One World frame. Unset: the centre of the world's first selection."],
+  ] },
+  { head: "Terrain shaping", rows: [
+    ["height_multiplier", "Terrain height ×", "num", "Vertical exaggeration without widening the map."],
+    ["snow_mode", "Snow", ["", "realistic", "peaks", "manual", "off"], "realistic follows the climate snow line (default); manual from Snow Y up. One World refuses peaks."],
+    ["snow_percent", "Snow top %", "num", "peaks: the top share of the height range."],
+    ["snow_y", "Snow Y", "num", "manual: snow at and above this Y."],
+    ["disable_height_limit", "Extend build height", "bool", "One World already uses the extended height."],
+    ["aws_only_elevation", "Legacy AWS elevation", "bool", "The old elevation source only."],
+    ["climate_mode", "Climate (Köppen)", ["", "origin", "per-position"], "Experimental. origin: read once (default); per-position: at every block, so a large world crosses climate zones."],
+  ] },
+  { drawer: "OSM source · data", rows: [
+    ["overpass_url", "Overpass URL", "text", "A private or self-hosted Overpass mirror."],
+    ["osm_pbf", "OSM .pbf", "text", "Read OSM from an .osm.pbf file, or 'geofabrik'. A bake (Prepare data) cuts it once."],
+    ["osm_pbf_url", "Geofabrik extract URL", "text", "With geofabrik: the extract to download. The bake and its selections need the same."],
+    ["osm_tiles_url", "Tile archive", "text", "A prepared local tile archive folder."],
+    ["max_downloads", "Downloads at once", "num", "Arnis default 16."],
+    ["prewarm", "Fill caches first (prewarm)", "bool", "Before the build, a step downloads everything the selection needs."],
+    ["prewarm_first", "Prewarm inside the run", "bool", "Arnis's own --prewarm-first."],
+    ["offline", "Cached data only (offline)", "bool", "Never touch the network: use with prewarm or a bake."],
+  ] },
+  { perf: true, head: "Generation performance", rows: [
+    ["workers", "Workers", "text", "Pieces Arnis builds at once: auto (default) or a number."],
+    ["threads", "Threads", "num", "Unset: Meld splits [run] cpu_target across the jobs running."],
+    ["cpu_target", "CPU limit %", "num", "Unset: Meld's share."],
+    ["ram_budget_mb", "RAM budget MB", "num", "Unset: Meld's share."],
+  ] },
+  { rows: [["seed", "Seed", "num", "World seed."]] },
+  { drawer: "Props & 3D models", rows: [
+    ["props", "Prop families", "text", "all, none, or a comma list: boat, car, crane, excavator, fountain, helicopter, jetbridge, landmark, lighthouse, plane, playground, starship, tombstone, tractor, windturbine."],
+    ["use_3d", "Downloaded 3D models", "on", "Off adds --no-3d."],
+  ] },
+  { rows: [
+    ["gamemode", "Game mode", ["", "survival", "creative", "adventure", "spectator"], "Arnis default creative."],
+    ["world_time", "Time of day", "num", "Ticks; Arnis default 6000 (noon)."],
+    ["map_item", "World map item", B, "A map of the area at spawn; Arnis default true."],
+    ["world_border", "World border", "bool", "Around all of the world's areas."],
+  ] },
+  { head: "Buildings", rows: [
+    ["buildings", "Buildings", "on", "Off adds --no-buildings."],
+    ["overture", "Additional buildings (Overture)", B, "Arnis default true."],
+    ["overture_source", "Overture source", ["", "auto", "tiles", "parquet"], ""],
+    ["interior", "Interiors", B, "Arnis default false."],
+    ["signage", "Signs", ["", "basic", "full"], "basic: street names, traffic signs; full adds shop names and house numbers. Java only."],
+  ] },
+  { drawer: "Building facades", rows: [
+    ["building_facades", "Building facades", "bool", ""],
+    ["facade_detail", "Facade detail", ["", "standard", "high"], ""],
+    ["facade_px", "Facade px", "num", "Arnis default 16."],
+    ["mapillary_facades", "Mapillary facades", B, "Needs MAPILLARY_TOKEN in Meld's environment."],
+    ["mapillary_facade_mode", "Mapillary mode", ["", "photos", "blocks"], ""],
+  ] },
+  { head: "Trees", rows: [
+    ["legacy_trees", "Legacy trees", "bool", "The old procedural trees instead of schematics."],
+    ["tree_realm", "Tree biome", ["", "auto", "afr", "asn", "aus", "ena", "eur", "fl", "ind", "sam", "wna", "vanilla-plus"], ""],
+  ] },
+  { drawer: "Tree sizes", rows: [["tree_size_weights", "Size weights", "text", "e.g. big=150,tall=50,giant=0 (small, medium, big, tall, giant; 0-200)."]] },
+  { drawer: "Farmland texture", rows: [
+    ["field_mix", "Profile", "text", "smallholding, patchwork, prairie, pasture, classic, or a list like farm=75,coarse=10,plains=8,moss=5,flower=2."],
+    ["farm_crops", "Crops", "text", "e.g. wheat=60,sunflower=20,fallow=20."],
+    ["field_scale", "Field scale", "num", "Arnis default 100."],
+    ["grass_texture", "Also texture open grassland", "bool", ""],
+    ["land_texture", "Also texture untagged land", "bool", ""],
+    ["rocks", "Rocks", "bool", ""],
+    ["rock_density", "Rock density", "num", "Arnis default 0.02."],
+    ["bushes", "Bushes", "bool", ""],
+    ["bush_density", "Bush density", "num", "Arnis default 0.05."],
+  ] },
+  { head: "Land & water", rows: [
+    ["fillground", "Fill ground", "bool", "Solid ground below the surface."],
+    ["river_bed", "River bed", ["", "v1"], "v1: smooth U-shaped beds."],
+    ["water_detail", "Water detail", ["", "scaled"], ""],
+    ["caves", "Caves", "bool", ""],
+  ] },
+  { drawer: "Cave biomes", rows: [
+    ["cave_style", "Cave style", ["", "vanilla", "more-vanilla", "all-mix", "more-mix"], "How much of the underground the themed cave biomes take; default all-mix."],
+    ["cave_ores", "Cave ores", ["", "normal", "more"], ""],
+    ["cave_seed", "Cave seed", "num", ""],
+  ] },
+  { head: "Output", rows: [
+    ["voxy_lod", "Voxy LOD pregeneration", "bool", ""],
+    ["bake_lighting", "Bake lighting (LOD mods)", "bool", ""],
+  ] },
+  { drawer: "Extra Arnis flags", rows: [["extra_args", "Arguments", "list", "Flags Meld does not model, separated by spaces; passed unchecked."]] },
+];
+const RUN = [
+  ["jobs", "Jobs at once", "num", "Arnis processes at once; never two on one world."],
+  ["cpu_target", "CPU limit %", "num", "Share of the cores all jobs split. Default 90."],
+  ["ram_budget_mb", "RAM budget MB", "num", "Split between jobs. Unset: 80 % of free RAM."],
+  ["min_free_mb", "Keep free on disk MB", "num", "A run that would leave less is refused. Default 1024."],
+];
+
+// ---- state ----
+let options = [];
+let cur = null;           // {name, model, parts, state, running}
+let target = "";          // "" = project defaults, else a selection id
+const live = {};          // project -> id -> {status, pct, of, pieces, msg}
+const logs = {};
+let runStart = null;
+let lastPlan = null;
+
+// ---- projects overlay ----
+async function listProjects() {
+  let list = [];
+  try { list = await api("/api/projects"); } catch (e) { $("projCards").innerHTML = `<div class="stat bad">${esc(e.message)}</div>`; return; }
+  const f = $("projSearch").value.trim().toLowerCase();
+  $("projCards").innerHTML = list.filter((p) => !f || p.name.toLowerCase().includes(f)).map((p) => {
+    if (p.error) return `<div class="pcard" data-open="${esc(p.name)}"><b>${esc(p.name)}</b><div class="stat bad">${esc(p.error)}</div></div>`;
+    const st = Object.values(p.state || {});
+    const done = st.filter((s) => s.status === "done").length;
+    const chip = p.running ? `<span class="chip" style="color:var(--acc)">running</span>` : st.length && done === st.length ? `<span class="chip" style="color:var(--ok)">built</span>` : "";
+    return `<div class="pcard ${cur && cur.name === p.name ? "on" : ""}" data-open="${esc(p.name)}"><div class="row" style="justify-content:space-between"><b>${esc(p.title)}</b>${chip}</div>
+      <div class="stat">${esc(p.name)} · ${p.selections.length} selection(s)${st.length ? ` · ${done}/${st.length} built` : ""}</div></div>`;
+  }).join("") || `<div class="stat">No projects yet. Name one above and press New.</div>`;
 }
-
-async function plan(name) {
-  const r = await api(`/api/projects/${name}/plan`);
-  if (r.error) return log(`${name}: plan failed: ${r.error}`);
-  r.selections.forEach(s => log(`${name} ${s.id}: ${s.pieces} pieces, ${s.todo_chunks}/${s.chunks} chunks to build, ~${s.est_mb.toFixed(1)} MB`));
-  log(`${name}: disk ${r.disk}, ~${r.need_mb.toFixed(0)} MB to write, ${r.free_mb} MB free`);
-}
-
-const es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
-es.onopen = () => (document.getElementById("conn").textContent = "live");
-es.onerror = () => (document.getElementById("conn").textContent = "reconnecting…");
-let pending = null;
-es.onmessage = m => {
-  const e = JSON.parse(m.data);
-  const who = `[${e.project}${e.id ? " " + e.id : ""}]`;
-  if (e.note === "log") log(`${who} ${e.line}`);
-  else if (e.note === "event" && e.event.type === "piece") log(`${who} piece ${e.event.piece + 1}/${e.event.of} ${e.event.state}`);
-  else if (e.note === "event" && e.event.type === "transfer") log(`${who} ${e.event.stage} ${e.event.name} ${e.event.percent.toFixed(0)}%`);
-  else if (e.note === "event" && e.event.type === "error") log(`${who} error: ${e.event.message}`);
-  else if (e.note !== "event") log(`${who} ${e.note}${e.why ? ": " + e.why : ""}${e.error ? ": " + e.error : ""}`);
-  // Redraw at most twice a second while progress streams in.
-  pending = pending || setTimeout(() => { pending = null; refresh(); }, 500);
+$("projCards").addEventListener("click", (e) => { const c = e.target.closest("[data-open]"); if (c) location.hash = `#/p/${c.dataset.open}`; });
+$("projSearch").oninput = listProjects;
+$("btnProjects").onclick = () => { $("projOverlay").classList.toggle("on"); listProjects(); };
+$("projClose").onclick = () => $("projOverlay").classList.remove("on");
+$("newBtn").onclick = async () => {
+  const name = $("newName").value.trim();
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) return say("newMsg", "Use letters, digits, - and _.", true);
+  try {
+    if ((await api("/api/projects")).some((p) => p.name === name)) return say("newMsg", `${name} exists.`, true);
+    await api(`/api/projects/${name}`, { method: "PUT", body: JSON.stringify({ format: 1, name, output: "saves" }) });
+    $("newName").value = "";
+    say("newMsg", "");
+    location.hash = `#/p/${name}`;
+  } catch (e) { say("newMsg", e.message, true); }
 };
-refresh().catch(e => log("cannot reach the API: " + e));
+
+// ---- map ----
+const map = L.map("map", { zoomControl: true }).setView([47.14, 9.52], 5);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
+const drawn = new L.FeatureGroup().addTo(map);
+const partsLayer = L.layerGroup().addTo(map);
+const shape = { color: "#fecc44", weight: 2, fillOpacity: 0.1 };
+map.addControl(new L.Control.Draw({
+  draw: { rectangle: { shapeOptions: shape, showArea: false }, polygon: { shapeOptions: shape, showArea: false }, polyline: false, circle: false, marker: false, circlemarker: false },
+  edit: { featureGroup: drawn },
+}));
+map.on("mousemove", (e) => ($("coordbox").textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`));
+map.on(L.Draw.Event.CREATED, (e) => {
+  if (!cur) return say("saveMsg", "Open or create a project first.", true);
+  const sels = (cur.model.selection = cur.model.selection || []);
+  let n = sels.length + 1;
+  while (sels.some((s) => s.id === `s${n}`)) n++;
+  const s = { id: `s${n}`, world: (sels[0] && sels[0].world) || cur.model.name };
+  if (e.layerType === "rectangle") s.bbox = boxOf(e.layer);
+  else s.polygon = [ringOf(e.layer)];
+  sels.push(s);
+  saveModel(`added ${s.id}`, true);
+});
+map.on(L.Draw.Event.EDITED, () => { geometryFromMap(); saveModel("saved the shapes", true); });
+map.on(L.Draw.Event.DELETED, () => { geometryFromMap(); saveModel("deleted", true); });
+const boxOf = (l) => { const b = l.getBounds(); return [r6(b.getSouth()), r6(b.getWest()), r6(b.getNorth()), r6(b.getEast())]; };
+const ringOf = (l) => { const ll = l.getLatLngs(); return (Array.isArray(ll[0]) ? ll[0] : ll).map((p) => [r6(p.lat), r6(p.lng)]); };
+function geometryFromMap() {
+  const boxes = {}, rings = {};
+  drawn.eachLayer((l) => {
+    if (l.ring === undefined) boxes[l.selId] = boxOf(l);
+    else (rings[l.selId] = rings[l.selId] || [])[l.ring] = ringOf(l);
+  });
+  cur.model.selection = (cur.model.selection || [])
+    .filter((s) => (s.polygon ? rings[s.id] : boxes[s.id]))
+    .map((s) => (s.polygon ? { ...s, polygon: rings[s.id].filter(Boolean) } : { ...s, bbox: boxes[s.id] }));
+  if (target && !cur.model.selection.some((s) => s.id === target)) target = "";
+}
+
+function statusOf(id) {
+  const l = ((cur && live[cur.name]) || {})[id];
+  const s = ((cur && cur.state) || {})[id];
+  return (l && l.status) || (s && s.status) || "pending";
+}
+const partsOf = (sel) => (sel.polygon ? cur.parts.filter((p) => p.part_of === sel.id).map((p) => p.id) : [sel.id]);
+function selStatus(sel) {
+  const st = partsOf(sel).map(statusOf);
+  for (const k of ["running", "failed", "stopped", "pending"]) if (st.includes(k)) return k;
+  return st.length ? "done" : "pending";
+}
+const colour = { pending: "#fecc44", running: "#cf9f3c", done: "#86b45a", skipped: "#86b45a", failed: "#cf5a3e", stopped: "#9a9079" };
+const styleOf = (s) => ({ color: colour[selStatus(s)], weight: s.id === target ? 4 : 2.5, opacity: 1, fillOpacity: s.id === target ? 0.25 : 0.1 });
+function drawShapes(fit) {
+  drawn.clearLayers();
+  partsLayer.clearLayers();
+  if (!cur) return;
+  for (const s of cur.model.selection || []) {
+    const ls = s.polygon ? s.polygon.map((ring, i) => Object.assign(L.polygon(ring, styleOf(s)), { ring: i })) : s.bbox ? [L.rectangle([[s.bbox[0], s.bbox[1]], [s.bbox[2], s.bbox[3]]], styleOf(s))] : [];
+    for (const l of ls) {
+      l.selId = s.id;
+      l.bindTooltip(`${s.id} · ${s.world}`);
+      l.on("click", () => pickTarget(s.id));
+      drawn.addLayer(l);
+    }
+  }
+  for (const p of cur.parts) L.rectangle([[p.bbox[0], p.bbox[1]], [p.bbox[2], p.bbox[3]]], { color: "#f0e9da", weight: 1.2, opacity: 0.7, dashArray: "6 5", fill: false, interactive: false }).addTo(partsLayer);
+  if (fit && drawn.getLayers().length) map.fitBounds(drawn.getBounds(), { maxZoom: 14, padding: [40, 40] });
+}
+function restyle() {
+  drawn.eachLayer((l) => { const s = (cur.model.selection || []).find((x) => x.id === l.selId); if (s) l.setStyle(styleOf(s)); });
+}
+
+// ---- one project ----
+// keep: the view stays; fresh: the model is read back too (after a TOML save).
+// Otherwise the forms keep editing the model object they rendered.
+async function openProject(name, keep, fresh) {
+  let p;
+  try { p = await api(`/api/projects/${name}`); } catch (e) { say("saveMsg", e.message, true); return; }
+  const first = !cur || cur.name !== name;
+  const model = !first && !fresh && cur.model ? cur.model : p.model || { format: 1, name, output: "saves" };
+  cur = { name, model, parts: p.parts || [], state: p.state || {}, running: p.running };
+  if (first) { target = ""; lastPlan = null; $("log").textContent = (logs[name] || []).join("\n"); $("planOut").textContent = ""; }
+  $("toml").value = p.toml;
+  say("tomlMsg", p.error || "", !!p.error);
+  drawShapes(first && !keep);
+  if (first) renderSettings();
+  renderTargets();
+  renderSelections();
+  renderBakes();
+  renderBuild();
+  if (first) serverBody();
+}
+let saveTimer = null;
+async function saveModel(what, rerender) {
+  try {
+    await api(`/api/projects/${cur.name}`, { method: "PUT", body: JSON.stringify(cur.model) });
+    say("saveMsg", what);
+  } catch (e) { say("saveMsg", e.message, true); }
+  await openProject(cur.name, true);
+  if (rerender) { drawShapes(false); renderSettings(); }
+}
+const saveSoon = (what) => { clearTimeout(saveTimer); saveTimer = setTimeout(() => saveModel(what), 500); };
+
+function renderTargets() {
+  const sels = cur.model.selection || [];
+  $("target").innerHTML = `<option value="">Project defaults</option>` + sels.map((s) => `<option value="${esc(s.id)}">Selection ${esc(s.id)}</option>`).join("");
+  $("target").value = target;
+}
+$("target").onchange = () => pickTarget($("target").value);
+function pickTarget(id) {
+  target = id;
+  $("target").value = id;
+  $("cardSettings").classList.remove("collapsed");
+  renderSettings();
+  renderSelections();
+  restyle();
+}
+
+function fieldHtml([key, label, type, help], table, inherited, attr = "data-f") {
+  const v = table[key], inh = inherited[key];
+  const lab = `<span class="lt">${esc(label)}${tip(`${key}: ${help || ""}`)}</span>`;
+  if (type === "bool" || type === "on") {
+    const on = v ?? inh ?? type === "on";
+    return `<label data-key="${key}">${lab}<input type="checkbox" ${attr}="${key}" data-t="${type}" ${on ? "checked" : ""}></label>`;
+  }
+  if (Array.isArray(type)) {
+    const opts = type.map((o) => `<option value="${esc(o)}" ${String(v ?? "") === o ? "selected" : ""}>${o === "" ? (inh !== undefined ? `inherit (${esc(inh)})` : "default") : esc(o)}</option>`).join("");
+    return `<label data-key="${key}">${lab}<select ${attr}="${key}" data-t="choice">${opts}</select></label>`;
+  }
+  const val = type === "list" ? (v || []).join(" ") : v ?? "";
+  const ph = inh !== undefined ? (Array.isArray(inh) ? inh.join(" ") : String(inh)) : "";
+  return `<label data-key="${key}">${lab}<input ${attr}="${key}" data-t="${type}" value="${esc(val)}" placeholder="${esc(ph)}" ${type === "list" || type === "text" ? 'style="width:140px"' : ""}></label>`;
+}
+// A field's value from its input; undefined removes the key (it inherits).
+function readField(el, dflt) {
+  const t = el.dataset.t, raw = el.value.trim();
+  if (t === "bool" || t === "on") return el.checked === dflt ? undefined : el.checked;
+  if (t === "list") return raw ? raw.split(/\s+/) : undefined;
+  if (t === "num") return raw === "" || Number.isNaN(Number(raw)) ? undefined : Number(raw);
+  if (t === "choice") return raw === "" ? undefined : raw === "true" ? true : raw === "false" ? false : raw;
+  return raw === "" ? undefined : /^\d+$/.test(raw) ? Number(raw) : raw;
+}
+function renderSettings() {
+  if (!cur) { $("settingsForm").innerHTML = `<div class="stat">Open or create a project (Projects, on the left).</div>`; return; }
+  const sel = (cur.model.selection || []).find((s) => s.id === target);
+  const table = sel ? (sel.settings = sel.settings || {}) : (cur.model.defaults = cur.model.defaults || {});
+  const inherited = sel ? cur.model.defaults || {} : {};
+  const known = new Set(SETTINGS.flatMap((g) => g.rows.map((r) => r[0])));
+  const other = options.filter((o) => !known.has(o.key)).map((o) => [o.key, o.key, o.switch ? "bool" : "text", "Arnis flag in snake case."]);
+  let html = "";
+  if (sel) {
+    html += `<label><span class="lt">Id</span><input data-sel="id" value="${esc(sel.id)}"></label>
+      <label><span class="lt">World${tip("The One World folder in the saves folder. Selections in one world extend it one after another.")}</span><input data-sel="world" value="${esc(sel.world)}"></label>`;
+  } else {
+    html += `<label><span class="lt">Name</span><input data-proj="name" value="${esc(cur.model.name)}"></label>
+      <label><span class="lt">Saves folder${tip("Where the worlds are built, relative to the project file.")}</span><input data-proj="output" value="${esc(cur.model.output)}"></label>`;
+  }
+  const run = (cur.model.run = cur.model.run || {});
+  for (const g of SETTINGS.concat(other.length ? [{ drawer: "Other Arnis settings", rows: other }] : [])) {
+    const rows = g.rows.map((r) => fieldHtml(r, table, inherited)).join("");
+    if (g.drawer) html += `<details class="drawer"><summary>${esc(g.drawer)}</summary><div class="dbody">${rows}</div></details>`;
+    else if (g.perf) html += `<div class="govhead">${esc(g.head)}</div>` + (sel ? "" : RUN.map((r) => fieldHtml(r, run, {}, "data-run")).join("") + `<div class="stat">Per selection, the share each job gets (overrides):</div>`) + rows;
+    else html += (g.head ? `<div class="grouphead">${esc(g.head)}</div>` : "") + rows;
+  }
+  if (cur.model.arnis) html += `<div class="stat">arnis = ${esc(cur.model.arnis)}: only an Arnis Meld installed or found, or one listed in trusted-executables.txt, runs.</div>`;
+  $("settingsForm").innerHTML = html;
+  $("settingsForm").querySelectorAll("[data-f],[data-run]").forEach((el) => (el.onchange = () => {
+    const key = el.dataset.f || el.dataset.run, into = el.dataset.run ? run : table;
+    cur.model.run = run;
+    const v = readField(el, inherited[key] ?? el.dataset.t === "on");
+    if (v === undefined) delete into[key]; else into[key] = v;
+    if (!Object.keys(run).length) delete cur.model.run;
+    saveSoon(`saved ${key}`);
+  }));
+  $("settingsForm").querySelectorAll("[data-sel]").forEach((el) => (el.onchange = () => {
+    const v = el.value.trim();
+    if (el.dataset.sel === "id") {
+      if (!/^[A-Za-z0-9_-]+$/.test(v)) return say("saveMsg", "Ids use letters, digits, - and _.", true);
+      sel.id = v; target = v;
+      saveModel(`renamed to ${v}`, true);
+    } else { sel.world = v; saveSoon("saved world"); }
+  }));
+  $("settingsForm").querySelectorAll("[data-proj]").forEach((el) => (el.onchange = () => { cur.model[el.dataset.proj] = el.value.trim(); saveSoon("saved"); }));
+  search();
+}
+
+// Settings search: highlight matching rows, open their cards and drawers.
+function search() {
+  const q = $("railSearch").value.trim().toLowerCase();
+  document.querySelectorAll("#side .search-hit").forEach((el) => el.classList.remove("search-hit"));
+  if (!q) return;
+  let first = null;
+  document.querySelectorAll("#side label").forEach((el) => {
+    if (!el.textContent.toLowerCase().includes(q) && !(el.dataset.key || "").includes(q)) return;
+    el.classList.add("search-hit");
+    const d = el.closest("details"); if (d) d.open = true;
+    const c = el.closest(".card"); if (c) c.classList.remove("collapsed");
+    first = first || el;
+  });
+  if (first) first.scrollIntoView({ block: "center" });
+}
+$("railSearch").oninput = search;
+document.querySelectorAll("#side .card > h2").forEach((h) => (h.onclick = () => h.parentElement.classList.toggle("collapsed")));
+
+// ---- selections / worlds ----
+function renderSelections() {
+  const sels = (cur && cur.model.selection) || [];
+  $("selList").innerHTML = sels.map((s) => {
+    const st = selStatus(s);
+    return `<div class="wrow ${s.id === target ? "on" : ""}" data-pick="${esc(s.id)}"><span><i class="dot" style="background:${colour[st]}"></i> <b>${esc(s.id)}</b> · ${esc(s.world)} · ${s.polygon ? `polygon, ${partsOf(s).length} part(s)` : "bbox"}</span>
+      <span class="row"><span class="stat">${st}</span><button class="sec small" data-del="${esc(s.id)}" title="Delete"><svg class="icon" style="margin:0"><use href="#i-trash"/></svg></button></span></div>`;
+  }).join("") || `<div class="stat">No selections yet.</div>`;
+}
+$("selList").addEventListener("click", (e) => {
+  const del = e.target.closest("[data-del]");
+  if (del) {
+    cur.model.selection = cur.model.selection.filter((s) => s.id !== del.dataset.del);
+    if (target === del.dataset.del) target = "";
+    return saveModel(`deleted ${del.dataset.del}`, true);
+  }
+  const p = e.target.closest("[data-pick]");
+  if (p) {
+    pickTarget(p.dataset.pick);
+    const ls = drawn.getLayers().filter((l) => l.selId === p.dataset.pick);
+    if (ls.length) map.fitBounds(L.featureGroup(ls).getBounds(), { maxZoom: 15, padding: [60, 60] });
+  }
+});
+
+// ---- prepare data: [[bake]] ----
+function renderBakes() {
+  const bakes = (cur && cur.model.bake) || [];
+  $("bakeList").innerHTML = bakes.map((b, i) => `<div style="border-bottom:1px solid var(--line);padding:4px 0">
+    <label><span class="lt">Id</span><input data-bake="${i}" data-k="id" value="${esc(b.id)}"></label>
+    <label><span class="lt">osm_pbf</span><input data-bake="${i}" data-k="osm_pbf" value="${esc(b.osm_pbf)}" style="width:170px"></label>
+    <label><span class="lt">osm_pbf_url</span><input data-bake="${i}" data-k="osm_pbf_url" value="${esc(b.osm_pbf_url)}" style="width:170px"></label>
+    <label><span class="lt">bbox${tip("min_lat,min_lng,max_lat,max_lng; blank: around the selections that read it")}</span><input data-bake="${i}" data-k="bbox" value="${esc((b.bbox || []).join(","))}" style="width:170px"></label>
+    <button class="sec small" data-unbake="${i}">${icon("trash")}Remove</button></div>`).join("");
+  $("bakeList").querySelectorAll("[data-bake]").forEach((el) => (el.onchange = () => {
+    const b = cur.model.bake[el.dataset.bake], v = el.value.trim();
+    if (el.dataset.k === "bbox") { if (v) b.bbox = v.split(",").map(Number); else delete b.bbox; }
+    else if (v) b[el.dataset.k] = v; else delete b[el.dataset.k];
+    saveSoon("saved the bake");
+  }));
+  $("bakeList").querySelectorAll("[data-unbake]").forEach((el) => (el.onclick = () => { cur.model.bake.splice(Number(el.dataset.unbake), 1); if (!cur.model.bake.length) delete cur.model.bake; saveModel("removed the bake"); }));
+}
+$("bakeAdd").onclick = () => {
+  if (!cur) return;
+  const d = cur.model.defaults || {};
+  (cur.model.bake = cur.model.bake || []).push({ id: `bake${cur.model.bake.length + 1}`, osm_pbf: d.osm_pbf || "geofabrik", ...(d.osm_pbf_url ? { osm_pbf_url: d.osm_pbf_url } : {}) });
+  saveModel("added a bake");
+};
+
+// ---- generate ----
+$("btnRun").onclick = () => run("");
+$("btnRebuild").onclick = () => { if (confirm("Build every selection again from scratch?")) run("?rebuild=all"); };
+async function run(q) {
+  if (!cur) return;
+  try { await post(`/api/projects/${cur.name}/run${q}`); cur.running = true; live[cur.name] = {}; runStart = Date.now(); renderBuild(); }
+  catch (e) { logLine(cur.name, `run: ${e.message}`); }
+}
+$("btnStop").onclick = async () => { if (cur) try { await post(`/api/projects/${cur.name}/stop`); logLine(cur.name, "asked the run to stop; Generate resumes it"); } catch (e) { logLine(cur.name, e.message); } };
+$("btnPlan").onclick = async () => {
+  if (!cur) return;
+  $("planOut").textContent = "Asking Arnis for the plan…";
+  try {
+    const r = (lastPlan = await api(`/api/projects/${cur.name}/plan`));
+    $("planOut").textContent = r.selections.map((s) => `${s.id}: ${s.pieces} pieces, ${s.todo_chunks}/${s.chunks} chunks to build, ~${s.est_mb.toFixed(1)} MB`).join("\n");
+    renderBuild();
+  } catch (e) { $("planOut").textContent = e.message; }
+};
+
+const dur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min` : s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
+// The left rail: size, disk, progress across the project, ETA, workers.
+function renderBuild() {
+  if (!cur) return;
+  const sels = cur.model.selection || [];
+  $("projLine").innerHTML = `Project <b>${esc(cur.model.name)}</b> · ${sels.length} selection(s)${cur.running ? ' · <span style="color:var(--acc)">running</span>' : ""}`;
+  if (lastPlan) {
+    $("estSize").textContent = lastPlan.need_mb >= 1024 ? `${(lastPlan.need_mb / 1024).toFixed(1)} GB` : `${lastPlan.need_mb.toFixed(0)} MB`;
+    const pieces = lastPlan.selections.reduce((n, s) => n + s.pieces, 0);
+    const chunks = lastPlan.selections.reduce((n, s) => n + s.todo_chunks, 0);
+    $("estSub").textContent = `${pieces} pieces · ${chunks.toLocaleString()} chunks to build`;
+    $("diskLine").innerHTML = `disk <b style="color:${lastPlan.disk === "short" ? "var(--bad)" : lastPlan.disk === "tight" ? "var(--acc)" : "var(--ok)"}">${esc(lastPlan.disk)}</b> · ${(lastPlan.free_mb / 1024).toFixed(0)} GB free`;
+  }
+  // Every step's pieces, weighted by its live percentage.
+  const L = live[cur.name] || {};
+  const ids = [...new Set(Object.keys(cur.state || {}).concat(Object.keys(L)))];
+  let of = 0, done = 0, w = 0, wsum = 0;
+  for (const id of ids) {
+    const l = L[id] || {}, s = cur.state[id] || {};
+    const n = l.of || s.pieces || 1;
+    of += l.of || s.pieces || 0;
+    const seen = l.pieces && Object.keys(l.pieces).length;
+    done += seen ? Object.values(l.pieces).filter((x) => x === "done" || x === "skipped").length : s.pieces_done || 0;
+    const st = statusOf(id);
+    const pct = st === "done" || st === "skipped" ? 100 : l.pct ?? s.progress ?? 0;
+    w += n * pct; wsum += n;
+  }
+  const f = wsum ? w / wsum / 100 : 0;
+  if (lastPlan) of = Math.max(of, lastPlan.selections.reduce((n, s) => n + s.pieces, 0));
+  $("runLine").innerHTML = ids.length ? `<b>${(f * 100).toFixed(1)} %</b> · ${done}/${of} pieces · ${ids.filter((i) => ["done", "skipped"].includes(statusOf(i))).length}/${ids.length} steps built` : "Not run yet.";
+  $("runBar").style.width = `${f * 100}%`;
+  $("runBar").className = f >= 1 ? "ok" : "";
+  if (cur.running && runStart && f > 0.01 && f < 1) {
+    const el = (Date.now() - runStart) / 1000;
+    $("etaLine").textContent = `elapsed ${dur(el)} · ETA ${dur((el * (1 - f)) / f)}`;
+  } else $("etaLine").textContent = cur.running ? "elapsed …" : "";
+  // Workers: one row per step this run touched, running ones first.
+  const rows = Object.entries(L).sort(([, a], [, b]) => (b.status === "running") - (a.status === "running"));
+  const running = rows.filter(([, l]) => l.status === "running").length;
+  $("workersCount").textContent = running ? `${running} running` : "idle";
+  $("workersState").innerHTML = rows.length ? rows.map(([id, l]) => {
+    const pieces = l.pieces || {};
+    const strip = l.of ? `<div class="pieces">${Array.from({ length: Math.min(l.of, 300) }, (_, i) => `<i class="${pieces[i] || ""}" title="piece ${i + 1}${pieces[i] ? ": " + pieces[i] : ""}"></i>`).join("")}</div>` : "";
+    const pd = Object.values(pieces).filter((x) => x === "done" || x === "skipped").length;
+    const cls = l.status === "done" || l.status === "skipped" ? "ok" : l.status === "failed" ? "bad" : "";
+    return `<div class="wjob"><div class="wnum ${esc(l.status)}">${l.of ? `${pd}/${l.of}` : "–"}</div><div class="wjbody">
+      <div class="wjtop"><span class="wjkey">${esc(id)}</span><span class="wjpct">${(l.pct || 0).toFixed(1)}%</span></div>
+      <div class="bar"><i class="${cls}" style="width:${Math.min(100, l.pct || 0)}%"></i></div>
+      <div class="wjmsg">${esc(l.status)}${l.msg ? " · " + esc(l.msg) : ""}${l.error ? ` · <span class="bad">${esc(l.error)}</span>` : ""}</div>${strip}</div></div>`;
+  }).join("") : `<div class="stat">Idle. Generate to see live workers here.</div>`;
+  $("btnRun").disabled = !!cur.running;
+  $("btnStop").disabled = !cur.running;
+}
+$("tomlSave").onclick = async () => {
+  try { await api(`/api/projects/${cur.name}`, { method: "PUT", body: $("toml").value }); say("tomlMsg", "saved"); await openProject(cur.name, true, true); renderSettings(); drawShapes(false); serverBody(); }
+  catch (e) { say("tomlMsg", e.message, true); }
+};
+
+// ---- server ----
+const SRV = [
+  ["flavor", "Flavor", ["leaf", "paper"], "Leaf reads B_Linear."],
+  ["version", "Minecraft version", "text", "B_Linear needs Leaf 1.21.11 or newer."],
+  ["format", "Region format", ["mca", "blinear"], "blinear converts each world after its build and serves the copy."],
+  ["dir", "Server folder", "text", "Relative to the project file."],
+  ["ip", "IP", "text", ""],
+  ["port", "Port", "num", ""],
+  ["ram_mb", "RAM MB", "num", ""],
+  ["link", "Link worlds (no copy)", "on", "A junction or symlink; off copies the worlds."],
+  ["worlds", "Worlds", "csv", "Blank: every world, the first as the main level."],
+  ["plugins", "Plugins", "csv", "Modrinth slugs; slug@version pins a build."],
+  ["datapacks", "Datapacks", "csv", "Zips or folders for the main level."],
+  ["motd", "MOTD", "text", ""],
+];
+let srvTimer = null;
+async function serverBody() {
+  clearInterval(srvTimer);
+  if (!cur) { $("serverBody").innerHTML = `<div class="stat">Open a project first.</div>`; return; }
+  const name = cur.name, conf = cur.model.server;
+  if (!conf) {
+    $("serverBody").innerHTML = `<div class="stat">A Leaf or Paper server for this project's worlds. Nothing is set up yet.</div><button class="sec" id="srvAdd">${icon("plus")}Add a server</button>`;
+    $("srvAdd").onclick = async () => { cur.model.server = {}; await saveModel("added [server]"); serverBody(); };
+    return;
+  }
+  const fields = SRV.map(([k, label, t, help]) => {
+    const v = conf[k];
+    const lab = `<span class="lt">${esc(label)}${tip(help)}</span>`;
+    if (Array.isArray(t)) return `<label>${lab}<select data-srv="${k}">${t.map((o) => `<option ${v === o ? "selected" : ""}>${o}</option>`).join("")}</select></label>`;
+    if (t === "on") return `<label>${lab}<input type="checkbox" data-srv="${k}" data-t="on" ${v ?? true ? "checked" : ""}></label>`;
+    return `<label>${lab}<input data-srv="${k}" data-t="${t}" value="${esc(t === "csv" ? (v || []).join(", ") : v ?? "")}" placeholder="default"></label>`;
+  }).join("");
+  const worlds = [...new Set((cur.model.selection || []).map((s) => s.world))];
+  $("serverBody").innerHTML = `<details class="drawer"><summary>Server settings</summary><div class="dbody">${fields}
+      ${conf.java ? `<div class="stat">java = ${esc(conf.java)}: must be a Java Meld finds, or one in trusted-executables.txt.</div>` : ""}</div></details>
+    <div class="stat" id="srvState">…</div>
+    <label style="justify-content:flex-start"><input type="checkbox" id="srvEula"> <span>I accept the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener">Minecraft EULA</a></span></label>
+    <button class="sec" id="srvSetup">${icon("download")}Set up</button>
+    <div class="row" style="margin-top:6px"><button class="go" id="srvStart">${icon("play")}Start</button><button class="sec" id="srvStop">${icon("square")}Stop</button></div>
+    <div class="msg" id="srvMsg"></div>
+    <pre class="console" id="console"></pre>
+    <div class="row"><input id="srvCmd" placeholder="console command, e.g. say hi" style="flex:1;width:auto"><button class="sec small" id="srvSend" style="padding:5px 10px">Send</button></div>
+    <div class="govhead">Back up</div>
+    <div class="stat">A world as a zip in exports/ beside the project, after a disk check. Send save-all first while it runs.</div>
+    ${worlds.map((w) => `<button class="sec" data-export="${esc(w)}">${icon("hard-drive")}${esc(w)}</button>`).join("")}
+    <div class="msg" id="exportMsg"></div>`;
+  $("serverBody").querySelectorAll("[data-srv]").forEach((el) => (el.onchange = () => {
+    const k = el.dataset.srv, t = el.dataset.t, raw = el.value.trim();
+    const v = t === "on" ? (el.checked ? undefined : false) : t === "csv" ? (raw ? raw.split(",").map((x) => x.trim()).filter(Boolean) : undefined) : t === "num" ? (raw ? Number(raw) : undefined) : raw || undefined;
+    if (v === undefined) delete conf[k]; else conf[k] = v;
+    saveSoon(`saved server ${k}`);
+  }));
+  const act = (what, path) => async () => {
+    say("srvMsg", `${what}…`);
+    try {
+      const r = await post(path);
+      say("srvMsg", r.lines ? r.lines.slice(-2).join(" · ") || "done" : `${what}: ok`);
+      if (r.lines) appendConsole(r.lines.join("\n"));
+    } catch (e) { say("srvMsg", e.message, true); }
+    poll();
+  };
+  $("srvSetup").onclick = () => act("set up", `/api/projects/${name}/server/setup?accept_eula=${$("srvEula").checked ? 1 : 0}`)();
+  $("srvStart").onclick = act("start", `/api/projects/${name}/server/start`);
+  $("srvStop").onclick = act("stop", `/api/projects/${name}/server/stop`);
+  const send = async () => {
+    const c = $("srvCmd").value.trim();
+    if (!c) return;
+    try { await post(`/api/projects/${name}/server/send`, c); $("srvCmd").value = ""; } catch (e) { say("srvMsg", e.message, true); }
+  };
+  $("srvSend").onclick = send;
+  $("srvCmd").onkeydown = (e) => { if (e.key === "Enter") send(); };
+  $("serverBody").querySelectorAll("[data-export]").forEach((b) => (b.onclick = async () => {
+    say("exportMsg", `zipping ${b.dataset.export}…`);
+    try { const r = await post(`/api/projects/${name}/export?world=${encodeURIComponent(b.dataset.export)}`); say("exportMsg", `${r.path}: ${r.files} files, ${(r.zip_bytes / 1e6).toFixed(1)} MB`); }
+    catch (e) { say("exportMsg", e.message, true); }
+  }));
+  let first = true;
+  const poll = async () => {
+    if (!cur || cur.name !== name || !$("srvState")) return clearInterval(srvTimer);
+    const s = await api(`/api/projects/${name}/server?lines=200`).catch((e) => ({ error: e.message }));
+    $("srvState").innerHTML = s.error ? `<span class="bad">${esc(s.error)}</span>` : s.running ? `<b class="good">running (${esc(s.state)})</b>, pid ${s.pid}` : "not running";
+    $("srvStart").disabled = !!s.running;
+    $("srvStop").disabled = !s.running;
+    if (first && s.log) { $("console").textContent = plain(s.log.join("\n")) + "\n"; first = false; $("console").scrollTop = 1e9; }
+  };
+  poll();
+  srvTimer = setInterval(poll, 2000);
+}
+// The server colours its console with ANSI codes; the page shows plain text.
+const plain = (t) => t.replace(/\x1b\[[0-9;]*m/g, "");
+function appendConsole(text) {
+  const c = $("console");
+  if (!c) return;
+  c.textContent += plain(text) + "\n";
+  if (c.textContent.length > 200000) c.textContent = c.textContent.slice(-150000);
+  c.scrollTop = c.scrollHeight;
+}
+
+// ---- arnis ----
+async function arnisCard() {
+  const b = $("arnisBody");
+  let a;
+  try { a = await api("/api/arnis"); } catch (e) { b.innerHTML = `<span class="bad">${esc(e.message)}</span>`; return; }
+  const pin = a.pinned;
+  b.innerHTML = `<div class="stat">In use: <b>${a.found ? esc(a.path) : "none yet; a run downloads the pinned release"}</b></div>
+    ${a.found ? `<div class="stat">Found as: <b>${esc(a.source)}</b></div>` : ""}
+    <div class="stat">Version: ${a.version ? `<b>${esc(a.version)}</b> <span class="good">ok</span>` : a.error ? `<span class="bad">${esc(a.error)}</span>` : "–"}</div>
+    <div class="stat">Pinned: <b>${esc(pin.repo)} v${esc(pin.version)}</b> (needs ${esc(pin.min)} or newer)</div>
+    ${a.caps ? `<details class="drawer"><summary>Capabilities (${a.caps.length})</summary><div class="stat">${a.caps.map((c) => (pin.required.includes(c) ? `<b style="color:var(--acc)">${esc(c)}</b>` : esc(c))).join(" · ")}</div><div class="stat">Gold: what Meld needs on every run.</div></details>` : ""}
+    <button class="sec" id="arnisInstall">${icon("download")}Install v${esc(pin.version)}</button>
+    <button class="sec" id="arnisRefresh">${icon("refresh")}Refresh</button>
+    <div class="msg" id="arnisMsg"></div>`;
+  $("arnisRefresh").onclick = arnisCard;
+  $("arnisInstall").onclick = async () => {
+    say("arnisMsg", "Downloading and checking its SHA-256…");
+    $("arnisInstall").disabled = true;
+    try { const r = await post("/api/arnis/install"); say("arnisMsg", `Installed ${r.path}`); setTimeout(arnisCard, 1500); }
+    catch (e) { say("arnisMsg", e.message, true); $("arnisInstall").disabled = false; }
+  };
+}
+
+// ---- events ----
+function logLine(project, line) {
+  const l = (logs[project] = logs[project] || []);
+  l.push(line);
+  if (l.length > 600) l.splice(0, l.length - 500);
+  if (cur && cur.name === project) { $("log").textContent = l.join("\n"); $("log").scrollTop = 1e9; }
+}
+let pending = null;
+const later = () => { pending = pending || setTimeout(() => { pending = null; if (cur) { renderBuild(); renderSelections(); restyle(); } }, 250); };
+function onEvent(e) {
+  const L = (live[e.project] = live[e.project] || {});
+  const step = () => (L[e.id] = L[e.id] || { status: "running", pct: 0, of: 0, pieces: {} });
+  const who = `[${e.id || e.project}]`;
+  switch (e.note) {
+    case "log": logLine(e.project, e.line); break;
+    case "started":
+      L[e.id] = { status: "running", pct: 0, of: 0, pieces: {}, msg: e.resumed ? "resuming" : "starting" };
+      if (cur && cur.name === e.project) { cur.running = true; runStart = runStart || Date.now(); }
+      logLine(e.project, `${who} ${e.resumed ? "resuming" : "starting"} (pid ${e.pid}, ${e.share.threads || "?"} threads)`);
+      break;
+    case "event": {
+      const ev = e.event, x = step();
+      if (ev.type === "progress") x.pct = ev.progress;
+      else if (ev.type === "phase") { if (ev.progress != null) x.pct = ev.progress; x.msg = ev.name; }
+      else if (ev.type === "piece") { x.of = ev.of; x.pieces[ev.piece] = ev.state; x.msg = `piece ${ev.piece + 1}/${ev.of} ${ev.state}`; if (ev.state !== "start") logLine(e.project, `${who} ${x.msg}`); }
+      else if (ev.type === "transfer") { x.pct = ev.percent; x.msg = `${ev.stage} ${ev.name}`; }
+      else if (ev.type === "error") logLine(e.project, `${who} error: ${ev.message}`);
+      else if (ev.type === "done") { x.pct = 100; logLine(e.project, `${who} done: ${ev.chunks} chunks in ${ev.wall_s.toFixed(1)} s`); }
+      break;
+    }
+    case "finished": Object.assign(step(), { status: e.state.status, pct: e.state.progress, error: e.state.error }); logLine(e.project, `${who} ${e.state.status}${e.state.error ? ": " + e.state.error : ""}`); break;
+    case "skipped": case "refused": Object.assign(step(), { status: e.note === "skipped" ? "skipped" : "failed", pct: e.note === "skipped" ? 100 : 0, msg: e.why }); logLine(e.project, `${who} ${e.note}: ${e.why}`); break;
+    case "stopping": logLine(e.project, "stopping: killing running jobs"); break;
+    case "end":
+      logLine(e.project, e.error ? `run failed: ${e.error}` : `run ended: ${e.summary.done} done, ${e.summary.skipped} skipped, ${e.summary.stopped} stopped, ${e.summary.failed} failed`);
+      if (cur && cur.name === e.project) { cur.running = false; runStart = null; openProject(e.project, true); }
+      break;
+    case "console": if (cur && cur.name === e.project) appendConsole(e.line); break;
+    case "server-exit": if (cur && cur.name === e.project) appendConsole(`[meld] server exited ${e.error || e.code}`); break;
+  }
+  later();
+}
+const es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+es.onopen = () => ($("conn").textContent = "live");
+es.onerror = () => ($("conn").textContent = "reconnecting…");
+es.onmessage = (m) => onEvent(JSON.parse(m.data));
+
+function route() {
+  const m = (location.hash || "").match(/^#\/p\/([\w-]+)/);
+  if (m) { $("projOverlay").classList.remove("on"); openProject(m[1]); }
+  else { $("projOverlay").classList.add("on"); listProjects(); renderSettings(); }
+}
+window.addEventListener("hashchange", route);
+api("/api/options").then((o) => { options = o; if (cur) renderSettings(); }, () => {});
+arnisCard();
+route();
 </script>
 </body>
 </html>
