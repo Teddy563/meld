@@ -11,6 +11,11 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
+flate2 = "1"
+semver = "1"
+sha2 = "0.10"
+tar = "0.4"
+ureq = "3"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

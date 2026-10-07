@@ -3,6 +3,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use meld_core::arnis::Arnis;
+use meld_core::install::{self, Found, Probe};
 use meld_core::progress::Event;
 use meld_core::project::Project;
 use meld_core::queue::{self, Note};
@@ -22,7 +23,7 @@ enum Cmd {
     /// Build every selection of a project that is not built yet, resuming partial ones.
     Run {
         project: PathBuf,
-        /// Arnis executable; else the project's `arnis`, else MELD2_ARNIS.
+        /// Arnis executable; see `meld2 arnis status` for the lookup order.
         #[arg(long)]
         arnis: Option<PathBuf>,
     },
@@ -33,7 +34,34 @@ enum Cmd {
     /// Print an Arnis executable's version and capabilities.
     Caps {
         #[arg(long)]
-        arnis: PathBuf,
+        arnis: Option<PathBuf>,
+    },
+    /// Which Arnis Meld uses, and installing the pinned release.
+    #[command(subcommand)]
+    Arnis(ArnisCmd),
+}
+
+#[derive(Subcommand)]
+enum ArnisCmd {
+    /// Which Arnis would be used and why, with its version and capabilities.
+    Status {
+        #[arg(long)]
+        arnis: Option<PathBuf>,
+        /// A project file whose `arnis` setting counts.
+        #[arg(long)]
+        project: Option<PathBuf>,
+    },
+    /// Download and verify the pinned Arnis release into the data dir.
+    Install {
+        #[arg(long, default_value = install::VERSION)]
+        version: String,
+    },
+    /// Print the path of the Arnis that would be used (no download).
+    Path {
+        #[arg(long)]
+        arnis: Option<PathBuf>,
+        #[arg(long)]
+        project: Option<PathBuf>,
     },
 }
 
@@ -57,9 +85,68 @@ fn real_main() -> Result<()> {
             Ok(())
         }
         Cmd::Caps { arnis } => {
-            let a = Arnis::new(arnis);
-            println!("{}", a.version()?);
-            println!("{}", a.capabilities()?.join(" "));
+            let (_, _, probe) = resolve(arnis, None)?;
+            println!("arnis {}", probe.version);
+            println!("{}", probe.caps.join(" "));
+            Ok(())
+        }
+        Cmd::Arnis(cmd) => arnis_cmd(cmd),
+    }
+}
+
+/// The project's `arnis`, resolved against the project file.
+fn project_arnis(p: &Project) -> Option<PathBuf> {
+    let dir = p.path.parent().unwrap_or(Path::new("."));
+    p.arnis.as_ref().map(|a| dir.join(a))
+}
+
+/// Finds (or downloads) Arnis and checks its version and capabilities.
+fn resolve(flag: Option<PathBuf>, project: Option<&Project>) -> Result<(Arnis, Found, Probe)> {
+    let found = install::locate(flag, project.and_then(project_arnis), &state::data_dir())?;
+    let arnis = Arnis::new(&found.path);
+    let probe = install::probe(&arnis)?;
+    Ok((arnis, found, probe))
+}
+
+fn arnis_cmd(cmd: ArnisCmd) -> Result<()> {
+    let data = state::data_dir();
+    match cmd {
+        ArnisCmd::Status { arnis, project } => {
+            let project = project.map(|p| Project::load(&p)).transpose()?;
+            let pin = format!("{} v{}", install::REPO, install::VERSION);
+            let Some(found) =
+                install::find_here(arnis, project.as_ref().and_then(project_arnis), &data)
+            else {
+                println!(
+                    "no Arnis found; `meld2 run` will download {pin} to {}",
+                    install::cached(&data).display()
+                );
+                println!(
+                    "lookup order: --arnis, project `arnis`, MELD2_ARNIS, {} next to meld2, {}",
+                    install::EXE,
+                    install::cached(&data).display()
+                );
+                return Ok(());
+            };
+            println!("arnis:   {}", found.path.display());
+            println!("source:  {}", found.source);
+            println!("pinned:  {pin} (needs {} or newer)", install::MIN_VERSION);
+            let probe = install::probe(&Arnis::new(&found.path))?;
+            println!("version: {} (ok)", probe.version);
+            println!("caps:    {}", probe.caps.join(" "));
+            Ok(())
+        }
+        ArnisCmd::Install { version } => {
+            let exe = install::install(&data, &version)?;
+            let probe = install::probe(&Arnis::new(&exe))?;
+            println!("{} (arnis {})", exe.display(), probe.version);
+            Ok(())
+        }
+        ArnisCmd::Path { arnis, project } => {
+            let project = project.map(|p| Project::load(&p)).transpose()?;
+            let found = install::find_here(arnis, project.as_ref().and_then(project_arnis), &data)
+                .context("no Arnis found; run `meld2 arnis install`")?;
+            println!("{}", found.path.display());
             Ok(())
         }
     }
@@ -67,23 +154,16 @@ fn real_main() -> Result<()> {
 
 fn run(path: &Path, arnis: Option<PathBuf>) -> Result<()> {
     let project = Project::load(path)?;
-    let exe = arnis
-        .or_else(|| {
-            project
-                .arnis
-                .as_ref()
-                .map(|a| path.parent().unwrap_or(Path::new(".")).join(a))
-        })
-        .or_else(|| std::env::var_os("MELD2_ARNIS").map(PathBuf::from))
-        .context("no Arnis: pass --arnis, set `arnis` in the project or MELD2_ARNIS")?;
-    let arnis = Arnis::new(exe);
-    let caps = arnis.capabilities()?;
+    let (arnis, found, probe) = resolve(arnis, Some(&project))?;
+    let caps = probe.caps;
     println!(
-        "{}: {} selection(s), {} job(s) at once, {}",
+        "{}: {} selection(s), {} job(s) at once, arnis {} ({}, {})",
         project.name,
         project.selections.len(),
         project.run.jobs,
-        arnis.version()?
+        probe.version,
+        found.source,
+        found.path.display()
     );
 
     let dir = state::project_dir(&project);
