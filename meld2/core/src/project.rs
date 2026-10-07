@@ -30,6 +30,7 @@
 //! ```
 
 use crate::args;
+use crate::frame::{Frame, Manifest};
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashSet};
@@ -58,6 +59,9 @@ pub struct Project {
     pub selections: Vec<Selection>,
     #[serde(rename = "bake", default)]
     pub bakes: Vec<Bake>,
+    /// The polygon selections as written, before they became parts.
+    #[serde(skip)]
+    pub shapes: Vec<Selection>,
     /// Where the project was read from.
     #[serde(skip)]
     pub path: PathBuf,
@@ -105,6 +109,9 @@ pub struct Selection {
     pub world: String,
     #[serde(default)]
     pub settings: Settings,
+    /// For a part of a polygon selection: the polygon's id.
+    #[serde(skip)]
+    pub part_of: Option<String>,
 }
 
 /// A data step: Arnis cuts (bakes) an `.osm.pbf` extract for an area once,
@@ -154,12 +161,16 @@ impl Project {
     pub fn load(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let mut project = Self::parse(&text).with_context(|| format!("in {}", path.display()))?;
-        project.path = path.to_path_buf();
-        Ok(project)
+        Self::parse_at(&text, path).with_context(|| format!("in {}", path.display()))
     }
 
+    /// A project from its text alone: polygons are cut in the frame their
+    /// world will get, since no world on disk is known.
     pub fn parse(text: &str) -> Result<Self> {
+        Self::parse_at(text, Path::new(""))
+    }
+
+    fn parse_at(text: &str, path: &Path) -> Result<Self> {
         let table: toml::Table = text.parse()?;
         match table.get("format").and_then(toml::Value::as_integer) {
             Some(FORMAT) => {}
@@ -170,6 +181,7 @@ impl Project {
             None => bail!("missing `format = {FORMAT}`"),
         }
         let mut project: Self = table.try_into()?;
+        project.path = path.to_path_buf();
         project.cover_polygons()?;
         project.validate()?;
         Ok(project)
@@ -224,12 +236,56 @@ impl Project {
         Ok(())
     }
 
-    /// Replaces each polygon selection with the bboxes that cover it.
+    /// The frame `world` has, or will get from its first build: its manifest,
+    /// else the `origin` of the world's first selection, else that selection's
+    /// centre (what Arnis picks), at its scale.
+    pub fn frame(&self, world: &str) -> Result<Option<Frame>> {
+        if !self.path.as_os_str().is_empty() {
+            if let Some(m) = Manifest::load(&self.output_dir().join(world))? {
+                return Ok(Some(m.frame()));
+            }
+        }
+        let Some(first) = self.selections.iter().find(|s| s.world == world) else {
+            return Ok(None);
+        };
+        let settings = self.settings_for(first);
+        let num = |v: &toml::Value| v.as_float().or_else(|| v.as_integer().map(|i| i as f64));
+        let scale = settings.get("scale").and_then(num).unwrap_or(1.0);
+        let origin = settings
+            .get("origin")
+            .and_then(toml::Value::as_str)
+            .and_then(|o| o.split_once(','))
+            .and_then(|(a, b)| Some((a.trim().parse().ok()?, b.trim().parse().ok()?)));
+        let (lat, lon) = origin.unwrap_or_else(|| {
+            let pts: Vec<[f64; 2]> = if first.polygon.is_empty() {
+                vec![
+                    [first.bbox[0], first.bbox[1]],
+                    [first.bbox[2], first.bbox[3]],
+                ]
+            } else {
+                first.polygon.iter().flatten().copied().collect()
+            };
+            let mid = |i: usize| {
+                let (lo, hi) = pts.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+                    (lo.min(p[i]), hi.max(p[i]))
+                });
+                (lo + hi) / 2.0
+            };
+            (mid(0), mid(1))
+        });
+        Ok(Some(Frame::new(lat, lon, scale)))
+    }
+
+    /// Replaces each polygon selection with the bboxes that cover it: runs of
+    /// the world's piece cells (`unit_regions` x 512 blocks, on the lattice
+    /// Arnis cuts from block 0 of the frame) that overlap the shape, so each
+    /// part builds whole pieces. Parts carry the frame's `origin`, so the
+    /// world gets that frame if a part creates it.
     fn cover_polygons(&mut self) -> Result<()> {
-        let mut out = Vec::with_capacity(self.selections.len());
-        for sel in std::mem::take(&mut self.selections) {
+        let all = std::mem::take(&mut self.selections);
+        for sel in all {
             if sel.polygon.is_empty() {
-                out.push(sel);
+                self.selections.push(sel);
                 continue;
             }
             if sel.bbox != [0.0; 4] {
@@ -238,38 +294,44 @@ impl Project {
             let pts = || sel.polygon.iter().flatten();
             let ok = sel.polygon.iter().all(|r| r.len() >= 3)
                 && pts().all(|[lat, lng]| {
-                    (-90.0..=90.0).contains(lat) && (-180.0..=180.0).contains(lng)
+                    (-85.0..=85.0).contains(lat) && (-180.0..=180.0).contains(lng)
                 });
             if !ok {
                 bail!(
-                    "selection {}: polygon rings need 3+ [lat, lng] points",
+                    "selection {}: polygon rings need 3+ [lat, lng] points within 85 degrees of the equator",
                     sel.id
                 );
             }
-            // Cells the size of a piece: (unit_regions x 512 blocks) / scale metres.
-            let settings = self.settings_for(&sel);
-            let scale = settings
-                .get("scale")
-                .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
-                .unwrap_or(1.0)
-                .max(0.01);
-            let side_m = args::unit_regions(&settings) as f64 * 512.0 / scale;
-            let mid = pts().map(|p| p[0]).sum::<f64>() / pts().count() as f64;
-            let dlat = side_m / 111_320.0;
-            let dlon = dlat / mid.to_radians().cos().max(0.01);
-            let boxes =
-                cover(&sel.polygon, dlat, dlon).with_context(|| format!("selection {}", sel.id))?;
-            for (i, bbox) in boxes.into_iter().enumerate() {
-                out.push(Selection {
+            // The world's first selection may be this one: look with it in place.
+            self.selections.push(sel);
+            let frame = self.frame(&self.selections.last().expect("pushed").world);
+            let sel = self.selections.pop().expect("pushed");
+            let frame = frame?.expect("the selection is in its world");
+            let side = args::unit_regions(&self.settings_for(&sel)) as f64 * 512.0;
+            let rings: Vec<Vec<[f64; 2]>> = sel
+                .polygon
+                .iter()
+                .map(|r| {
+                    r.iter()
+                        .map(|&[lat, lon]| [frame.z(lat), frame.x(lon)])
+                        .collect()
+                })
+                .collect();
+            let cells = cover(&rings, side).with_context(|| format!("selection {}", sel.id))?;
+            for (i, [z0, x0, z1, x1]) in cells.into_iter().enumerate() {
+                let mut settings = sel.settings.clone();
+                settings.insert("origin".into(), frame.origin_arg().into());
+                self.selections.push(Selection {
                     id: format!("{}-{}", sel.id, i + 1),
-                    bbox,
+                    bbox: [frame.lat(z1), frame.lon(x0), frame.lat(z0), frame.lon(x1)],
                     polygon: vec![],
                     world: sel.world.clone(),
-                    settings: sel.settings.clone(),
+                    settings,
+                    part_of: Some(sel.id.clone()),
                 });
             }
+            self.shapes.push(sel);
         }
-        self.selections = out;
         Ok(())
     }
 
@@ -334,40 +396,38 @@ impl Project {
     }
 }
 
-/// Bboxes covering the union of `rings` (`[lat, lng]`): a grid of
-/// `dlat` x `dlon` cells from the rings' south-west corner, keeping every cell
-/// that overlaps a ring, merged into one bbox per run of cells in a row.
-// ponytail: cells are piece-sized, not snapped to Arnis's piece lattice (that
-// needs the world's origin); neighbours share a world, so their seams match.
-// No antimeridian crossing.
-pub fn cover(rings: &[Vec<[f64; 2]>], dlat: f64, dlon: f64) -> Result<Vec<[f64; 4]>> {
+/// Cells covering the union of `rings` (points `[a, b]`): a grid of `side`
+/// cells anchored at 0, keeping every cell that overlaps a ring, merged into
+/// one `[a0, b0, a1, b1]` per run of cells along `b`.
+// ponytail: no antimeridian crossing.
+pub fn cover(rings: &[Vec<[f64; 2]>], side: f64) -> Result<Vec<[f64; 4]>> {
     let pts = || rings.iter().flatten();
-    let fold = |f: fn(f64, f64) -> f64, i: usize, init: f64| pts().map(|p| p[i]).fold(init, f);
-    let (s, w) = (fold(f64::min, 0, 90.0), fold(f64::min, 1, 180.0));
-    let (n, e) = (fold(f64::max, 0, -90.0), fold(f64::max, 1, -180.0));
-    let rows = ((n - s) / dlat).ceil().max(1.0) as usize;
-    let cols = ((e - w) / dlon).ceil().max(1.0) as usize;
+    let edge =
+        |i: usize, f: fn(f64, f64) -> f64, init: f64| pts().map(|p| p[i]).fold(init, f) / side;
+    let (r0, c0) = (
+        edge(0, f64::min, f64::MAX).floor(),
+        edge(1, f64::min, f64::MAX).floor(),
+    );
+    let (r1, c1) = (
+        edge(0, f64::max, f64::MIN).ceil(),
+        edge(1, f64::max, f64::MIN).ceil(),
+    );
+    let rows = (r1 - r0).max(1.0) as usize;
+    let cols = (c1 - c0).max(1.0) as usize;
     if rows.saturating_mul(cols) > 4_000_000 {
         bail!("polygon spans {rows} x {cols} cells; raise unit_regions or lower scale");
     }
+    let at = |r: usize, c: usize| [(r0 + r as f64) * side, (c0 + c as f64) * side];
     let mut out = vec![];
     for r in 0..rows {
         let mut run: Option<usize> = None;
         for c in 0..=cols {
-            let cell = [
-                s + r as f64 * dlat,
-                w + c as f64 * dlon,
-                s + (r + 1) as f64 * dlat,
-                w + (c + 1) as f64 * dlon,
-            ];
-            let hit = c < cols && overlaps(rings, cell);
+            let ([a0, b0], [a1, b1]) = (at(r, c), at(r + 1, c + 1));
+            let hit = c < cols && overlaps(rings, [a0, b0, a1, b1]);
             match (hit, run) {
                 (true, None) => run = Some(c),
-                (false, Some(c0)) => {
-                    out.push([cell[0], w + c0 as f64 * dlon, cell[2], cell[1]].map(|v| {
-                        // Rounded to ~1 cm, so the bboxes read cleanly in the project and logs.
-                        (v * 1e7).round() / 1e7
-                    }));
+                (false, Some(start)) => {
+                    out.push([a0, at(r, start)[1], a1, b0]);
                     run = None;
                 }
                 _ => {}
@@ -428,6 +488,7 @@ fn crosses(a: [f64; 2], b: [f64; 2], r: [f64; 4]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frame::Frame;
 
     const GOOD: &str = r#"
 format = 1
@@ -521,7 +582,7 @@ osm_pbf = \"x.osm.pbf\"
             [2.0, 0.0],
         ]];
         assert_eq!(
-            cover(&l, 1.0, 1.0).unwrap(),
+            cover(&l, 1.0).unwrap(),
             [[0.0, 0.0, 1.0, 2.0], [1.0, 0.0, 2.0, 1.0]]
         );
         let sliver = vec![
@@ -529,23 +590,59 @@ osm_pbf = \"x.osm.pbf\"
             vec![[2.5, 2.5], [2.6, 2.5], [2.6, 2.6]],
         ];
         assert_eq!(
-            cover(&sliver, 1.0, 1.0).unwrap(),
+            cover(&sliver, 1.0).unwrap(),
             [[0.0, 0.0, 1.0, 3.0], [2.0, 2.0, 3.0, 3.0]]
         );
-        // In a project: piece-sized rows in the selection's world and settings.
+        // Cells sit on the lattice from 0, not on the shape's corner.
+        assert_eq!(
+            cover(&[vec![[0.5, 0.5], [0.5, 0.7], [0.7, 0.6]]], 1.0).unwrap(),
+            [[0.0, 0.0, 1.0, 1.0]]
+        );
+
+        // In a project: runs of whole pieces (scale 0.5, 4-region pieces:
+        // 2048-block cells) on the lattice of the world's frame.
         let text = GOOD.replace(
             "bbox = [47.15, 9.52, 47.16, 9.53]",
             "polygon = [[[47.15, 9.52], [47.25, 9.52], [47.15, 9.66]]]",
         );
+        let on_lattice = |p: &Project, frame: Frame| {
+            let parts: Vec<_> = p
+                .selections
+                .iter()
+                .filter(|s| s.part_of.is_some())
+                .collect();
+            assert!(parts.len() > 1 && parts[0].id == "b-1");
+            for s in parts {
+                let [south, west, north, east] = s.bbox;
+                for v in [frame.z(south), frame.x(west), frame.z(north), frame.x(east)] {
+                    let off = v / 2048.0 - (v / 2048.0).round();
+                    assert!(off.abs() < 1e-9, "{} edge {v} is off the lattice", s.id);
+                }
+                assert_eq!(s.world, "One");
+                assert_eq!(s.settings["caves"].as_bool(), Some(true));
+                assert_eq!(
+                    s.settings["origin"].as_str(),
+                    Some(frame.origin_arg().as_str())
+                );
+            }
+            assert_eq!(p.shapes[0].id, "b");
+        };
+        // No world yet: the frame of the world's first selection, `a`, centred.
         let p = Project::parse(&text).unwrap();
-        let ids: Vec<_> = p.selections.iter().map(|s| s.id.as_str()).collect();
-        assert!(ids.len() > 2 && ids[1] == "b-1", "{ids:?}");
-        let b1 = &p.selections[1];
-        assert_eq!(
-            (b1.world.as_str(), b1.settings["caves"].as_bool()),
-            ("One", Some(true))
-        );
-        // scale 0.5, 4-region pieces: 4096 m rows, ~0.037 degrees.
-        assert!((b1.bbox[2] - b1.bbox[0] - 4096.0 / 111_320.0).abs() < 1e-6);
+        on_lattice(&p, Frame::new(47.14, 9.5215, 0.5));
+
+        // A world on disk: its manifest's frame.
+        let dir = std::env::temp_dir().join(format!("meld2-frame-{}", std::process::id()));
+        let world = dir.join("saves").join("One");
+        std::fs::create_dir_all(&world).unwrap();
+        std::fs::write(
+            world.join("arnis_one_world.json"),
+            r#"{"origin_lat": 47.2, "origin_lon": 9.6, "scale": 0.5, "areas": []}"#,
+        )
+        .unwrap();
+        std::fs::write(dir.join("p.toml"), &text).unwrap();
+        let p = Project::load(&dir.join("p.toml")).unwrap();
+        on_lattice(&p, Frame::new(47.2, 9.6, 0.5));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
