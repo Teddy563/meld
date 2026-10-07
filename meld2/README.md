@@ -1,8 +1,8 @@
-# Meld 2 (2.0.0-beta.1)
+# Meld 2 (2.0.0-alpha.2, Phase 2)
 
 Meld 2 is a Rust rewrite of Meld. It builds **projects**, which are saved sets of selections, through stock **Arnis at Scale** (Arnis 3.4+). Each selection has its own settings and builds into a One World. Selections that share a world extend it one after another. Selections in different worlds can build at the same time. A killed or stopped run resumes where it stopped.
 
-The Python Meld 1.x app in the repository root keeps working until 2.0 replaces it. The plan is in `arnis-integration/docs/13-MELD-2.0-PLAN.md`.
+The Python Meld 1.x app in the repository root keeps working until 2.0 replaces it. The plan is in [`docs/PLAN.md`](docs/PLAN.md): five phases, then 2.0.0-beta.1.
 
 ## Build
 
