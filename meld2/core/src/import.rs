@@ -204,8 +204,14 @@ fn convert(s: &Map<String, Json>, out: &mut Imported) -> (Table, Table) {
                 let n = num(k);
                 let keep = match k {
                     "field_scale" => n.is_some_and(|f| f != 100.0),
-                    "snow_percent" => terrain && s.get("snow_mode") == Some(&"peaks".into()),
-                    "snow_y" => terrain && s.get("snow_mode") == Some(&"manual".into()),
+                    // One World has no `peaks` (below), so no share of the relief either.
+                    "snow_percent" => false,
+                    "snow_y" => {
+                        terrain
+                            && ["manual", "peaks"]
+                                .map(Json::from)
+                                .contains(s.get("snow_mode").unwrap_or(&Json::Null))
+                    }
                     _ => true,
                 };
                 if let Some(n) = n.filter(|_| keep) {
@@ -264,7 +270,17 @@ fn convert(s: &Map<String, Json>, out: &mut Imported) -> (Table, Table) {
             }
             "snow_mode" => {
                 let m = v.as_str().unwrap_or("").to_lowercase();
-                if terrain && ["off", "realistic", "peaks", "manual"].contains(&m.as_str()) {
+                if terrain && m == "peaks" {
+                    // Arnis refuses peaks with One World: each area's relief differs.
+                    d.insert(k.into(), "manual".into());
+                    out.notes.push(format!(
+                        "snow_mode peaks: One World refuses it, so snow lies from snow_y = {} up (manual); snow_percent is not carried",
+                        num("snow_y").unwrap_or(80.0)
+                    ));
+                    if num("snow_y").is_none() {
+                        d.insert("snow_y".into(), Value::Integer(80));
+                    }
+                } else if terrain && ["off", "realistic", "manual"].contains(&m.as_str()) {
                     d.insert(k.into(), Value::String(m));
                 }
                 true
@@ -463,9 +479,10 @@ mod tests {
         assert_eq!(get("buildings").as_deref(), Some("false"));
         assert_eq!(get("fillground").as_deref(), Some("true"));
         assert_eq!(get("road_detail").as_deref(), Some("\"compact\"")); // auto at 0.1
-        assert_eq!(get("snow_mode").as_deref(), Some("\"peaks\""));
-        assert_eq!(get("snow_percent").as_deref(), Some("6.0"));
-        assert_eq!(get("snow_y"), None); // only for manual
+                                                                        // One World refuses peaks: manual from Meld 1's snow_y.
+        assert_eq!(get("snow_mode").as_deref(), Some("\"manual\""));
+        assert_eq!(get("snow_y").as_deref(), Some("80"));
+        assert_eq!(get("snow_percent"), None);
         assert_eq!(get("rocks").as_deref(), Some("true"));
         assert_eq!(get("bushes").as_deref(), Some("true"));
         assert_eq!(get("field_mix"), None); // farm only: Meld 1 sent no flag
