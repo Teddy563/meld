@@ -110,10 +110,13 @@ fn available_ram_mb() -> Option<u64> {
     }
 }
 
-/// Keeps Windows from sleeping while this thread runs builds; it lapses
-/// when the run returns and its thread ends, or when Meld exits.
-// ponytail: Windows only; Linux/macOS (systemd-inhibit, caffeinate) in Phase 3.
-fn keep_awake() {
+/// Keeps the machine awake while a run builds, until the guard drops.
+/// Windows: a flag on this thread, which also lapses when the thread ends.
+/// Linux: `systemd-inhibit`; macOS: `caffeinate`. Each holds until Meld closes
+/// its stdin or dies, so it never outlives Meld. Missing tool: no inhibit.
+struct Awake(Option<std::process::Child>);
+
+fn keep_awake() -> Awake {
     #[cfg(windows)]
     // SAFETY: a plain flag call with no pointers.
     unsafe {
@@ -121,6 +124,42 @@ fn keep_awake() {
             SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED,
         };
         SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+        Awake(None)
+    }
+    #[cfg(not(windows))]
+    {
+        use std::process::{Command, Stdio};
+        let mut cmd = if cfg!(target_os = "macos") {
+            let mut c = Command::new("caffeinate");
+            c.args(["-i", "-w", &std::process::id().to_string()]);
+            c
+        } else {
+            let mut c = Command::new("systemd-inhibit");
+            c.args([
+                "--what=sleep:idle",
+                "--who=meld2",
+                "--why=building Minecraft worlds",
+                "--mode=block",
+                "cat",
+            ]);
+            c
+        };
+        let child = cmd
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        Awake(child.ok())
+    }
+}
+
+impl Drop for Awake {
+    fn drop(&mut self) {
+        if let Some(c) = self.0.as_mut() {
+            drop(c.stdin.take());
+            let _ = c.kill();
+            let _ = c.wait();
+        }
     }
 }
 
@@ -146,7 +185,7 @@ pub fn run(
     stop: &dyn Fn() -> bool,
     on: &mut dyn FnMut(&str, Note),
 ) -> Result<Summary> {
-    keep_awake();
+    let _awake = keep_awake();
     let mut state = State::load(dir)?;
     state.project = project.path.clone();
     state.name = project.name.clone();

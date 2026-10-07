@@ -26,6 +26,16 @@ impl Arnis {
         Self { path: path.into() }
     }
 
+    /// A command for this Arnis. Its caches go under Meld's data dir
+    /// (`<data>/cache`), unless the caller already set `ARNIS_CACHE_ROOT`.
+    fn command(&self) -> Command {
+        let mut cmd = Command::new(&self.path);
+        if std::env::var_os("ARNIS_CACHE_ROOT").is_none_or(|v| v.is_empty()) {
+            cmd.env("ARNIS_CACHE_ROOT", crate::state::data_dir().join("cache"));
+        }
+        cmd
+    }
+
     /// `arnis --version`, e.g. "arnis 3.4.0-beta.1".
     pub fn version(&self) -> Result<String> {
         let out = self.output(&["--version"])?;
@@ -45,7 +55,8 @@ impl Arnis {
     /// Runs Arnis to the end and returns its stdout. A failure carries the
     /// last line of stderr, where Arnis puts its `Error: ...`.
     pub fn output<S: AsRef<std::ffi::OsStr>>(&self, args: &[S]) -> Result<String> {
-        let out = Command::new(&self.path)
+        let out = self
+            .command()
             .args(args)
             .stdin(Stdio::null())
             .output()
@@ -73,7 +84,7 @@ impl Arnis {
             .append(true)
             .open(log)
             .with_context(|| format!("opening {}", log.display()))?;
-        let mut cmd = Command::new(&self.path);
+        let mut cmd = self.command();
         cmd.args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
