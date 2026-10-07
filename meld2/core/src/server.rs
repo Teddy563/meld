@@ -93,6 +93,8 @@ const META: &str = "meld-server.json";
 const LOCK: &str = "meld-server.lock";
 const STOP: &str = "meld-server.stop";
 const STATUS: &str = "meld-server.status.json";
+/// Console commands waiting for the running server, one file each (`server send`).
+const INBOX: &str = "meld-server.in";
 /// Aikar's flags, as Meld 1 starts its servers with them.
 const JVM_FLAGS: &[&str] = &[
     "-XX:+UseG1GC",
@@ -628,6 +630,12 @@ impl<'a> Server<'a> {
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
             }
+            if deadline.is_none() {
+                for c in take_inbox(&dir.join(INBOX)) {
+                    on_line(&format!("[meld] > {c}"));
+                    let _ = writeln!(stdin, "{c}").and_then(|_| stdin.flush());
+                }
+            }
             if deadline.is_none() && (stop() || dir.join(STOP).exists()) {
                 on_line("[meld] > stop");
                 let _ = writeln!(stdin, "stop").and_then(|_| stdin.flush());
@@ -656,6 +664,28 @@ impl<'a> Server<'a> {
         Ok(())
     }
 
+    /// Queues one console command for the running server (started here or
+    /// by another Meld), which sends it within half a second.
+    pub fn send(&self, command: &str) -> Result<()> {
+        let c = command.trim();
+        if c.is_empty() || c.len() > 1000 || c.chars().any(char::is_control) {
+            bail!("a console command is one line of up to 1000 characters");
+        }
+        if !self.status(0).running {
+            bail!("the server in {} is not running", self.dir.display());
+        }
+        let inbox = self.dir.join(INBOX);
+        std::fs::create_dir_all(&inbox)?;
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let tmp = inbox.join(format!("{t:032}.tmp"));
+        std::fs::write(&tmp, c)?;
+        std::fs::rename(&tmp, tmp.with_extension("cmd"))?;
+        Ok(())
+    }
+
     /// Whether it runs (its lock is held), and the last `lines` of its log.
     pub fn status(&self, lines: usize) -> Status {
         let running = std::fs::File::open(self.dir.join(LOCK))
@@ -675,6 +705,26 @@ impl<'a> Server<'a> {
             .collect();
         s
     }
+}
+
+/// The queued console commands, oldest first, removed as they are read.
+fn take_inbox(inbox: &Path) -> Vec<String> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(inbox)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "cmd"))
+        .collect();
+    files.sort();
+    files
+        .into_iter()
+        .filter_map(|f| {
+            let c = std::fs::read_to_string(&f).ok();
+            let _ = std::fs::remove_file(&f);
+            c
+        })
+        .collect()
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(file: &Path) -> Result<T> {
@@ -886,11 +936,28 @@ pub fn java_major(text: &str) -> Option<u32> {
     }
 }
 
+/// The Javas Meld finds by itself: `JAVA_HOME`'s, the Modrinth app's
+/// runtimes, and `java` on PATH.
+pub fn java_candidates() -> Vec<PathBuf> {
+    let exe = if cfg!(windows) { "java.exe" } else { "java" };
+    let mut candidates: Vec<PathBuf> = vec![];
+    if let Some(home) = std::env::var_os("JAVA_HOME") {
+        candidates.push(PathBuf::from(home).join("bin").join(exe));
+    }
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        let meta = PathBuf::from(appdata).join("ModrinthApp/meta/java_versions");
+        for e in std::fs::read_dir(meta).into_iter().flatten().flatten() {
+            candidates.push(e.path().join("bin").join(exe));
+        }
+    }
+    candidates.push(PathBuf::from("java"));
+    candidates
+}
+
 /// The Java to run the server: the one given (at least `need`), else the
 /// newest of `JAVA_HOME`, the Modrinth app's runtimes and `java` on PATH,
 /// since plugins move to new Java before servers do (WorldEdit 7.4.5 needs 25).
 pub fn find_java(given: Option<PathBuf>, need: u32) -> Result<PathBuf> {
-    let exe = if cfg!(windows) { "java.exe" } else { "java" };
     let major = |c: &Path| {
         let o = std::process::Command::new(c)
             .arg("-version")
@@ -907,18 +974,7 @@ pub fn find_java(given: Option<PathBuf>, need: u32) -> Result<PathBuf> {
             ),
         };
     }
-    let mut candidates: Vec<PathBuf> = vec![];
-    if let Some(home) = std::env::var_os("JAVA_HOME") {
-        candidates.push(PathBuf::from(home).join("bin").join(exe));
-    }
-    if let Some(appdata) = std::env::var_os("APPDATA") {
-        let meta = PathBuf::from(appdata).join("ModrinthApp/meta/java_versions");
-        for e in std::fs::read_dir(meta).into_iter().flatten().flatten() {
-            candidates.push(e.path().join("bin").join(exe));
-        }
-    }
-    candidates.push(PathBuf::from("java"));
-    let found: Vec<(u32, PathBuf)> = candidates
+    let found: Vec<(u32, PathBuf)> = java_candidates()
         .into_iter()
         .filter_map(|c| Some((major(&c)?, c)))
         .collect();
@@ -983,6 +1039,17 @@ mod tests {
             assert!(yml.contains(want), "{want} not in\n{yml}");
         }
         assert!(!s.status(5).running && s.request_stop().is_err());
+        assert!(s
+            .send("say hi")
+            .unwrap_err()
+            .to_string()
+            .contains("not running"));
+        assert!(s
+            .send(
+                "a
+b"
+            )
+            .is_err());
 
         // Setup (no downloads): a foreign folder needs --force, a non-world in
         // a world's place is never removed, and the EULA stays unaccepted.
@@ -1022,5 +1089,19 @@ mod tests {
             .join("plugins/WorldGuard/worlds/Vaduz/regions.yml")
             .is_file());
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn console_inbox_in_order_once() {
+        let d = std::env::temp_dir().join(format!("meld2-inbox-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        for (n, c) in [(2, "say b"), (1, "say a")] {
+            std::fs::write(d.join(format!("{n:032}.cmd")), c).unwrap();
+        }
+        std::fs::write(d.join("3.tmp"), "half written").unwrap();
+        assert_eq!(take_inbox(&d), ["say a", "say b"]);
+        assert!(take_inbox(&d).is_empty());
+        std::fs::remove_dir_all(d).unwrap();
     }
 }

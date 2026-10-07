@@ -190,9 +190,6 @@ impl Project {
     }
 
     fn validate(&self) -> Result<()> {
-        if self.selections.is_empty() {
-            bail!("no [[selection]]");
-        }
         if self.run.jobs == 0 {
             bail!("run.jobs must be at least 1");
         }
@@ -402,6 +399,12 @@ impl Project {
             .parent()
             .unwrap_or(Path::new("."))
             .join(&self.output)
+    }
+
+    /// The project's `arnis`, resolved against the project file.
+    pub fn arnis_path(&self) -> Option<PathBuf> {
+        let dir = self.path.parent().unwrap_or(Path::new("."));
+        self.arnis.as_ref().map(|a| dir.join(a))
     }
 
     /// A selection's settings: the defaults with its own on top.

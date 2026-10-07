@@ -120,6 +120,13 @@ const EXTRA_ARGS: &str = "extra_args";
 /// Piece size when a project does not set one. Pieces are what makes a job resumable.
 pub const DEFAULT_UNIT_REGIONS: i64 = 4;
 
+/// Every key a selection may set, with whether it is a switch, for forms.
+pub fn keys() -> Vec<(&'static str, bool)> {
+    let mut keys: Vec<_> = OPTS.iter().map(|o| (o.key, o.kind != Val)).collect();
+    keys.extend([(UNIT_REGIONS, false), (PREWARM, true)]);
+    keys
+}
+
 /// Piece size, in regions per side.
 pub fn unit_regions(settings: &Settings) -> i64 {
     settings
