@@ -64,17 +64,17 @@ In Meld 1, one project is one world, one selection and one locked origin (`src/p
 |---|---|---|---|
 | Render queue across projects: pause, stop, kill | `server.py:5590-5740` | M | **Done in Phase 1:** `queue::run`, `meld2 stop` |
 | Parallel cells (worker pool) | `src/workers.py` | A | `--one-world-workers auto\|N` |
-| Threads × workers under a CPU target | `governor.py:580-610` | A | `--threads` / `--cpu-target`. Meld 2 splits one budget across selections (done) |
-| RAM admission gate | `governor.py:633-700` | A | `--ram-budget-mb`. Auto worker count reads free RAM |
+| Threads × workers under a CPU target | `governor.py:580-610` | A | `--threads` / `--cpu-target`. Meld 2 splits one budget across the jobs that can run, rebalanced at each start (Phase 2 ✔) |
+| RAM admission gate | `governor.py:633-700` | A | `--ram-budget-mb`, split by Meld (Phase 2 ✔); `--one-world-workers auto` sizes workers within it |
 | Adaptive governor, occupancy, learned history | `governor.py` (1,242 lines), `occupancy.py` | X | T3: a few fat workers win (2–6), and Arnis auto picks 1–6 |
 | CPU start stagger | `project.py:198-206` | X | Not needed with the Arnis coordinator |
 | Resume after a crash | `server.py:5170` | O | Arnis resumes pieces; Meld 2 resumes selections (done) |
-| Regenerate a cell, region or suspect | `server.py:5154-5245` | O | A selection over that bbox, plus `--rebuild` (Phase 2) |
+| Regenerate a cell, region or suspect | `server.py:5154-5245` | O | A selection over that bbox, plus `--rebuild` (moved to Phase 3) |
 | Final check for missing regions, with retry | `finalcheck.py:66` | O | `--plan-units` reports `existing_chunks` per piece |
 | Child containment (Job Object, no console) | `childproc.py:34,69` | M | **Done:** `arnis.rs` Job Object per run |
-| Keep the machine awake | `power.py:9,39` | M | `SetThreadExecutionState` / inhibit |
+| Keep the machine awake | `power.py:9,39` | M | Windows `SetThreadExecutionState` (Phase 2 ✔); Linux/macOS inhibit in Phase 3 |
 | Prefetch OSM and terrain before parallel cells | `prefetch.py`, `server.py:4915-4971` | A | `--prewarm`, `--prewarm-first` |
-| End-of-run report (HTML/JSON, Gantt, CPU/RAM) | `runreport.py` | M | From the NDJSON `piece` and `done` records |
+| End-of-run report (HTML/JSON, Gantt, CPU/RAM) | `runreport.py` | M | From the NDJSON `piece` and `done` records (moved to Phase 3) |
 | Auto-export after a run | `server.py:3321-3354` | O | A post-build job kind |
 
 ### 1.3 Server features
@@ -124,7 +124,7 @@ There is no upload. A grep for sftp/ftp/upload finds only the preset import and 
 | Localhost API guard (Host, Origin, token) | `appguard.py:44-114` | M | `meld2 serve` token |
 | App log | `applog.py` | M | Done for jobs (`logs/<id>.log`) |
 | Data dir (env, pointer file, portable) | `paths.py:16-29` | M | Done: `MELD2_HOME`, else the OS dir. Pointer file later |
-| Diagnostic CLI (`--check`, `--arnis-caps`, `--print-arnis-cmd`) | `meld_app.py:105-190` | M | Done: `meld2 caps`. `print-cmd` later |
+| Diagnostic CLI (`--check`, `--arnis-caps`, `--print-arnis-cmd`) | `meld_app.py:105-190` | M | Done: `meld2 caps`, `meld2 arnis status`, `meld2 plan`. `print-cmd` later |
 | PyInstaller packaging | `packaging/` | X | cargo / Tauri bundler |
 | Console banner | `banner.py` | X | — |
 | One-click source launcher | `meld_launch.py` | X | — |
@@ -172,17 +172,17 @@ There is no upload. A grep for sftp/ftp/upload finds only the preset import and 
 | **Projects** | One bbox per command. The GUI keeps no project file | `project.toml` format 1: selections, each with its settings and its world | Phase 1 ✔ |
 | **Multi-selection queue** | One job per process. One writer per One World (`arnis_one_world/owner.pid`) | A queue with `run.jobs` at once; selections on the same world are serialised | Phase 1 ✔ |
 | **Resumable jobs across restarts** | A job resumes only if it is rerun with the same bbox and N (`scale/mod.rs:13-15`). Nothing records which jobs are pending | `state.json` per project: pending, running, stopped, failed or done, plus the command | Phase 1 ✔ |
-| **Scheduling pieces across selections** | `--threads` and `--one-world-workers` are per process; nothing is shared across processes | An even split of `cpu_target` and `ram_budget_mb` between jobs (done). Then rebalance when a job ends, and size workers from the piece count | Phase 1 ✔ / Phase 2 |
+| **Scheduling pieces across selections** | `--threads` and `--one-world-workers` are per process; nothing is shared across processes | An even split of `cpu_target` and `ram_budget_mb` between jobs (done). Rebalanced at each job start; workers sized by `--one-world-workers auto` from the piece count within the share | Phase 1 ✔ / Phase 2 ✔ |
 | **Server integration** | None | Leaf and Paper staging, Multiverse world per selection world, Voxy, console and backups | Phase 4 |
 | **Country bakes as jobs** | `--osm-pbf geofabrik` bakes inline inside the first job; `--prewarm` works per bbox | Job kinds `bake` and `prewarm` that run ahead of the builds that share them | Phase 3 |
-| **Disk and size planning** | Prints nothing before it builds. `--plan-units` gives chunks per piece | `meld2 plan`: chunks × measured bytes per chunk (by scale, caves, format) against free disk; refuse when short | Phase 2 |
+| **Disk and size planning** | Prints nothing before it builds. `--plan-units` gives chunks per piece | `meld2 plan` and the start of each run: chunks still to build × 3.84 MB per region against free disk, +25 % and `run.min_free_mb`; refuse when short, warn when tight | Phase 2 ✔ |
 | **Project dashboard** | None | `meld2 serve` (JSON API) and the GUI: worlds, selections, pieces, logs, disk | Phase 3 / Phase 5 |
 | Polygon selections | bbox only | Cover the rings with bboxes aligned to the lattice | Phase 3 |
 | B_Linear for One Worlds | Refused with `--one-world` (`--region-format` help; `REMAINING.md`) | Convert after the build with region-convert | Phase 4 |
 | Progress across pieces | Piece mode reports `progress` but it does not follow pieces: e2e showed **44.3 % at 2/16 pieces**. `done.chunks` counts only that run | Meld shows pieces done/of (done); totals summed per world | Phase 1 ✔ |
-| Rebuilding with new settings | A rerun resumes by rect and N, whatever the settings | A partial job with changed settings is refused (done). `--rebuild` clears Arnis's job folder | Phase 1 ✔ / Phase 2 |
+| Rebuilding with new settings | A rerun resumes by rect and N, whatever the settings | A partial job with changed settings is refused (done). `--rebuild` clears Arnis's job folder | Phase 1 ✔ / Phase 3 |
 | Headless remote control | No daemon | `meld2 stop` (done); `meld2 serve` with a token | Phase 1 ✔ / Phase 3 |
-| Parent death on Unix | The coordinator does not watch stdin; only pieces do (`scale/child.rs:75-82`) | `PR_SET_PDEATHSIG` in `pre_exec`, or ask Arnis to watch stdin in coordinator mode | Phase 2 |
+| Parent death on Unix | The coordinator does not watch stdin; only pieces do (`scale/child.rs:75-82`) | Arnis in its own process group plus a `sh` pipe watchdog that kills the group when Meld's end of the pipe closes (Linux and macOS) | Phase 2 ✔ |
 | Upload a built world | None (none in Meld 1 either) | Optional: rsync/SFTP of a finished world | rc / later |
 
 ---
@@ -195,12 +195,15 @@ There is no upload. A grep for sftp/ftp/upload finds only the preset import and 
 meld2/                      Cargo workspace, version 2.0.0-alpha.N (N = phase)
   core/   meld-core (lib)   project.rs   format-1 TOML model + validation
                             args.rs      settings → Arnis argv + required capabilities (one table)
-                            arnis.rs     --version / --capabilities probe, spawn, Job Object kill
+                            arnis.rs     --version / --capabilities probe, spawn, Job Object / Unix watchdog kill
+                            install.rs   Arnis lookup order, pinned download + sha256, version/caps gate
+                            plan.rs      --plan-units parser, size estimate, free disk, verdict
                             progress.rs  NDJSON v1 parser
                             queue.rs     scheduler: jobs budget, one writer per world, stop, resume
                             state.rs     state.json in the data dir (atomic writes)
   cli/    meld2 (bin)       run · status · stop · caps      (Phase 1)
-                            plan · serve · import · convert (later)
+                            plan · arnis status|install|path (Phase 2)
+                            serve · import · convert        (later)
   gui/    (Phase 5)          Tauri 2 shell over meld-core, same web UI that `serve` hosts
 ```
 
@@ -224,8 +227,8 @@ meld2/                      Cargo workspace, version 2.0.0-alpha.N (N = phase)
 | Capability gate | `arnis --capabilities` (one JSON line) is probed at start. Each setting names its capability in the `OPTS` table, and `args::require` refuses the job, naming what is missing. A missing line means "predates 3.4" |
 | Always passed | `--bbox --output-dir <saves> --one-world --world-name <world> --progress json --no-update-check --unit-regions N` (default 4: pieces are what resumes) |
 | Progress | `progress::parse` keeps lines starting `{"v":1,`, then reads phase, progress, piece, transfer, error and done; unknown types become `Other`; other versions are skipped |
-| Budget across selections | Up to `run.jobs` processes; never two on one world. Each job gets `--threads = cores × cpu_target ÷ 100 ÷ jobs` and `--ram-budget-mb = budget ÷ jobs`, unless the selection sets its own. Arnis splits that again across its pieces |
-| Clean process tree | Windows: one Job Object per run with `KILL_ON_JOB_CLOSE`, the same pattern as Arnis's `scale/child.rs`. Stop calls `TerminateJobObject`; if Meld dies, the kernel closes the handle. Arnis's pieces are in its nested job. Unix: killing the coordinator closes the pieces' stdin |
+| Budget across selections | Up to `run.jobs` processes; never two on one world. When a job starts, `slots` = the distinct worlds among running and queued jobs, at most `run.jobs`; the job gets `--threads = cores × cpu_target ÷ 100 ÷ slots`, `--ram-budget-mb = (run.ram_budget_mb or 80 % of free RAM) ÷ slots` and `--one-world-workers auto`, unless the selection sets its own. Arnis splits that again across its pieces. A running Arnis keeps its share (no CLI to change it) |
+| Clean process tree | Windows: one Job Object per run with `KILL_ON_JOB_CLOSE`, the same pattern as Arnis's `scale/child.rs`. Stop calls `TerminateJobObject`; if Meld dies, the kernel closes the handle. Arnis's pieces are in its nested job. Unix (Phase 2): Arnis starts with `process_group(0)` beside `sh -c 'cat >/dev/null; kill -KILL -- -$0' <pgid>`, which has its own group and reads a pipe Meld holds. Meld's death (kill -9 included) or a stop closes it; the coordinator's death closes its pieces' stdin |
 | Stop | `meld2 stop <project>` drops a `stop` file. The run polls it every 0.5 s, kills its jobs and marks them `stopped` |
 | Resume | Done with the same command: skip. Partial with the same command: rerun, and Arnis skips the finished pieces. Partial with a changed command: refuse |
 
@@ -241,15 +244,24 @@ meld2/                      Cargo workspace, version 2.0.0-alpha.N (N = phase)
   | `projects/<slug>-<fnv32(path)>/state.json` | per-selection state, written atomically |
   | `projects/<slug>-<fnv32(path)>/logs/` | one log per selection |
   | `projects/<slug>-<fnv32(path)>/stop` | the stop request file |
-  | `arnis/<version>/` | downloaded Arnis builds (Phase 2) |
-  | `cache/` | the Arnis cache, via `ARNIS_CACHE_ROOT` (Phase 2) |
+  | `projects/<slug>-<fnv32(path)>/run.lock` | held by the one running `meld2 run` (Phase 2) |
+  | `arnis/<version>/` | downloaded Arnis builds (Phase 2 ✔) |
+  | `cache/` | the Arnis cache, via `ARNIS_CACHE_ROOT` (Phase 3) |
 
-### 3.5 Bundling and updating Arnis (Phase 2)
+### 3.5 Bundling and updating Arnis (Phase 2 ✔)
 
-1. Pin the release in `meld-core`: tag, asset name per OS, sha256. The tag starts as `Teddy563/arnis v3.4.0-beta.1` and becomes `louis-e/arnis` once upstream ships at-Scale.
-2. `meld2 arnis install` downloads the pinned asset to `<data>/arnis/<version>/` and verifies its sha256. It then checks that `--version` matches the pin and that `--capabilities` covers every capability in `OPTS`.
-3. Resolution order: `--arnis`, then the project's `arnis`, then `MELD2_ARNIS`, then the pinned install. A custom path always goes through the capability probe.
-4. Blocker: the v3.4.0-beta.1 GitHub prerelease page has not been created yet (`REMAINING.md` › Later), so there is no asset URL to pin.
+1. The pin is in `meld2/core/src/install.rs`: `Teddy563/arnis` v3.4.0-beta.1 (becomes `louis-e/arnis` once upstream ships at-Scale), one asset per OS, SHA-256 recorded on 2026-10-07:
+
+   | Asset | SHA-256 | Used on |
+   |---|---|---|
+   | `arnis-windows.exe` | `4218e2394707ff360b9743e44a567f6f0364bb2a1c9d76508cc2293011c68207` | Windows x86_64 |
+   | `arnis-linux.tar.gz` (member `arnis-linux`) | `b457f88e0efd55d05808ed9f0ecb4bd6b90f030e383e8c5208385298ebbdc058` | Linux x86_64 |
+   | `arnis-mac-universal.tar.gz` (member `arnis-mac-universal`) | `5d35ccde76c17d9803c2f51aca522410cd0f92794aeb0374bd4920d1987cdc64` | macOS |
+   | `arnis-linux-appimage.tar.gz` | `29a02b22706ee03c61b632008f37f7e0bc804d9d998de38958ca8011be609dd2` | not used (needs FUSE) |
+
+2. `meld2 arnis install`, or the first `run` that finds nothing, downloads to `<data>/arnis/<version>/`, verifies the hash, unpacks the tar.gz on Linux and macOS, then probes the result.
+3. Resolution order: `--arnis`, the project's `arnis`, `MELD2_ARNIS`, `arnis(.exe)` next to the meld2 binary, the cached download, a fresh download. Every Arnis goes through the probe: version >= 3.4.0-beta.1 and the capabilities `progress-json unit-regions one-world-workers plan-units threads ram-budget`.
+4. The release's Windows asset is a CI build whose hash differs from the local `work/release/arnis-3.4.0-beta.1.exe` (`6f94d3d1…`); both report 3.4.0-beta.1 with the same capabilities.
 
 ### 3.6 Migration from Meld 1.x
 
@@ -295,8 +307,8 @@ Meld 1 worlds use an equirectangular frame, and One World cannot extend them (`0
 | Phase | Scope | Acceptance tests | h | Risks |
 |---|---|---|---|---|
 | **Phase 1** (`2.0.0-alpha.1`, done) | core + CLI: format-1 project model; settings→argv table with capability gate; spawn, NDJSON, Job Object kill; queue with job budget and one writer per world; `state.json` resume; `run / status / stop / caps` | fmt, clippy `-D warnings` and 12 unit tests green (parser, golden argv, progress on recorded NDJSON, resume decisions, fake-Arnis loop, tree kill); e2e against `arnis-3.4.0-beta.1.exe` (§5) | 30 | Arnis `progress` is not proportional in piece mode (worked around); the Unix coordinator does not die with Meld |
-| **Phase 2** (`2.0.0-alpha.2`) scale and safety | `meld2 plan` (size and disk from `--plan-units`); budget rebalancing when a job ends; `--rebuild`; pinned Arnis download and verify; Unix parent-death; one `run` per project (lock); keep the machine awake; JSON run report | plan within ±25 % of actual bytes on 3 areas and 2 scales; a run refused when the disk is short; tampered download rejected; `kill -9 meld2` on Linux leaves 0 arnis; a second `run` refused; report lists every piece | 45 | bytes per chunk swings with caves and scale; GitHub rate limits |
-| **Phase 3** server mode and data jobs | `meld2 serve` (JSON API, token, localhost by default); job kinds `bake`/`prewarm` (country bakes); polygon selections; `meld2 import` from Meld 1; final check via `existing_chunks`; regenerate an area | Liechtenstein bake job, then the builds pass with `--offline`; import of a real 1.9.9 project and of 3 bundled presets; a curl-driven run over `serve`; country polygon with 0 missing chunks | 70 | Bake time on large countries (Austria ≈ 103 s single-threaded in arnis-tiles); polygon edge cases |
+| **Phase 2** (`2.0.0-alpha.2`) scale and safety | `meld2 plan` (size and disk from `--plan-units`) ✔; budget rebalancing when a job ends ✔; pinned Arnis download and verify ✔; Unix parent-death ✔; one `run` per project (lock) ✔; keep the machine awake (Windows ✔). Moved to Phase 3: `--rebuild`, JSON run report, keep-awake on Linux/macOS | plan within ±25 % of actual bytes on 3 areas and 2 scales; a run refused when the disk is short; tampered download rejected; `kill -9 meld2` on Linux leaves 0 arnis; a second `run` refused; report lists every piece | 45 | bytes per chunk swings with caves and scale; GitHub rate limits |
+| **Phase 3** server mode and data jobs | `meld2 serve` (JSON API, token, localhost by default); job kinds `bake`/`prewarm` (country bakes; a `--prewarm-first` step before a big selection); from Phase 2: `--rebuild`, JSON run report, keep-awake on Linux/macOS; polygon selections; `meld2 import` from Meld 1; final check via `existing_chunks`; regenerate an area | Liechtenstein bake job, then the builds pass with `--offline`; import of a real 1.9.9 project and of 3 bundled presets; a curl-driven run over `serve`; country polygon with 0 missing chunks | 70 | Bake time on large countries (Austria ≈ 103 s single-threaded in arnis-tiles); polygon edge cases |
 | **Phase 4** server integration and output | Leaf and Paper staging; Multiverse world per project world; Voxy plugin; start, stop, console, backup; WorldGuard/Skript borders recomputed in Web Mercator; B_Linear post-convert (region-convert crate); zip/tar.zst with preflight | Leaf boots a 2-world project (`Done (` marker); a B_Linear world loads in Leaf 1.21.11; WorldGuard ring within 1 block of `--world-border`; an export refused when the disk is short | 80 | In-game checks need a person (`REMAINING.md` › Needs the user); Leaf/Paper API drift; check the region-convert fork's licence |
 | **Phase 5** desktop GUI | Tauri 2: dashboard, map editing of selections (port the Leaflet UI), per-piece live progress, tray, single instance, updater | GUI e2e on Windows; Playwright smoke test on the `serve` UI; tray stop and resume | 110 | Porting a 7k-line UI; WebKitGTK |
 | **2.0.0-beta.1** | All five phases merged | everything above green together | — | — |
@@ -331,3 +343,33 @@ Meld 1 worlds use an equirectangular frame, and One World cannot extend them (`0
 | 4 | Both skipped |
 
 Each world records exactly one area.
+
+## 6. Phase 2 as delivered (`2.0.0-alpha.2`, local branch `meld-2.0-phase-2`)
+
+**Commits on `meld-2.0`** (not pushed): see `git log meld-2.0-phase-1..meld-2.0-phase-2`.
+
+| Commit | Contents |
+|---|---|
+| docs | This plan in the branch, Phases 1–5, version 2.0.0-alpha.2 |
+| provisioning | Arnis lookup, pinned download + sha256, version/capability gate, `meld2 arnis status/install/path` |
+| plan | `meld2 plan`, size and disk check before each run |
+| budget | CPU/RAM split across the jobs that can run, rebalanced at each start, `--one-world-workers auto` |
+| unix | Pipe watchdog: Arnis dies with Meld on Linux and macOS |
+| lock | One run per project, Windows keep-awake |
+
+**Gates:** `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` (Windows; also for `x86_64-unknown-linux-gnu` with ureq's TLS turned off in a scratch copy, since `ring` needs a Linux C compiler), `cargo test`: 19 passed on Windows. The Unix watchdog test compiles but has not run: no Linux host here (WSL and Docker are down).
+
+**Plan accuracy** (chunks ÷ 1024 × 3.84 MB vs region files on disk): Schaan 18.9 MB est. / 20.8 MB actual (−9 %), Vaduz 0.84 / 0.97 MB (−13 %). Scale 1 only; the ±25 % acceptance on 3 areas × 2 scales is still open.
+
+**e2e** (`work/meld2-e2e/e2e-phase2.sh`, log `logs-e2e-phase2.txt`): fresh `MELD2_HOME`, no `--arnis`, no `MELD2_ARNIS`, no bundled exe.
+
+| Step | Result |
+|---|---|
+| `arnis status` before | "no Arnis found; `meld2 run` will download …" |
+| `run` | downloaded `arnis-windows.exe`, verified `4218e239…`, printed the plan (Vaduz 4 pieces / 0.8 MB, Schaan 16 / 18.9 MB, disk ok), started both at 9 threads + 6109 MB each, built 2/2 |
+| a second `run` during the first | refused: "already running in another meld2" |
+| `arnis status` after | source "downloaded earlier", 3.4.0-beta.1 (ok), capabilities listed |
+| `run` with `min_free_mb = 999999999` | refused: "not enough disk: ~20 MB to write …", exit 1 |
+| 3 selections, 2 in world Schaan, jobs = 2 | Vaduz and Schaan at 9 threads / 6096 MB; once both ended, schaan-north started alone at 19 threads / 12193 MB |
+
+**Left for Phase 3** besides its own scope: `--rebuild`; the JSON run report; keep-awake on Linux/macOS; running the watchdog test and `kill -9 meld2` on a Linux host; plan accuracy at a second scale and on 3 areas; a `--prewarm-first` step for big selections.
