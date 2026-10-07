@@ -2222,7 +2222,7 @@ dependencies = [
 
 [[package]]
 name = "meld-core"
-version = "2.0.0-alpha.4"
+version = "2.0.0-beta.1"
 dependencies = [
  "anyhow",
  "flate2",
@@ -2242,7 +2242,7 @@ dependencies = [
 
 [[package]]
 name = "meld-gui"
-version = "2.0.0-alpha.4"
+version = "2.0.0-beta.1"
 dependencies = [
  "meld-core",
  "meld2",
@@ -2254,7 +2254,7 @@ dependencies = [
 
 [[package]]
 name = "meld2"
-version = "2.0.0-alpha.4"
+version = "2.0.0-beta.1"
 dependencies = [
  "anyhow",
  "clap",

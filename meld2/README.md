@@ -1,16 +1,37 @@
-# Meld 2 (2.0.0-alpha.4, Phase 4)
+# Meld 2 (2.0.0-beta.1, Phases 1-5)
 
 Meld 2 is a Rust rewrite of Meld. It builds **projects**, which are saved sets of selections, through stock **Arnis at Scale** (Arnis 3.4+). Each selection has its own settings and builds into a One World. Selections that share a world extend it one after another. Selections in different worlds can build at the same time. A killed or stopped run resumes where it stopped. Meld then converts the worlds to B_Linear if asked, and sets up and runs a Leaf or Paper server for them.
 
-The Python Meld 1.x app in the repository root keeps working until 2.0 replaces it. The plan is in [`docs/PLAN.md`](docs/PLAN.md): five phases, then 2.0.0-beta.1.
+There are three ways in: the desktop app **Meld** (`gui/`), the `meld2` command line, and `meld2 serve` for a headless machine. All three share one core, and the app and `serve` share one API and one page.
+
+The Python Meld 1.x app in the repository root keeps working until 2.0 replaces it. The plan is in [`docs/PLAN.md`](docs/PLAN.md), and the release notes are in [`docs/RELEASE-2.0.0-beta.1.md`](docs/RELEASE-2.0.0-beta.1.md).
 
 ## Build
 
 ```sh
 cd meld2
-cargo build --release          # target/release/meld2(.exe)
+cargo build --release          # target/release/meld2(.exe) and meld-gui(.exe)
 cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+cd gui && npx @tauri-apps/cli@^2 build --bundles nsis   # the installer (deb,appimage / app,dmg elsewhere)
 ```
+
+A `v2.*` tag builds all of it on GitHub Actions (`.github/workflows/release.yml` on this branch): the CLI and the app for Windows, Linux x86_64 and macOS universal.
+
+## The desktop app
+
+The app keeps Meld 1's layout:
+- **Left:** the build. You see the estimated size and the disk check, the progress across the project with pieces and an ETA, one row per running job (workers) with its live percentage and pieces, and the log.
+- **Middle:** the map. Draw rectangles and polygons to add selections, and edit or delete them with the map tools. Polygon selections show the dashed piece-aligned parts Meld builds.
+- **Right:** the settings rail, with Meld 1's search box and cards:
+  1. **Settings.** Every key of the project model, for the project's `[defaults]` or for one selection, in Meld 1's groups and drawers: terrain, OSM source, generation performance with `[run]`, props, buildings, facades, trees, farmland, caves and output.
+  2. **Prepare data.** `[[bake]]` entries.
+  3. **Generate.** Generate, Plan, Stop and Rebuild.
+  - **Selections / worlds.**
+  - **Server setup.** The `[server]` fields, Set up with the EULA box, Start, Stop, the live console with a command box, and a zip backup per world.
+  - **Arnis.** Which Arnis is in use, its version and capabilities, and Install.
+  - **Project file.** The raw TOML editor.
+
+Settings save as you change them, through the same `PUT` the API takes. The app runs `meld2 serve`'s server in-process on `127.0.0.1` with a fresh token and shows its page, so the app, a browser and curl all use one code path. If a run or a Minecraft server is going, closing the window hides it to the tray; otherwise the app quits. A second launch brings the running app's window back. The tray offers Open and Quit; Quit stops runs, which resume next time, and servers. The app uses `MELD2_HOME` and the data folder below, like the CLI.
 
 ## Run
 
@@ -27,6 +48,8 @@ meld2 server setup examples/e2e.toml --accept-eula   # the [server] folder, jar 
 meld2 server start examples/e2e.toml # runs it, printing its console
 meld2 server stop examples/e2e.toml  # from another shell: save and stop
 meld2 server status examples/e2e.toml
+meld2 server send examples/e2e.toml say hello   # one console command to the running server
+meld2 export saves/Alps              # the world as a zip beside it, after a disk check
 ```
 
 A run first prints the plan: for every selection, the pieces, region files, chunks, chunks still to build and the estimated size (3.84 MB per full region, the figure Arnis's GUI uses), from Arnis's `--plan-units` dry run. If the estimate plus 25 % and `run.min_free_mb` does not fit the free space of the saves volume, the run is refused; under twice the estimate it warns.
@@ -47,6 +70,8 @@ Meld 2 drives Arnis 3.4 (Arnis at Scale) or newer, the CLI build or the GUI buil
 4. `arnis.exe` / `arnis` next to the `meld2` binary (a bundle)
 5. the pinned release downloaded earlier, in `<data>/arnis/3.4.0-beta.1/`
 6. otherwise it downloads the pinned release, `Teddy563/arnis` v3.4.0-beta.1, and checks its SHA-256 (the hashes are in `core/src/install.rs`). On Linux and macOS it unpacks the `.tar.gz`.
+
+The desktop app does not bundle Arnis as a sidecar. It uses the same lookup, so the first run (or the app's Arnis panel) downloads the pinned release. That gives the app, the CLI and the server one verified copy and keeps the installers small.
 
 Whatever it finds, Meld runs `--version` and `--capabilities` and refuses an Arnis older than 3.4.0-beta.1 or one that lacks `progress-json`, `unit-regions`, `one-world-workers`, `plan-units`, `threads` or `ram-budget`, and says how to fix it.
 
@@ -140,7 +165,7 @@ datapacks = ["packs/rules.zip"]                      # into the main level's dat
 
 A folder Meld did not set up, a copied world, and an existing `server.properties`, `regions.yml` or datapack are replaced only with `--force`. Linked worlds are relinked freely. Nothing is uploaded anywhere.
 
-`meld2 server start <project> [--java P]` runs the server in the foreground and prints its console. Java comes from `--java` or `[server] java`, else the newest of `JAVA_HOME`, the Modrinth app's runtimes and `java` on PATH; it must be 21 or newer (25 for 26.x). Plugins can need more: WorldEdit 7.4.5 and WorldGuard 7.0.17 need Java 25, so pin older builds on Java 21. Java gets an argument list, never a shell, and runs in the run's Job Object (Windows) or watched process group (Unix), so it dies with Meld. `meld2 server stop` (or the API) sends `stop` on its console, which saves the worlds, and kills it after 60 s. `meld2 server status [--lines N]` shows whether it runs and the end of `logs/latest.log`.
+`meld2 server start <project> [--java P]` runs the server in the foreground and prints its console. Java comes from `--java` or `[server] java`, else the newest of `JAVA_HOME`, the Modrinth app's runtimes and `java` on PATH; it must be 21 or newer (25 for 26.x). Plugins can need more: WorldEdit 7.4.5 and WorldGuard 7.0.17 need Java 25, so pin older builds on Java 21. Java gets an argument list, never a shell, and runs in the run's Job Object (Windows) or watched process group (Unix), so it dies with Meld. `meld2 server stop` (or the API) sends `stop` on its console, which saves the worlds, and kills it after 60 s. `meld2 server send <project> <command>` (or the API) queues one console command for the running server, whether the CLI, the API or the app started it. `meld2 server status [--lines N]` shows whether it runs and the end of `logs/latest.log`.
 
 The vanilla world border is Arnis's: set `world_border = true` and every build puts it around all of the world's areas (centre, longer side). Meld adds the WorldGuard regions, which follow each selection's own shape.
 
@@ -155,7 +180,7 @@ meld2 serve [--bind 127.0.0.1:7878] [--dir <workspace>] [--arnis <path>]
 | Method | Path | |
 |---|---|---|
 | GET | `/api/projects` | the workspace's projects with each step's state |
-| GET / PUT | `/api/projects/<name>` | `{name, path, toml, state, running}`; PUT takes the TOML and checks it before it saves |
+| GET / PUT | `/api/projects/<name>` | `{name, path, toml, model, parts, state, running}`. `model` is the TOML as JSON and `parts` are the polygon parts. PUT takes the TOML or the `model` JSON (comments are then not kept) and checks the project where it will live before it saves |
 | POST | `/api/projects/<name>/run` | starts a run in the server (`?rebuild=a,b` or `?rebuild=all`); 409 if one runs |
 | POST | `/api/projects/<name>/stop` | asks its run to stop, whether it was started here or by `meld2 run` |
 | GET | `/api/projects/<name>/plan` | pieces, chunks and MB per selection, and the disk verdict |
@@ -165,8 +190,20 @@ meld2 serve [--bind 127.0.0.1:7878] [--dir <workspace>] [--arnis <path>]
 | POST | `/api/projects/<name>/server/start` | runs the server inside `meld2 serve` (202); an error in the first 2 s is the reply (400); 409 if it runs |
 | POST | `/api/projects/<name>/server/stop` | asks it to save and stop, whether the API or the CLI started it; 409 if it does not run |
 | GET | `/api/projects/<name>/server` | `{running, state, pid, dir, log}`; `state` is `starting`, `ready` or `stopping`; `?lines=N` (50) |
+| POST | `/api/projects/<name>/server/send` | one console command, the body; 409 if the server does not run |
+| POST | `/api/projects/<name>/export?world=W` | zips one of the project's worlds into `exports/` beside the project, after a disk check |
+| GET | `/api/options` | every setting key a selection may use, and whether it is a switch |
+| GET | `/api/arnis` | which Arnis a run would use (never downloads), its version and capabilities, and the pin |
+| POST | `/api/arnis/install` | downloads and verifies the pinned Arnis |
 
 **Security.** Every request needs the token, on loopback as well, so other web pages in the browser cannot drive Meld either. Send it as `X-Meld-Token: <token>` or `Authorization: Bearer <token>`. The page and `EventSource` cannot set headers, so they use `?token=`. The token is 128 random bits from the OS, new at each start, unless `MELD2_TOKEN` (at least 16 characters) sets it. It is compared in constant time. Project names in paths are letters, digits, `-` and `_` only, and bodies are capped at 1 MB. `--bind 0.0.0.0:7878` opens it to the network. It is still token-only, but plain HTTP, so use a trusted LAN, an SSH tunnel or a TLS reverse proxy.
+
+**Executables.** A project's `arnis` and `[server] java` are programs Meld runs. Through the API, and so through the app, a project may only name:
+- an Arnis Meld installed (the pinned download), one bundled next to the binary, or `MELD2_ARNIS`;
+- a Java Meld finds by itself: `JAVA_HOME`, the Modrinth app's runtimes, or `java` on PATH;
+- or a path listed in `<data>/trusted-executables.txt` (one per line, `#` comments), which the API never writes.
+
+Otherwise the PUT is refused, and so is a run, plan or server start of such a project already on disk. Without this, holding the token would mean running any program. A project file you run with `meld2 run` is yours and is not restricted. Arnis's own flags, including `extra_args`, start no other program: the at-Scale CLI spawns only itself, plus `curl` or `wget` from PATH.
 
 ```sh
 T=<token>; U=http://127.0.0.1:7878

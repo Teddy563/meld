@@ -2,12 +2,12 @@
 
 Date: 2026-10-07.
 
-Releases: the work is cut into **Phases 1–5**. Each phase is a pre-release `2.0.0-alpha.N` (Phase 1 was `alpha.1`, Phase 2 `alpha.2`, Phase 3 `alpha.3`; Phase 4 is `alpha.4`). **2.0.0-beta.1 is the release with all five phases merged.** rc and 2.0.0 come after the user's UI pass. Arnis at Scale now covers most of Meld's engine features, so Meld 2 is mainly the orchestrator, server and projects layer.
+Releases: the work is cut into **Phases 1–5**. Phases 1–4 were pre-releases `2.0.0-alpha.1` to `alpha.4`. **Phase 5 is done, and 2.0.0-beta.1 = Phases 1–5.** rc.1 and 2.0.0 come after the user's UI pass. Arnis at Scale now covers most of Meld's engine features, so Meld 2 is mainly the orchestrator, server and projects layer.
 
 Baselines:
 - Meld 1.9.9: `Teddy563/meld` @ `4152dcb`, tag `v1.9.9`.
 - Arnis at Scale 3.4.0-beta.1: `Teddy563/arnis` `arnis-scale-single` @ `47b4d8e7`, binary `work/release/arnis-3.4.0-beta.1.exe`.
-- Meld 2: branch `meld-2.0`, worktree `work/wt-meld2`, folder `meld2/`. Phase branches: `meld-2.0-phase-1` = `52f8101`, `meld-2.0-phase-2` = `1ace4fe`, `meld-2.0-phase-3` = `7c0b678`, `meld-2.0-phase-4` (local).
+- Meld 2: branch `meld-2.0`, worktree `work/wt-meld2`, folder `meld2/`. Phase branches: `meld-2.0-phase-1` = `52f8101`, `meld-2.0-phase-2` = `1ace4fe`, `meld-2.0-phase-3` = `7c0b678`, `meld-2.0-phase-4` = `b8877c0`, `meld-2.0-phase-5` (local).
 
 Every Meld claim below cites a file and line that I read or grepped on 4152dcb. Arnis claims cite the `wt-single` tree.
 
@@ -85,12 +85,12 @@ In Meld 1, one project is one world, one selection and one locked origin (`src/p
 | Paper | Leaf only (`LEAF_API`, `mcserver.py:41`); plugins already resolved for paper loaders (`:117`) | M | **Done in Phase 4:** `flavor = "paper"` (fill v3 API, sha256). Not run in the e2e |
 | Multiverse sub-worlds | `mcserver.py:17,49-50` | M | **Done in Phase 4:** a second world adds Multiverse-Core and `mv import <world> normal` on the first start |
 | Voxy server-side plugin | `mcserver.py:56` | M | `plugins = ["voxy-server-side"]` (any Modrinth slug, `@` pins a build); not run. `voxy_lod` is a setting (Phase 4) |
-| Server start, stop, console, command, backup | `server.py:7165-7276` | M | **Phase 4:** start, stop (console `stop`, kill after 60 s), status and log tail, over the CLI and the API. Console commands and backup: Phase 5 |
+| Server start, stop, console, command, backup | `server.py:7165-7276` | M | **Phase 4:** start, stop (console `stop`, kill after 60 s), status and log tail, over the CLI and the API. **Phase 5:** `server send` (CLI, API, app console) and a world zip backup |
 | World border (vanilla) | `level_dat.py:103-123` | A | `--world-border` |
 | Level name | `level_dat.py:55-91` | A | `--world-name` |
 | WorldGuard `regions.yml` and Skript border/zones | `border.py` (930 lines) | M | **WorldGuard done in Phase 4,** in the One World frame (`frame.rs`): a `poly2d` per selection. Skript walls, buffered rings and country lookups: later |
 | Datapacks carried through the cell merge | `merge.py:208-222` | X | Not needed: One World writes in place, so there is no merge |
-| zip / tar.zst export | `export.py:767-812` | M | Not done; Phase 5 |
+| zip / tar.zst export | `export.py:767-812` | M | **Phase 5:** zip (`meld2 export`, the API, the app's Back up), disk checked against the world's size, region files stored. tar.zst: later |
 | Linear v1 export | `export.py:231-348` | X | B_Linear supersedes it for Leaf ≥ 1.21.11 (`12-BLINEAR-COMPARISON.md`) |
 | B_Linear export via region-convert | `export.py:941-998` | O | **Done in Phase 4:** `--region-format blinear` is refused with `--one-world`, so Meld converts after the build (`convert.rs`, region-convert linked as a crate) |
 
@@ -100,7 +100,7 @@ There is no upload. A grep for sftp/ftp/upload finds only the preset import and 
 
 | Feature | Meld 1.9.9 source | → | How in Meld 2 |
 |---|---|---|---|
-| Leaflet map: draw or search an area | `web/index.html` (7,174 lines) | M | GUI (§3.2) |
+| Leaflet map: draw or search an area | `web/index.html` (7,174 lines) | M | **Phase 5:** Meld 1's layout and Leaflet + leaflet.draw setup; draw, edit, delete. Place search: later |
 | Cave zone map | `server.py:6628` | A | `--cave-zone-map` |
 | Climate map | `server.py:6721` | A | `--climate-map` |
 | Elevation and height preview | `server.py:6796`, `datapack.py` | M | GUI |
@@ -118,9 +118,9 @@ There is no upload. A grep for sftp/ftp/upload finds only the preset import and 
 | Update check (GitHub, 24 h cache) | `update.py:37-151` | M | `tauri-plugin-updater` |
 | Staged self-update with sha256 and a smoke test | `updater.py:107-305` | M | Same plugin (signed) |
 | Generator update (`Teddy563/arnis`) | `update.py:212-260`, `updater.py:405` | M | Pinned Arnis download (§3.6) |
-| Tray app | `tray.py` | M | Tauri tray |
+| Tray app | `tray.py` | M | **Phase 5:** Tauri tray (Open, Quit); close hides to the tray while a run or server is going |
 | Chromium `--app` window | `preview.py` | X | Tauri window |
-| Single instance plus hand-off | `single_instance.py` | M | `tauri-plugin-single-instance` |
+| Single instance plus hand-off | `single_instance.py` | M | **Phase 5:** `tauri-plugin-single-instance`; a second launch shows the first window |
 | Localhost API guard (Host, Origin, token) | `appguard.py:44-114` | M | `meld2 serve` token on every request, loopback included (Phase 3 ✔) |
 | App log | `applog.py` | M | Done for jobs (`logs/<id>.log`) |
 | Data dir (env, pointer file, portable) | `paths.py:16-29` | M | Done: `MELD2_HOME`, else the OS dir. Pointer file later |
@@ -210,7 +210,8 @@ meld2/                      Cargo workspace, version 2.0.0-alpha.N (N = phase)
                             plan · arnis status|install|path (Phase 2)
                             serve · import · run --rebuild  (Phase 3)
                             convert · server setup|start|stop|status (Phase 4)
-  gui/    (Phase 5)          Tauri 2 shell over meld-core, same web UI that `serve` hosts
+  gui/    meld-gui (Phase 5)  Tauri 2 app: runs meld2::serve in-process on loopback and shows its page; tray, single instance
+                            (core Phase 5: trust.rs executables over the API, export.rs zips; cli: server send, export)
 ```
 
 - **Layout.** A top-level `meld2/` is right while the Python app has to keep working on this branch. At 2.0.0, move the workspace to the repo root and delete the Python tree; tag `v1.9.9` keeps it.
@@ -326,8 +327,8 @@ Meld 1 worlds use an equirectangular frame, and One World cannot extend them (`0
 | **Phase 2** (`2.0.0-alpha.2`) scale and safety | `meld2 plan` (size and disk from `--plan-units`) ✔; budget rebalancing when a job ends ✔; pinned Arnis download and verify ✔; Unix parent-death ✔; one `run` per project (lock) ✔; keep the machine awake (Windows ✔). Moved to Phase 3: `--rebuild`, JSON run report, keep-awake on Linux/macOS | plan within ±25 % of actual bytes on 3 areas and 2 scales; a run refused when the disk is short; tampered download rejected; `kill -9 meld2` on Linux leaves 0 arnis; a second `run` refused; report lists every piece | 45 | bytes per chunk swings with caves and scale; GitHub rate limits |
 | **Phase 3** (`2.0.0-alpha.3`, done) server mode and data jobs | `meld2 serve` (JSON API, token, localhost by default); job kinds `bake`/`prewarm` (country bakes; a `--prewarm-first` step before a big selection); from Phase 2: `--rebuild`, JSON run report, keep-awake on Linux/macOS; polygon selections; `meld2 import` from Meld 1; final check via `existing_chunks`; regenerate an area | Liechtenstein bake job, then the builds pass with `--offline`; import of a real 1.9.9 project and of 3 bundled presets; a curl-driven run over `serve`; country polygon with 0 missing chunks | 70 | Bake time on large countries (Austria ≈ 103 s single-threaded in arnis-tiles); polygon edge cases |
 | **Phase 4** (`2.0.0-alpha.4`, done) server integration and output | Leaf and Paper staging; Multiverse world per project world; Voxy plugin; start, stop, console, backup; WorldGuard/Skript borders recomputed in Web Mercator; B_Linear post-convert (region-convert crate); zip/tar.zst with preflight | Leaf boots a 2-world project (`Done (` marker); a B_Linear world loads in Leaf 1.21.11; WorldGuard ring within 1 block of `--world-border`; an export refused when the disk is short | 80 | In-game checks need a person (`REMAINING.md` › Needs the user); Leaf/Paper API drift; check the region-convert fork's licence |
-| **Phase 5** desktop GUI | Tauri 2: dashboard, map editing of selections (port the Leaflet UI), per-piece live progress, tray, single instance, updater | GUI e2e on Windows; Playwright smoke test on the `serve` UI; tray stop and resume | 110 | Porting a 7k-line UI; WebKitGTK |
-| **2.0.0-beta.1** | All five phases merged | everything above green together | — | — |
+| **Phase 5** (done) desktop GUI | Tauri 2 in Meld 1's layout: map editing of selections, the whole project model in the settings rail, per-piece live progress, server and Arnis panels, tray, single instance; trusted executables over the API; `server send`, world zip export; release CI. Updater moved to rc | GUI e2e on Windows in the real window; Playwright smoke test on the `serve` UI; close to tray during a run, stop and resume | 110 | WebKitGTK |
+| **2.0.0-beta.1** | Phases 1–5 | everything above green together | — | — |
 | **rc.1** (after the user's UI pass) | Linux and macOS CI; docs; migration guide; benchmark vs 1.9.9 on the same area | green on 3 OSes; wall time ≤ 1.9.9 on the gate area | 30 | macOS signing |
 | **2.0.0** | Move `meld2/` to the root, retire Python, release | release assets install and run `caps` | 10 | — |
 | **Total** | | | **≈ 375** | Arnis at Scale is not merged upstream yet: pin the fork release; the interface is CLI only, so swapping in upstream later is just a change to the pin |
@@ -473,3 +474,63 @@ Each world records exactly one area.
 - Start scripts for running the server without Meld; detaching `server start` from the CLI.
 - The Linux runs above; a client join on Leaf with a B_Linear world.
 - `project.arnis` and `[server] java` run any executable the project names: fine for a trusted project file, but the API's token is then full control of the machine. Restrict both to an allow-list or the data dir before `serve` is exposed beyond a trusted LAN.
+
+## 9. Phase 5 as delivered (`2.0.0-beta.1` = Phases 1–5, local branch `meld-2.0-phase-5`)
+
+**Commits on `meld-2.0`** (not pushed): see `git log meld-2.0-phase-4..meld-2.0-phase-5`.
+
+| Commit | Contents |
+|---|---|
+| core | `trust.rs` (executables over the API), `export.rs` (world zip with a disk check), `server send` through a console inbox, empty projects allowed |
+| cli / API | Untrusted `arnis` / `[server] java` refused on PUT and on every API load. New: JSON `model` PUT, polygon `parts`, `/api/options`, `/api/arnis`, `/api/arnis/install`, `server/send`, `export`. New CLI commands: `meld2 server send`, `meld2 export`. cli is also a library |
+| UI | The page `serve` and the app show, rebuilt on Meld 1's layout and CSS: left build/workers/log, middle map, right settings rail covering the whole project model |
+| app | `gui/` Tauri 2: in-process `serve` on loopback, tray, single instance, close to the tray while busy |
+| ci | `release.yml` on this branch: `v2.*` builds the CLI and the app for Windows, Linux x86_64 and macOS universal |
+| release | version 2.0.0-beta.1, README, this plan, `docs/RELEASE-2.0.0-beta.1.md` |
+
+**Desktop app: one code path.** The app starts `meld2::serve` on `127.0.0.1:0` with a fresh token and loads its page in a Tauri window. It has no Tauri commands: every action is the same HTTP call a browser or curl makes. Rust reads only `Ctx::busy()` (a run or a Minecraft server in this process), to decide whether closing the window hides it.
+
+**UI.** The UI keeps Meld 1's layout, as the user asked: it is Meld 1's `web/index.html` structure and CSS, with the Arnis accent `#fecc44` and Lucide icons. The settings rail lists every `args::OPTS` key plus `unit_regions`, `prewarm` and `extra_args`, in Meld 1's order of groups and drawers. Any key Arnis adds later shows under "Other" from `/api/options`. A value is set for the project's `[defaults]` or for one selection; a blank field inherits. Edits save as you make them through the JSON `model` PUT, which keeps no comments; the Project file card edits the raw TOML.
+
+**Security fix (Phase 4 carry-over).** A project's `arnis` and `[server] java` may come over the API, and so through the app, only if:
+- Meld installed it: the pinned Arnis download;
+- Meld finds it by itself: an Arnis bundled next to the binary, `MELD2_ARNIS`, `JAVA_HOME`, the Modrinth app's Javas, or `java` on PATH;
+- or the owner listed it in `<data>/trusted-executables.txt`, which the API never writes.
+
+Paths are compared after canonicalising, so `..` cannot dodge the check. A PUT that breaks the rule is refused (400). A project already on disk is refused at every API load (run, plan, server). The CLI on a local project file stays unrestricted. Arnis's own flags, `extra_args` included, start no other program: the at-Scale CLI spawns only itself and `curl`/`wget` (grepped in `wt-single`).
+
+**Arnis: downloaded, not bundled.** The app does not ship Arnis as a sidecar. Phase 2's pinned download, checked by sha256, already serves the CLI and `serve`, so one verified copy serves all three, and the installers stay small (NSIS 5 MB). The app's Arnis card has Install, and a first run downloads it on its own.
+
+**Gates:** `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` (with the gui crate) and `cargo test` pass: 34 tests on Windows (32 core, 2 cli). New tests cover trusted executables, the zip export with the disk refusal, the console inbox order, and the API refusing `arnis` / `java` by TOML and by model plus the JSON model round-trip and `/api/options`. `node --check` passes on the page's script. `npx @tauri-apps/cli build --bundles nsis` produced `Meld_2.0.0-beta.1_x64-setup.exe`.
+
+**e2e in the real window** (`work/meld2-e2e/p5/`: `drive.cjs` over WebView2's debugging port, `win.ps1` for native size, capture and close; screenshots in `shots/`, Meld 1 beside them as `meld1-*.png` and `compare-*.png`). Fresh `MELD2_HOME`, release build, Java 21.
+
+| Step | Result |
+|---|---|
+| Arnis card, Install | "none yet", then downloaded and verified (`4218e239…`), "3.4.0-beta.1 ok", 44 capabilities |
+| Projects overlay, New `p5e2e` | created empty; opened |
+| draw on the map with the mouse | a rectangle over Vaduz (`s1`) and a 4-point polygon over Schaan (`s2`); `s2` became 4 dashed parts |
+| settings rail | `[run] jobs = 2`; per selection `world` (Vaduz, Schaan) and `unit_regions = 1`; the TOML shows all of it |
+| Plan | 14 pieces, ~40 MB, disk ok; left rail "40 MB, 14 pieces · 10,564 chunks" |
+| Generate | `s1` and `s2-1` at once (10 threads each), then `s2-2` (21 threads); live % per worker (9 → 57 → 100), piece strips, ETA |
+| Stop after 2 Schaan pieces | `s2-2` stopped, 0 Arnis left; final check 0 missing |
+| Generate again, and close the window mid-run | the window hid (process alive, Arnis running); a second launch showed it again (one process); `s1`, `s2-1` skipped, `s2-2` resumed, `s2-3`/`s2-4` built; 5/5 steps, 0 chunks missing |
+| Server setup | Add a server, EULA box, Set up (Leaf jar, Multiverse-Core 5.8.1 sha512), Start → `running (ready)` (`Done (14.9s)`) |
+| console | `say hello from the Meld window` reached the server log; `mv list` listed Schaan and Vaduz; `save-all flush` saved |
+| Back up Vaduz | `exports/Vaduz-<unix>.zip`, 141 files, 3.4 MB, `testzip` clean |
+| Stop | console `stop`, "server exited 0", "not running" |
+| 1280 and 1600 wide | every card shot at both widths; native window captures with the title bar |
+
+**Deferred** (to rc.1 or later):
+- the updater plugin and its signing;
+- CPU/RAM graphs in the left rail;
+- place search on the map;
+- presets UI and Meld 1's tree, field and cave mix sliders (the keys are text fields today);
+- tar.zst export;
+- detaching `server start` from the CLI, and start scripts;
+- Skript walls, buffered rings and country lookups; WorldGuard flags;
+- Linux and macOS runtime tests (watchdog, keep-awake, `kill -9`, the app on WebKitGTK);
+- a client joining the server;
+- Paper and Voxy runs;
+- serving Leaflet locally for offline maps;
+- confining `output`, `[server] dir` and datapack paths over the API to the workspace: today they can name any folder the user can write. That is not program execution, but it needs fixing before `serve` leaves a trusted LAN.
