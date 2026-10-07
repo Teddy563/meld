@@ -121,6 +121,15 @@ pub fn selection(project: &Project, sel: &Selection, arnis: &Arnis) -> Result<Pl
     parse(&out)
 }
 
+/// A selection's One World against its frame settings: what Generate will
+/// do about a world created with other ones (`frame::check_world`).
+pub fn world_check(project: &Project, sel: &Selection) -> Option<crate::frame::WorldCheck> {
+    let dir = project.output_dir().join(&sel.world);
+    crate::frame::check_world(&dir, &project.settings_for(sel))
+        .ok()
+        .flatten()
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Disk {
     Ok,

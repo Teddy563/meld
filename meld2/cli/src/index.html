@@ -264,6 +264,7 @@
   .steps li.done { color: var(--ui-muted); } .steps li.done::before { content: "✓"; border-color: var(--ok); background: var(--ok); color: #fff; }
   .steps li.now { color: var(--ui-text); font-weight: 600; } .steps li.now::before { border-color: var(--ui-accent); color: var(--ui-accent); box-shadow: 0 0 0 3px rgba(254,204,68,.18); }
   .next { font-size: 12.5px; line-height: 1.45; color: var(--ui-muted); }
+  .next .wcheck { margin-top: var(--sp-1); } .selerr { overflow-wrap: anywhere; }
   .wrow { display: flex; align-items: flex-start; gap: 10px; padding: var(--sp-2) 10px; border: 1px solid var(--ui-tile-border); border-radius: var(--r-lg); background: var(--ui-tile); cursor: pointer; min-width: 0; }
   .wrow:hover { background: var(--ui-tile-hover); }
   .wrow.on { border-color: var(--ui-accent); box-shadow: inset 0 0 0 1px var(--ui-accent); }
@@ -1055,6 +1056,22 @@ function geometryFromMap() {
     .map((s) => (s.polygon ? { ...s, polygon: rings[s.id].filter(Boolean) } : { ...s, bbox: boxes[s.id] }));
   if (target && !cur.model.selection.some((s) => s.id === target)) target = "";
 }
+// A step's error, with its "(see log: logs/x.log)" as a link that shows the log.
+function errHtml(t) {
+  return esc(t).replace(/\s*\(see log: logs\/([\w.-]+\.log)\)/, (_, f) => ` · <button type="button" class="link" data-log="${f}">see log</button>`);
+}
+function errOf(sel) {
+  const L = (cur && live[cur.name]) || {}, S = (cur && cur.state) || {};
+  for (const id of partsOf(sel)) { const e = (L[id] && L[id].error) || (statusOf(id) === "failed" && S[id] && S[id].error); if (e) return e; }
+  return "";
+}
+async function showLog(f) {
+  try { const r = await api(`/api/projects/${cur.name}/logs/${encodeURIComponent(f)}`); logLine(cur.name, `---- logs/${f} (the end) ----
+${r.text.trimEnd()}
+---- end of logs/${f} ----`); }
+  catch (e) { logLine(cur.name, `logs/${f}: ${e.message}`); }
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-log]"); if (b) { e.stopPropagation(); showLog(b.dataset.log); } }, true);
 function statusOf(id) {
   const l = ((cur && live[cur.name]) || {})[id];
   const s = ((cur && cur.state) || {})[id];
@@ -1276,6 +1293,7 @@ function renderSelections() {
       <i class="dot" style="background:${colour[st]}"></i>
       <div class="wmain"><div class="wtop"><b>${esc(s.id)}</b><span class="sub">${esc(s.world)}</span><span class="chip st-${st}">${STATUS[st]}${st === "running" || (pct > 0 && pct < 100) ? ` ${pct.toFixed(0)} %` : ""}</span></div>
         <div class="sub">${sizeOf(s)}${n ? ` · <span class="ovr-n">${plural(n, "override")}</span>` : ""}</div>
+        ${st === "failed" && errOf(s) ? `<div class="sub bad selerr">${errHtml(errOf(s))}</div>` : ""}
         <div class="barrow"><div class="bar"><i class="${st === "done" ? "ok" : st === "failed" ? "bad" : st === "running" ? "" : "idle"}" style="width:${st === "done" ? 100 : pct}%"></i></div><span class="pct">${(st === "done" ? 100 : pct).toFixed(0)} %</span></div></div>
       <button class="icon-only danger" data-del="${esc(s.id)}" title="Delete ${esc(s.id)} (its built world stays on disk)">${icon("trash")}</button></div>`;
   }).join("") : `<div class="empty">No selections yet. Draw a <button type="button" class="link" data-draw="rectangle">rectangle</button> or a <button type="button" class="link" data-draw="polygon">polygon</button> on the map.</div>`;
@@ -1317,13 +1335,32 @@ function renderFlow() {
   else if (planned && lastPlan.disk === "short") { hint = `Not enough disk: the plan needs ${mb(lastPlan.need_mb)} plus ${mb(lastPlan.min_free_mb)} kept free; ${mb(lastPlan.free_mb)} is free.`; bad = true; }
   else if (planned) { hint = `Plan: ${mb(lastPlan.need_mb)} in ${plural(lastPlan.selections.reduce((n, s) => n + s.pieces, 0), "piece")}, disk ${esc(lastPlan.disk)}. Generate builds it.`; primary = "btnRun"; }
   else { hint = `${lastPlan ? "Settings changed since the plan. " : ""}Settings below are optional. Plan shows pieces, size and free disk before you build.`; primary = "btnPlan"; }
+  // What Generate does about a world created with other settings, before it runs.
+  const checks = planned ? [...new Map(lastPlan.selections.filter((x) => x.world_check).map((x) => [x.world_check.world, x.world_check])).values()] : [];
+  for (const c of checks) {
+    hint += `<div class="wcheck ${c.action === "refuse" ? "bad" : ""}">${esc(c.message)}${c.action === "refuse" ? ` <button type="button" class="link" data-adopt="${esc(c.world)}">Use the world's value</button> or give the selection a new world name.` : ""}</div>`;
+  }
   $("nextHint").innerHTML = hint;
   $("nextHint").className = "next" + (bad ? " bad" : "");
   const why = { btnPlan: !sels.length ? "Draw a selection first." : running ? "A run is going." : "", btnRun: !sels.length ? "Draw a selection first." : running ? "Already generating." : bad ? "Not enough free disk." : "", btnStop: running ? "" : "Nothing is running.", btnRebuild: !sels.length ? "Draw a selection first." : running ? "Stop the run first." : "" };
   for (const [id, w] of Object.entries(why)) { $(id).disabled = !!w; $(id).classList.toggle("primary", id === primary); if (w) $(id).title = w; else $(id).title = $(id).dataset.title || ""; }
   $("btnRun").lastChild.textContent = partial ? "Resume" : "Generate";
 }
+// "Use the world's value": the world's settings into each selection building into it.
+function adoptWorld(world) {
+  const c = lastPlan.selections.map((x) => x.world_check).find((x) => x && x.world === world);
+  if (!c) return;
+  for (const s of cur.model.selection || []) {
+    if (s.world !== world) continue;
+    s.settings = s.settings || {};
+    for (const d of c.diffs) s.settings[d.key] = d.fix;
+  }
+  lastPlan = null;
+  saveModel(`${world}: took the world's ${c.diffs.map((d) => `${d.label} ${d.world}`).join(", ")}`).then(() => $("btnPlan").click());
+}
 document.addEventListener("click", (e) => {
+  const w = e.target.closest("#nextHint [data-adopt]");
+  if (w) return adoptWorld(w.dataset.adopt);
   const a = e.target.closest("#nextHint [data-act], #nextHint [data-draw]");
   if (a) a.dataset.draw ? startDraw(a.dataset.draw) : showProjects();
 });
@@ -1389,7 +1426,7 @@ function renderBuild() {
     return `<div class="wjob"><div class="wjbody">
       <div class="wjtop"><span>${esc(id)}</span></div>
       <div class="barrow"><div class="bar"><i class="${cls}" style="width:${pct}%"></i></div><span class="pct">${pct.toFixed(0)} %</span></div>
-      <div class="wjmsg">${facts}${l.error ? ` · <span class="bad">${esc(l.error)}</span>` : ""}</div></div></div>`;
+      <div class="wjmsg">${facts}${l.error ? ` · <span class="bad">${errHtml(l.error)}</span>` : ""}</div></div></div>`;
   }).join("") : `<div class="stat">Idle. Generate shows each Arnis job here.</div>`;
 }
 $("tomlSave").onclick = async () => {
@@ -1537,7 +1574,8 @@ function onEvent(e) {
       break;
     }
     case "finished": Object.assign(step(), { status: e.state.status, pct: e.state.progress, error: e.state.error }); logLine(e.project, `${who} ${e.state.status}${e.state.error ? ": " + e.state.error : ""}`); break;
-    case "skipped": case "refused": Object.assign(step(), { status: e.note === "skipped" ? "skipped" : "failed", pct: e.note === "skipped" ? 100 : 0, msg: e.why }); logLine(e.project, `${who} ${e.note}: ${e.why}`); break;
+    case "skipped": case "refused": Object.assign(step(), { status: e.note === "skipped" ? "skipped" : "failed", pct: e.note === "skipped" ? 100 : 0, msg: e.why, ...(e.note === "refused" ? { error: e.why } : {}) }); logLine(e.project, `${who} ${e.note}: ${e.why}`); break;
+    case "info": step().msg = e.line; logLine(e.project, `${who} ${e.line}`); break;
     case "stopping": logLine(e.project, "stopping: killing running jobs"); break;
     case "end":
       logLine(e.project, e.error ? `run failed: ${e.error}` : `run ended: ${e.summary.done} done, ${e.summary.skipped} skipped, ${e.summary.stopped} stopped, ${e.summary.failed} failed`);

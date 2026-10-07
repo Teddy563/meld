@@ -1,0 +1,275 @@
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Note: One World uses the extended build height, so any place on Earth fits.
+One World: created buc at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc
+  area #1: blocks x -13584..=13583 z -13056..=13023 (1698 x 1630 chunks)
+One World: building 196 piece(s) of up to 4x4 regions
+  4 pieces at a time, 5 threads each
+  piece 1/196: 16384 chunks at x -2048 z -2048
+  piece 3/196: 16384 chunks at x -2048 z 0
+  piece 4/196: 16384 chunks at x 0 z 0
+  piece 2/196: 16384 chunks at x 0 z -2048
+  pieces peak at 1222 MB: 2 at a time from now on
+  pieces peak at 1803 MB: 1 at a time from now on
+  piece 5/196: 16384 chunks at x -2048 z -4096
+  piece 6/196: 16384 chunks at x 0 z -4096
+  piece 7/196: 16384 chunks at x -4096 z -2048
+  piece 8/196: 16384 chunks at x 2048 z -2048
+  piece 9/196: 16384 chunks at x -4096 z 0
+  piece 10/196: 16384 chunks at x 2048 z 0
+  piece 11/196: 16384 chunks at x -2048 z 2048
+  piece 12/196: 16384 chunks at x 0 z 2048
+  piece 13/196: 16384 chunks at x -4096 z -4096
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Note: One World keeps the build height it was created with (extended).
+One World: using buc at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc
+  area #1: blocks x -13584..=13583 z -13056..=13023 (1698 x 1630 chunks), 198656 existing chunks will be replaced
+One World: building 196 piece(s) of up to 4x4 regions
+  6 pieces at a time, 3 threads each
+  piece 1/196: 16384 chunks at x -2048 z -2048
+  piece 3/196: 16384 chunks at x -2048 z 0
+  piece 2/196: 16384 chunks at x 0 z -2048
+  piece 6/196: 16384 chunks at x 0 z -4096
+  piece 4/196: 16384 chunks at x 0 z 0
+  piece 5/196: 16384 chunks at x -2048 z -4096
+  piece 7/196: 16384 chunks at x -4096 z -2048
+  piece 8/196: 16384 chunks at x 2048 z -2048
+  piece 9/196: 16384 chunks at x -4096 z 0
+  piece 10/196: 16384 chunks at x 2048 z 0
+  piece 11/196: 16384 chunks at x -2048 z 2048
+  piece 12/196: 16384 chunks at x 0 z 2048
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Error: This area cannot be added to the One World at C:\Users\LEGION\AppData\Local\Meld2\workspace\buc\saves\buc: ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World.

@@ -1,0 +1,25 @@
+{
+  "version": 3,
+  "created_with": "arnis 3.4.0-beta.1",
+  "created_at": 1791399081,
+  "origin_lat": 44.4415065,
+  "origin_lon": 26.116562,
+  "scale": 1.0,
+  "ground_level": 0,
+  "terrain": true,
+  "disable_height_limit": true,
+  "aws_only_elevation": false,
+  "elevation": {
+    "min_height_m": -430.0,
+    "blocks_per_meter": 1.0,
+    "ground_level": -2014,
+    "soft_top": {
+      "knee_m": 2800.0,
+      "width_blocks": 193.413215
+    }
+  },
+  "seed": 563,
+  "elevation_zoom": 16,
+  "next_area_id": 1,
+  "areas": []
+}

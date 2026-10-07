@@ -859,6 +859,7 @@ fn show(id: &str, note: &Note, tenths: &mut HashMap<String, i64>) {
                 .map_or("RAM read by Arnis".into(), |mb| format!("{mb} MB RAM")),
         ),
         Note::Stopping => println!("stopping: killing running jobs"),
+        Note::Info(line) => println!("[{id}] {line}"),
         Note::Finished(st) => match &st.error {
             Some(e) => println!("[{id}] {:?}: {e}", st.status),
             None => println!("[{id}] {:?}", st.status),

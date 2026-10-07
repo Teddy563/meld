@@ -28,6 +28,7 @@
 //! | POST | `/api/projects/<name>/copy?to=N`, `.../rename?to=N` | a new project from its file; a renamed folder |
 //! | POST | `/api/projects/<name>/preset?save=P[&description=D]` or `?apply=P` | its `[defaults]` as a preset, or a preset over them |
 //! | GET | `/api/projects/<name>/reports[/<file>]` | its run reports, newest first; one report |
+//! | GET | `/api/projects/<name>/logs/<key>.log` | the last 64 KB of a step's Arnis log |
 //! | GET, PUT, DELETE | `/api/projects/<name>/loot` | its loot table (`loot_table.json`, else Arnis's default); PUT saves it and sets `loot_table` |
 //! | GET | `/api/presets`, `/api/presets/<name>` | presets; PUT `{description, defaults}` saves one, DELETE removes it |
 //! | GET | `/api/system` | CPU, RAM and disk now, and the last five minutes |
@@ -293,6 +294,7 @@ fn handle(ctx: &Arc<Ctx>, mut req: Request) {
         (Method::Post, ["api", "projects", name, "preset"]) => project_preset(ctx, name, query),
         (Method::Get, ["api", "projects", name, "reports"]) => reports(ctx, name, None),
         (Method::Get, ["api", "projects", name, "reports", file]) => reports(ctx, name, Some(file)),
+        (Method::Get, ["api", "projects", name, "logs", file]) => log_tail(ctx, name, file),
         (Method::Get, ["api", "projects", name, "loot"]) => loot_get(ctx, name),
         (Method::Put, ["api", "projects", name, "loot"]) => match body(&mut req) {
             Ok(b) => loot_put(ctx, name, &b),
@@ -543,6 +545,7 @@ fn note_json(note: &Note) -> Value {
         Note::Event(e) => json!({"note": "event", "event": e}),
         Note::Finished(st) => json!({"note": "finished", "state": st}),
         Note::Stopping => json!({"note": "stopping"}),
+        Note::Info(line) => json!({"note": "info", "line": line}),
     }
 }
 
@@ -563,9 +566,11 @@ fn plan_of(ctx: &Ctx, name: &str) -> Result<Reply> {
     let verdict = format!("{:?}", plan::verdict(need, free, p.run.min_free_mb)).to_lowercase();
     let selections: Vec<Value> = plans
         .iter()
-        .map(|(id, pl)| {
+        .zip(&p.selections)
+        .map(|((id, pl), sel)| {
             json!({"id": id, "pieces": pl.units.len(), "regions": pl.regions(),
-                   "chunks": pl.chunks(), "todo_chunks": pl.todo_chunks(), "est_mb": pl.todo_mb()})
+                   "chunks": pl.chunks(), "todo_chunks": pl.todo_chunks(), "est_mb": pl.todo_mb(),
+                   "world_check": plan::world_check(&p, sel)})
         })
         .collect();
     Ok((
@@ -817,6 +822,22 @@ fn reports(ctx: &Ctx, name: &str, file: Option<&str>) -> Result<Reply> {
         .collect();
     list.sort_by(|a, b| b.cmp(a));
     Ok((200, json!(list)))
+}
+
+/// The end of a step's Arnis log (`logs/<key>.log`), the last 64 KB.
+fn log_tail(ctx: &Ctx, name: &str, file: &str) -> Result<Reply> {
+    let dir = state::project_dir(&load(ctx, name)?).join("logs");
+    let ok = file
+        .strip_suffix(".log")
+        .is_some_and(|stem| !stem.is_empty() && valid_name(stem));
+    match std::fs::read(dir.join(file)).ok().filter(|_| ok) {
+        Some(b) => {
+            let from = b.len().saturating_sub(64 * 1024);
+            let text = String::from_utf8_lossy(&b[from..]).into_owned();
+            Ok((200, json!({"file": file, "text": text})))
+        }
+        None => Ok((404, json!({"error": format!("no log {file:?}")}))),
+    }
 }
 
 fn loot_file(ctx: &Ctx, name: &str) -> PathBuf {

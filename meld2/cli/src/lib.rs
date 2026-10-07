@@ -216,6 +216,11 @@ pub fn show_plan(
             p.todo_mb()
         ));
     }
+    for sel in &project.selections {
+        if let Some(c) = plan::world_check(project, sel) {
+            say(format!("  [{}] {}", sel.id, c.message));
+        }
+    }
     let saves = project.output_dir();
     let free = plan::free_mb(&saves)?;
     let reserve = project.run.min_free_mb;

@@ -60,6 +60,45 @@ pub fn parse(line: &str) -> Option<Event> {
     serde_json::from_str(line).ok()
 }
 
+/// Why Arnis stopped, in its own words: the last `Error: ` line of what it
+/// printed (colour codes taken out). Its `--progress json` error record only
+/// says "generation failed, see stderr".
+/// Its "  - " list below (what is missing) joins it, the first few.
+pub fn last_error(output: &str) -> Option<String> {
+    let lines: Vec<String> = output.lines().map(plain).collect();
+    let (i, msg) = lines.iter().enumerate().rev().find_map(|(i, l)| {
+        let msg = l.trim().strip_prefix("Error:")?.trim();
+        (!msg.is_empty()).then_some((i, msg))
+    })?;
+    const MORE: usize = 6;
+    let more: Vec<&str> = lines[i + 1..]
+        .iter()
+        .map_while(|l| l.strip_prefix("  - "))
+        .collect();
+    let mut out = msg.to_string();
+    if !more.is_empty() {
+        out = format!("{} {}", out, more[..more.len().min(MORE)].join("; "));
+        if more.len() > MORE {
+            out.push_str(&format!("; and {} more", more.len() - MORE));
+        }
+    }
+    Some(out)
+}
+
+/// `line` without its colour codes (ESC [ parameters, up to the final letter).
+fn plain(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            chars.by_ref().find(|c| c.is_ascii_alphabetic());
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +162,28 @@ mod tests {
             name: "Downloading data...".into(),
             progress: Some(1.0)
         }));
+    }
+
+    /// The user's `buc` log: two stopped runs, then Arnis refusing the One World.
+    #[test]
+    fn last_error_is_arnis_reason() {
+        let log = include_str!("../tests/fixtures/one-world-mismatch.log");
+        let e = last_error(log).unwrap();
+        assert!(
+            e.starts_with("This area cannot be added to the One World at ")
+                && e.ends_with(": ground level -62 does not match the world's 0. Change the setting, or use another world name to start a new One World."),
+            "{e}"
+        );
+        let coloured = "x\n\u{1b}[1;31mError:\u{1b}[0m no bbox\n  piece 3/4 done\n";
+        assert_eq!(last_error(coloured).as_deref(), Some("no bbox"));
+        let listed =
+            "Error: the cache lacks:\n  - OSM data\n  - land cover\nRun it with --prewarm.\n";
+        assert_eq!(
+            last_error(listed).as_deref(),
+            Some("the cache lacks: OSM data; land cover")
+        );
+        // The stopped runs before the refusals printed no error.
+        assert_eq!(last_error(&log[..log.find("Error:").unwrap()]), None);
     }
 
     #[test]

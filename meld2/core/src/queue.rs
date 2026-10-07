@@ -6,6 +6,7 @@
 
 use crate::args::{self, Invocation, Share};
 use crate::arnis::{Arnis, Process};
+use crate::frame::Action;
 use crate::progress::{self, Event};
 use crate::project::{Bake, Project, Selection};
 use crate::state::{SelState, State, Status};
@@ -29,6 +30,8 @@ pub enum Note<'a> {
     Event(&'a Event),
     Finished(&'a SelState),
     Stopping,
+    /// Something Meld did for the step that its user should know.
+    Info(&'a str),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize)]
@@ -245,6 +248,9 @@ struct Job<'a> {
     process: Arc<Process>,
     world: String,
     finished: bool,
+    /// Its log, and where this run's part of it starts.
+    log: PathBuf,
+    log_from: u64,
     /// The steps of its lane still to run after this one.
     rest: VecDeque<Step<'a>>,
 }
@@ -326,7 +332,11 @@ impl<'p> Runner<'_, 'p> {
             let decision = match step {
                 Step::Build(sel) => match self.failed_bake(sel) {
                     Some(why) => Decision::Refuse(why),
-                    None => decide(prev, &command),
+                    // A partial job in a world that starts fresh goes with it.
+                    None => match decide(prev, &command) {
+                        Decision::Refuse(CHANGED) if self.starts_fresh(sel) => Decision::Run,
+                        d => d,
+                    },
                 },
                 // A cache step is redone unless it finished with this very command.
                 _ if prev.is_some_and(|p| {
@@ -492,11 +502,14 @@ impl<'p> Runner<'_, 'p> {
                         self.summary.stopped += 1;
                     } else {
                         st.status = Status::Failed;
-                        let why = st.error.take().unwrap_or_else(|| match &exit {
-                            Ok(s) => format!("Arnis ended without finishing ({s})"),
-                            Err(e) => format!("waiting for Arnis: {e}"),
-                        });
-                        st.error = Some(format!("{why}; log: logs/{}.log", log_name(&id)));
+                        // Arnis's own reason first, then its error record, then the exit code.
+                        let why = arnis_error(&job.log, job.log_from)
+                            .or_else(|| st.error.take())
+                            .unwrap_or_else(|| match &exit {
+                                Ok(s) => format!("Arnis ended without finishing ({s})"),
+                                Err(e) => format!("waiting for Arnis: {e}"),
+                            });
+                        st.error = Some(format!("{why} (see log: logs/{}.log)", log_name(&id)));
                         self.summary.failed += 1;
                     }
                     (self.on)(&id, Note::Finished(st));
@@ -552,6 +565,12 @@ impl<'p> Runner<'_, 'p> {
             .args;
         let inv = step.invocation(self.project, &self.saves, share);
         let log = self.logs.join(format!("{}.log", log_name(&key)));
+        if let Step::Prewarm(sel) | Step::Build(sel) = step {
+            if !self.world_ready(sel, &key, &log)? {
+                return Ok(());
+            }
+        }
+        let log_from = std::fs::metadata(&log).map_or(0, |m| m.len());
         let st = self.state.selections.entry(key.clone()).or_default();
         let resumed = st.status != Status::Pending && st.runs > 0;
         let started =
@@ -584,6 +603,7 @@ impl<'p> Runner<'_, 'p> {
         self.state.save(self.dir)?;
 
         let (tx, id, p) = (tx.clone(), key.clone(), Arc::clone(&process));
+        let job_log = log.clone();
         let mut log = std::fs::OpenOptions::new().append(true).open(&log)?;
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
@@ -617,10 +637,78 @@ impl<'p> Runner<'_, 'p> {
                 process,
                 world,
                 finished: false,
+                log: job_log,
+                log_from,
                 rest: lane,
             },
         );
         Ok(())
+    }
+
+    /// Checks `sel`'s One World against the frame settings it is about to
+    /// pass, before Arnis is started. A world created with others but holding
+    /// no area is moved aside and started again; one with areas Arnis would
+    /// refuse is refused here, naming each setting. False: do not start it.
+    fn world_ready(&mut self, sel: &Selection, key: &str, log: &Path) -> Result<bool> {
+        let world_dir = self.saves.join(&sel.world);
+        let settings = self.project.settings_for(sel);
+        let check = match crate::frame::check_world(&world_dir, &settings) {
+            Ok(Some(c)) => c,
+            Ok(None) => return Ok(true),
+            // An unreadable manifest is Arnis's to report.
+            Err(_) => return Ok(true),
+        };
+        let note = |line: &str| -> Result<()> {
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log)?;
+            writeln!(f, "Meld: {line}")?;
+            Ok(())
+        };
+        match check.action {
+            Action::Build => {
+                note(&check.message)?;
+                (self.on)(key, Note::Info(&check.message));
+                Ok(true)
+            }
+            Action::Fresh => {
+                let msg = match crate::frame::set_aside(&world_dir) {
+                    Ok(to) => format!(
+                        "{} The old folder is kept as {}.",
+                        check.message,
+                        to.file_name().unwrap_or_default().to_string_lossy()
+                    ),
+                    Err(e) => return self.refuse(key, &format!("{}: {e:#}", check.message)),
+                };
+                note(&msg)?;
+                (self.on)(key, Note::Info(&msg));
+                Ok(true)
+            }
+            Action::Refuse => {
+                note(&check.message)?;
+                self.refuse(key, &check.message)
+            }
+        }
+    }
+
+    /// Whether `sel`'s world was made with other settings and holds no area,
+    /// so the run moves it aside and starts it again.
+    fn starts_fresh(&self, sel: &Selection) -> bool {
+        let dir = self.saves.join(&sel.world);
+        crate::frame::check_world(&dir, &self.project.settings_for(sel))
+            .is_ok_and(|c| c.is_some_and(|c| c.action == Action::Fresh))
+    }
+
+    /// Fails `key` before it starts, with `why`.
+    fn refuse(&mut self, key: &str, why: &str) -> Result<bool> {
+        let st = self.state.selections.entry(key.to_string()).or_default();
+        st.status = Status::Failed;
+        st.error = Some(why.to_string());
+        self.summary.failed += 1;
+        (self.on)(key, Note::Refused(why));
+        self.state.save(self.dir)?;
+        Ok(false)
     }
 
     fn event(&mut self, id: &str, e: Event, running: &mut HashMap<String, Job>) -> Result<()> {
@@ -667,6 +755,16 @@ impl<'p> Runner<'_, 'p> {
         }
         Ok(())
     }
+}
+
+/// The `Error:` line Arnis printed into `log` after byte `from`.
+fn arnis_error(log: &Path, from: u64) -> Option<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = std::fs::File::open(log).ok()?;
+    f.seek(SeekFrom::Start(from)).ok()?;
+    let mut bytes = vec![];
+    f.read_to_end(&mut bytes).ok()?;
+    progress::last_error(&String::from_utf8_lossy(&bytes))
 }
 
 /// A step's log file name: its key, with `:` (not allowed on Windows) as `-`.
@@ -995,6 +1093,119 @@ world = "W2"
             }
         );
         assert_eq!(State::load(&state_dir).unwrap().selections["b"].runs, 2);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A world made with other settings: refused before Arnis starts when it
+    /// has an area, moved aside and built again when it has none; and a
+    /// failing Arnis's own `Error:` line becomes the step's error.
+    #[cfg(windows)]
+    #[test]
+    fn world_check_and_arnis_error_with_a_fake_arnis() {
+        let dir = std::env::temp_dir().join(format!("meld2-wq-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let fake = dir.join("fake-arnis.cmd");
+        std::fs::write(
+            &fake,
+            "@echo off\r\n\
+             echo %* >> \"%~dp0calls.txt\"\r\n\
+             echo {\"v\":1,\"type\":\"error\",\"message\":\"generation failed, see stderr\"}\r\n\
+             echo Error: the disk is full 1>&2\r\n\
+             exit /b 1\r\n",
+        )
+        .unwrap();
+        let mut project =
+            Project::parse("format = 1\nname = \"W\"\noutput = \"saves\"\n[[selection]]\nid = \"s1\"\nbbox = [44.4, 26.1, 44.41, 26.11]\nworld = \"buc\"\n")
+                .unwrap();
+        project.path = dir.join("w.toml");
+        let world = dir.join("saves/buc");
+        let manifest = include_str!("../tests/fixtures/buc-manifest.json");
+        let made = |areas: &str| {
+            std::fs::create_dir_all(&world).unwrap();
+            let text = manifest.replace(r#""areas": []"#, &format!(r#""areas": [{areas}]"#));
+            std::fs::write(world.join(crate::frame::MANIFEST), text).unwrap();
+        };
+        let caps: Vec<String> = [
+            "progress-json",
+            "unit-regions",
+            "threads",
+            "ram-budget",
+            "one-world-workers",
+        ]
+        .map(String::from)
+        .to_vec();
+        let state_dir = dir.join("state");
+        let arnis = Arnis::new(&fake);
+        let go = |notes: &mut Vec<String>| {
+            run(
+                &project,
+                &arnis,
+                &caps,
+                &state_dir,
+                &|| false,
+                &mut |id, n| match n {
+                    Note::Refused(w) | Note::Info(w) => notes.push(format!("{id}: {w}")),
+                    _ => {}
+                },
+            )
+            .unwrap()
+        };
+
+        // One area at ground level 0; the project passes -62: refused, Arnis never starts.
+        made(r#"{"id":1,"min_x":0,"min_z":0,"max_x":15,"max_z":15}"#);
+        let mut notes = vec![];
+        assert_eq!(go(&mut notes).failed, 1);
+        assert!(!dir.join("calls.txt").exists());
+        let err = State::load(&state_dir).unwrap().selections["s1"]
+            .error
+            .clone()
+            .unwrap();
+        assert!(
+            err.contains("Ground Level is -62 here but 0 in the world"),
+            "{err}"
+        );
+        assert!(world.join(crate::frame::MANIFEST).is_file());
+
+        // Nothing built, and a job stopped there with the old settings (which
+        // alone would be refused): moved aside, Arnis runs, and its own reason
+        // is the error.
+        std::fs::remove_dir_all(&world).unwrap();
+        made("");
+        let mut st = State::load(&state_dir).unwrap();
+        *st.selections.get_mut("s1").unwrap() = SelState {
+            status: Status::Stopped,
+            command: vec!["--ground-level".into(), "0".into()],
+            pieces_done: 1,
+            runs: 1,
+            ..Default::default()
+        };
+        st.save(&state_dir).unwrap();
+        let mut notes = vec![];
+        go(&mut notes);
+        assert!(
+            notes.iter().any(|n| n.contains("starting it fresh")),
+            "{notes:?}"
+        );
+        assert!(!world.exists());
+        let aside = std::fs::read_dir(dir.join("saves"))
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().starts_with("buc.empty-"));
+        assert!(aside);
+        let calls = std::fs::read_to_string(dir.join("calls.txt")).unwrap();
+        assert!(calls.contains("--ground-level -62"), "{calls}");
+        let s = &State::load(&state_dir).unwrap().selections["s1"];
+        assert_eq!(s.status, Status::Failed);
+        assert_eq!(
+            s.error.as_deref(),
+            Some("the disk is full (see log: logs/s1.log)")
+        );
+        let log = std::fs::read_to_string(state_dir.join("logs/s1.log")).unwrap();
+        assert!(
+            log.contains("Meld: World 'buc' was created with other settings"),
+            "{log}"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

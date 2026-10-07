@@ -38,6 +38,9 @@ pub struct StepReport {
     pub peak_rss_mb: Option<u64>,
     pub chunks: Option<u64>,
     pub error: Option<String>,
+    /// What Meld did for the step, such as starting its world again.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
     pub pieces: Vec<PieceReport>,
 }
 
@@ -123,6 +126,7 @@ impl Report {
                 step.peak_rss_mb = *peak_rss_mb;
                 step.chunks = Some(*chunks);
             }
+            Note::Info(line) => step.notes.push(line.to_string()),
             Note::Event(_) | Note::Stopping => {}
         }
     }
