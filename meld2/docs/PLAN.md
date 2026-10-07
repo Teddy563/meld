@@ -720,3 +720,124 @@ Status: **same** (section, order, label, help, control, default and dependency a
 | `serve.rs`'s `arnis()` and `meld2 arnis status` both probing Arnis | SKIPPED: one JSON, one text; sharing would add a type for two callers |
 
 **e2e in the real window** (`work/meld2-e2e/p6ux/`: `drive.cjs` over WebView2's debugging port, p5's `win.ps1` for the 1600×900 client; fresh `MELD2_HOME` with the pinned Arnis 3.4.0-beta.1): no project (step 1, Projects link) → new `p6ux` (step 2, draw hint) → a rectangle started from the hint's link (Vaduz) and a polygon from the toolbar (Schaan) → project default Cell Size 2x2 → s1 picked from the list, World Name Vaduz, Signage None marked "Overrides All selections: Basic", Reset removed it, set again, *Changed only* showed only it → s2 Schaan; Cave Style greyed "Requires Caves (Terrain & Nature)."; search "cave" left only the cave rows → Plan: 8 pieces, 63 MB, disk ok, the primary moved to Generate → Generate, Stop after 2 of s1's 4 pieces (Resume became the primary) → app restarted, Resume: s1's pieces 2 and 3 skipped, 1 and 4 built, then s2's two parts; 8/8 pieces, 0 chunks missing. No page errors. Screenshots `real-*.png`; before/after at 1000/1280/1600/1920 `before-*.png` / `after-*.png`; `compare-caves-and-water.png`.
+
+## 11. Meld 1 features: coverage in Meld 2 (branch `meld-2.0-features`)
+
+Every row of the §1 inventory, with what Meld 2 does now. **M/O rows (41): 31 done, 6 done differently, 2 dropped, 2 not done or partly** (the floating HUD; the loot editor's UI). A rows are Arnis's; X rows stay dropped (reasons in §1), except the two bench rows, which `meld2 bench` now covers.
+
+| # | Meld 1 feature | → | Meld 2 status |
+|---|---|---|---|
+| 1 | Many projects: new, switch, clone, rename, delete; gallery order and folders | M | **done differently**: workspace folders; new (PUT), open, copy, rename, delete (to `<workspace>/.trash/`, worlds included) over the API. Gallery order and folders dropped: names sort, the import notes the folder |
+| 2 | One world per project, locked origin | O | done (N selections × N worlds, `origin`) |
+| 3 | Polygon and multi-ring selections | M | done (Phases 3–4) |
+| 4 | Cell editing | M | **done differently**: draw, edit and delete selections on the map; pieces come from `--plan-units`; Selection Snap |
+| 5 | Trim open-ocean cells | X | dropped (§1) |
+| 6 | `MAX_PLAN_CELLS` guard | A | Arnis |
+| 7 | Elevation survey and lock | A | Arnis (One World manifest) |
+| 8 | Project seed | A | `seed` |
+| 9 | Presets, machine keys split | M | **done**: `preset.rs`, `meld2 preset list/show/save/apply/delete/import`, `/api/presets`, `/api/projects/<p>/preset`; machine and place keys stripped on save and on load; Meld 1 presets import (the 3 bundled ones: 20–21 keys each) |
+| 10 | `meld-world.json` sidecar | A | `arnis_one_world.json` |
+| 11 | Per-cell status | O | done (state.json, pieces) |
+| 12 | Render queue: pause, stop, kill | M | done |
+| 13 | Parallel cells | A | `--one-world-workers` |
+| 14 | Threads × workers under a CPU target | A | Arnis, split by Meld |
+| 15 | RAM admission gate | A | Arnis, split by Meld |
+| 16 | Adaptive governor | X | dropped (§1) |
+| 17 | CPU start stagger | X | dropped |
+| 18 | Resume after a crash | O | done |
+| 19 | Regenerate a cell or region | O | done (`--rebuild`) |
+| 20 | Final check with retry | O | done |
+| 21 | Child containment | M | done (Job Object) |
+| 22 | Keep awake | M | done |
+| 23 | Prefetch | A | `--prewarm` |
+| 24 | End-of-run report (HTML/JSON, Gantt, CPU/RAM) | M | **done differently**: a JSON report per run, listed and read over `/api/projects/<p>/reports[/<file>]`; whole-tree CPU and peak memory now in each step's `done`. No HTML Gantt (UI pass) |
+| 25 | Auto-export after a run | O | **done**: `[run] export = "zip" \| "tar.zst"` packs each world the run built into `exports/` |
+| 26 | One-click Leaf server | M | done (no start scripts: `meld2 server start` launches it) |
+| 27 | Paper | M | done (not run) |
+| 28 | Multiverse | M | done |
+| 29 | Voxy server-side | M | done (not run) |
+| 30 | Server start, stop, console, command, backup | M | done |
+| 31 | World border | A | `--world-border` |
+| 32 | Level name | A | `--world-name` |
+| 33 | WorldGuard regions and Skript border | M | **done**: `[server.worldguard]` flags, owners, members, per-selection overrides and `__global__` flags; `skript_walls = true` writes `plugins/Skript/scripts/meld-border.sk` (SkBee dust walls in the One World frame, Meld 1's draw loop) and adds Skript and SkBee. Dropped: the buffered soft/hard rings, the fling-back and the country lookups (they need polygon buffering and a bundled country file; `--world-border` is the outer wall, and a drawn polygon is the country). Not run in game |
+| 34 | Datapacks through the merge | X | dropped |
+| 35 | zip / tar.zst export | M | **done**: tar.zst beside zip, CLI `--format`, API `?format=`; both are read back (entries and bytes) before they appear |
+| 36 | Linear v1 export | X | dropped |
+| 37 | B_Linear via region-convert | O | done |
+| 38 | Leaflet map: draw or search | M | **done**: place search (`/api/search`: Nominatim with a `Meld/<version>` User-Agent and one request a second; limit 5 and English, as Arnis's GUI `search.js` asks). Leaflet and Leaflet.draw are built in, so the map works offline (the tiles still need the network) |
+| 39 | Cave zone map | A | Arnis (no preview in the page) |
+| 40 | Climate map | A | Arnis (no preview in the page) |
+| 41 | Elevation and height preview | M | **dropped**: Meld 1 used its fork's `--elevation-map`; Arnis 3.4 has no such flag, and a Meld-side DEM would not match Arnis's provider stack |
+| 42 | Terrain tile proxy | X | dropped |
+| 43 | Map item | A | `--map-item` |
+| 44 | Area preview PNG | A | Arnis |
+| 45 | Client previews of the tree mix and field texture | M | **done differently**: Arnis's preview pictures (Phase 5) |
+| 46 | Floating status-bar HUD | M | **not done**: a second Tauri window, left to the UI pass (the tray and the left rail cover it meanwhile) |
+| 47 | Live System/Build/Log rail | M | **done**: the System card (CPU, RAM, disk, five-minute sparklines) from `/api/system` |
+| 48 | Update check | M | **done**: `meld2 update`, `/api/update`. GitHub releases of Teddy563/meld; the newest semver above this build (pre-releases only while on one); cached a day (an hour after a failure); notifies only |
+| 49 | Staged self-update | M | **dropped**: notify only, by decision; installers come from the release page |
+| 50 | Generator update | M | done (pinned Arnis download) |
+| 51 | Tray | M | done |
+| 52 | Chromium `--app` window | X | dropped |
+| 53 | Single instance | M | done |
+| 54 | Localhost API guard | M | done; now also folder confinement (below) |
+| 55 | App log | M | done |
+| 56 | Data dir (env, pointer, portable) | M | **done differently**: `MELD2_HOME`; no pointer file (the variable covers portable use) |
+| 57 | Diagnostic CLI | M | done: `caps`, `arnis status`, `plan`, and now `plan --print-cmd` |
+| 58–60 | PyInstaller, banner, launcher | X | dropped |
+| 61 | region-convert | O | done |
+| 62 | `meldconvert.py` CLI | M | done (`meld2 convert`) |
+| 63 | Native B_Linear | A | Arnis |
+| 64 | Compress while generating | X | dropped |
+| 65 | Export safety: preflight, verify, resumable manifest | M | **done differently**: disk preflight, read-back verify, atomic `.part` then rename; no resumable manifest (an interrupted export starts again) |
+| 66 | `bench_scheduler.py` | X | now **done differently**: `meld2 bench` matrix (no governor arm: the governor is gone) |
+| 67 | Bucharest A/B, contention sweep, accept protocol | X | now **done differently**: `meld2 bench` A/B with the pair assertion; the contention sweep and the accept protocol stay with Arnis's harness |
+| 68 | CLI-contract tests | A | `--capabilities` and the golden argv |
+| 69 | Hardware probe | A | `--one-world-workers auto` |
+| 70 | CPU seconds and peak RSS per run | A | Arnis's `done`; Meld adds the whole tree's (Job Object) |
+| 71–75 | Geofabrik, OSM prefetch, Overture prewarm, data packs, shared cache root | A | Arnis |
+| 76 | Cache view and clear | M | **done**: `meld2 cache [--clear P\|all]`, `/api/cache`, `/api/cache/clear` (refused during a run or a bench) |
+| 77 | Loot editor and presets | M | **partly**: the API. `GET /api/projects/<p>/loot` (the project's table, else Arnis's own through `--dump-loot-table`), PUT (saves `loot_table.json` and sets `loot_table`), DELETE. Not done: the editor UI and Meld 1's vanilla-structure loot presets (UI pass) |
+| 78 | Generation settings | A | the settings table |
+| 79 | GPU cave density | X | dropped |
+
+Also done here:
+- **Serve hardening.** A project over the API must keep `output`, `[server] dir` and `[server] datapacks` in the workspace, or in a folder listed in `<data>/trusted-folders.txt` (`trust::folders`; `..` and junctions resolved). Refused on PUT and on every load.
+- **Import.** Meld 1's `grass_mix`, `untagged_mix` (→ `land_mix`), `cave_biome_amounts` (→ `cave_biomes`) and `vertical_exaggeration` (→ `height_multiplier`) now map. `roof`, `trees`, `land_cover`, `poi_3d_only`, `regional_elevation_only` and `elevation_zoom` at Meld 1's defaults are dropped on purpose: Arnis always does that.
+- **Whole-tree measurement.** In piece mode Arnis's `done` counts the coordinator only (the first matrix run showed 0.2 CPU s and 22 MB). Meld now fills `cpu_s` and `tree_peak_mb` from the run's Job Object, which takes in the nested piece jobs (Windows; `None` on Unix).
+
+### `meld2 bench`
+
+Each arm is a fresh one-selection project under `<out>/<arm>/`, built by the same `run_project` as `meld2 run`, from the bbox's centre as `origin` (so the frames differ only by scale), with `prewarm = true` (the prewarm step fills the caches and is not timed). A row holds Arnis's `done` (wall, chunks), Meld's whole-tree CPU seconds and committed peak, the largest single process (coordinator or piece), and the world's bytes and region files. Output: `bench.json`, `bench.csv`, `bench.md`.
+
+An A/B (`--b-arnis`, `--a k=v`, `--b k=v`) must be the **same pair**. `same_pair()` compares the two worlds' `arnis_one_world.json`: the frame (`origin_lat`, `origin_lon`, `scale`) and every built area's bounds. It fails otherwise (exit 1, `pair_error`) and lists every other key that differs. API: `POST /api/bench`, `GET /api/bench[/<id>]`; one at a time, and refused beside a run.
+
+Matrix on the default area (central Vaduz, 16 one-region pieces at scale 1), Arnis 3.4.0-beta.1, warm cache, 24 threads (`work/meld2-e2e/features/bench-matrix/`):
+
+| arm | wall s | Δ wall | CPU s | CPU % | peak RSS MB | tree peak MB | chunks | chunks/s | disk MB | regions |
+|---|---|---|---|---|---|---|---|---|---|---|
+| w1-c1 | 18.0 | +0.0 % | 14.4 | 3.3 | 157 | 344 | 5040 | 281 | 22.6 | 16 |
+| w1-c2 | 6.2 | +65.6 % | 7.3 | 4.9 | 158 | 351 | 5040 | 815 | 22.6 | 16 |
+| w2-c1 | 9.2 | +48.9 % | 13.2 | 6.0 | 142 | 497 | 5040 | 549 | 22.6 | 16 |
+| w2-c2 | 3.3 | +81.7 % | 7.2 | 9.2 | 150 | 512 | 5040 | 1534 | 22.5 | 16 |
+
+A/B of the local `arnis-3.4.0-beta.1.exe` (A) against the pinned CI download (B), workers 2, cell 2: A 4.8 s, B 3.7 s; the same pair; the manifests differ in nothing. One build each, so the 1 s gap is within run-to-run noise at this size (Meld 1's accept protocol asked for repeats: `--repeats`). The same A/B with `--b origin=47.2,9.6` is refused: "not the same pair: origin_lat is 47.14 on A and 47.2 on B", exit 1.
+
+### UI hooks to re-place
+
+All in `cli/src/index.html`.
+1. The Leaflet `<link>`/`<script>` tags in `<head>` point at `assets/leaflet/…` (built in).
+2. One appended block before `</body>`: `<style id="meld2-extras-css">` and `<script id="meld2-extras">`. It appends `#cardSystem` to `#sideL`, `#cardPresets` and `#cardBench` to `#side`, and a Leaflet control (`.x-search`, `#x-q`, `#x-res`) at the map's top left. It uses the page's `api`, `post`, `say`, `esc`, `$`, `map`, `cur`, `openProject`, `renderSettings` and `es`.
+3. After the merge with `meld-2.0` (the user's feedback): `#railHead` (search and Changed only) is the first child of `#side` and sticky; `#targetBar` sticks under it. The `.bar` component (Arnis's progress bar) with `.barrow`/`.pct` serves the Build card, the job rows (`#workersState .wjob`; the `.pieces` strips are gone) and the Selections rows.
+
+### Gates and e2e
+
+Gates: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` (with the gui crate) and `cargo test` pass: 44 tests (42 core, 2 cli). New tests cover the system readings, presets (strip, apply, hand-edited files), Nominatim parsing, the update pick, tar.zst with read-back, WorldGuard flags and owners with the Skript walls, folder confinement, the bench arms, **the A/B pair assertion**, report rates, the Meld 1 import keys, the whole-tree `done` (Windows) and the new API routes.
+
+e2e on Windows (`work/meld2-e2e/features/`, fresh `MELD2_HOME`):
+- `bench-matrix.log`, `bench-ab.log`, `bench-ab-mismatch.log` (exit 1 as intended).
+- `preset-import.log`: the 3 Meld 1 presets.
+- `meld2 search Vaduz Liechtenstein`; `meld2 update` (2.0.0-beta.1 is the newest: Teddy563/meld has releases up to v1.9.9).
+- `e2e-api.sh` / `e2e-api.log` over `meld2 serve`: Leaflet served without the token (200, `text/javascript`); `/api/system` (then a history of 4 samples); `/api/search`; `/api/update`; `/api/cache`; preset PUT, list, apply, save and delete; a tar.zst and a zip export of a built world (276 files each, read back by python-zstandard/tarfile and `zipfile.testzip`); an `output` outside the workspace refused (400, naming `trusted-folders.txt`); copy, and delete to `.trash`; a bench started over the API and read back.
+- The page in a browser: no errors; search found Schaan; the System, Presets and Benchmarks cards filled (`ui-extras.png`).
+- The real window (release `meld-gui`, WebView2 over CDP, `uifix.cjs`) with a two-selection run going, at 1280 and 1600 wide: the sticky search header above "Settings for" (geometry checked), job rows with bars, pieces, ETA and workers, the System card, and the finished state (`ui-fix-*.png`).
