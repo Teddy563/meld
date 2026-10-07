@@ -12,7 +12,7 @@
 //! |---|---|---|
 //! | GET | `/` | the status page |
 //! | GET | `/api/projects` | projects in the workspace, with their state |
-//! | GET, PUT | `/api/projects/<name>` | `{name, path, toml, state}`; PUT takes the TOML, checked first |
+//! | GET, PUT | `/api/projects/<name>` | `{name, path, toml, model, parts, state}`; PUT takes the TOML or the `model` JSON, checked first |
 //! | POST | `/api/projects/<name>/run[?rebuild=a,b\|all]` | starts a run in the server |
 //! | POST | `/api/projects/<name>/stop` | asks its run (here or a CLI one) to stop |
 //! | GET | `/api/projects/<name>/plan` | pieces, chunks and size per selection, and the disk verdict |
@@ -21,14 +21,25 @@
 //! | POST | `/api/projects/<name>/server/start` | runs the server in this process; console lines as events |
 //! | POST | `/api/projects/<name>/server/stop` | asks it (here or from the CLI) to save and stop |
 //! | GET | `/api/projects/<name>/server[?lines=50]` | running, state, pid and the end of its log |
+//! | POST | `/api/projects/<name>/server/send` | one console command (the body) |
+//! | POST | `/api/projects/<name>/export?world=W` | zips a built world into `exports/` beside the project |
+//! | GET | `/api/options` | the setting keys a selection may use, for forms |
+//! | GET | `/api/arnis` | which Arnis Meld would use, its version and capabilities |
+//! | POST | `/api/arnis/install` | downloads and verifies the pinned Arnis |
 //! | GET | `/api/events` | Server-Sent Events: `{project, id, note, ...}` per note |
+//!
+//! A project's `arnis` and `[server] java` must be executables Meld installed
+//! or found, or listed in `<data>/trusted-executables.txt` (`trust.rs`).
 
 use anyhow::{bail, Result};
+use meld_core::export;
+use meld_core::install;
 use meld_core::plan;
 use meld_core::project::Project;
 use meld_core::queue::Note;
 use meld_core::server::Server as McServer;
 use meld_core::state::{self, State};
+use meld_core::trust;
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use std::io::{Read, Write};
@@ -47,6 +58,7 @@ pub struct Ctx {
     pub arnis: Option<PathBuf>,
     subs: Mutex<Vec<mpsc::Sender<String>>>,
     running: Mutex<HashSet<String>>,
+    servers: Mutex<HashSet<String>>,
 }
 
 impl Ctx {
@@ -57,7 +69,13 @@ impl Ctx {
             arnis,
             subs: Mutex::default(),
             running: Mutex::default(),
+            servers: Mutex::default(),
         })
+    }
+
+    /// Whether a run or a Minecraft server is going in this process.
+    pub fn busy(&self) -> bool {
+        !lock(&self.running).is_empty() || !lock(&self.servers).is_empty()
     }
 
     /// Sends one event to every open stream, dropping the closed ones.
@@ -172,6 +190,9 @@ fn handle(ctx: &Arc<Ctx>, mut req: Request) {
         (Method::Get, ["api", "events"]) => return events(ctx, req),
         (Method::Get, ["api", "status"]) => status(ctx),
         (Method::Get, ["api", "projects"]) => list(ctx),
+        (Method::Get, ["api", "options"]) => Ok((200, options())),
+        (Method::Get, ["api", "arnis"]) => arnis(ctx),
+        (Method::Post, ["api", "arnis", "install"]) => arnis_install(),
         (_, ["api", "projects", name, ..]) if !valid_name(name) => Ok((
             400,
             json!({"error": "project names use letters, digits, - and _"}),
@@ -182,14 +203,15 @@ fn handle(ctx: &Arc<Ctx>, mut req: Request) {
             Ok((404, json!({"error": format!("no project {name:?}")})))
         }
         (Method::Get, ["api", "projects", name]) => read(ctx, name),
-        (Method::Put, ["api", "projects", name]) => {
-            let mut body = String::new();
-            match req.as_reader().take(MAX_BODY + 1).read_to_string(&mut body) {
-                Ok(n) if n as u64 > MAX_BODY => Ok((413, json!({"error": "over 1 MB"}))),
-                Ok(_) => write(ctx, name, &body),
-                Err(e) => Ok((400, json!({"error": format!("reading the body: {e}")}))),
-            }
-        }
+        (Method::Put, ["api", "projects", name]) => match body(&mut req) {
+            Ok(b) => write(ctx, name, &b),
+            Err(r) => Ok(r),
+        },
+        (Method::Post, ["api", "projects", name, "server", "send"]) => match body(&mut req) {
+            Ok(b) => server_send(ctx, name, &b),
+            Err(r) => Ok(r),
+        },
+        (Method::Post, ["api", "projects", name, "export"]) => export_world(ctx, name, query),
         (Method::Post, ["api", "projects", name, "run"]) => run(ctx, name, param(query, "rebuild")),
         (Method::Post, ["api", "projects", name, "stop"]) => stop(ctx, name),
         (Method::Get, ["api", "projects", name, "plan"]) => plan_of(ctx, name),
@@ -203,6 +225,16 @@ fn handle(ctx: &Arc<Ctx>, mut req: Request) {
     };
     let r = result.unwrap_or_else(|e| (500, json!({"error": format!("{e:#}")})));
     let _ = req.respond(reply(r));
+}
+
+/// The request body, at most 1 MB.
+fn body(req: &mut Request) -> std::result::Result<String, Reply> {
+    let mut body = String::new();
+    match req.as_reader().take(MAX_BODY + 1).read_to_string(&mut body) {
+        Ok(n) if n as u64 > MAX_BODY => Err((413, json!({"error": "over 1 MB"}))),
+        Ok(_) => Ok(body),
+        Err(e) => Err((400, json!({"error": format!("reading the body: {e}")}))),
+    }
 }
 
 fn reply((code, body): Reply) -> Response<std::io::Cursor<Vec<u8>>> {
@@ -257,7 +289,9 @@ fn load(ctx: &Ctx, name: &str) -> Result<Project> {
     if !file.is_file() {
         bail!("no project {name:?}");
     }
-    Project::load(&file)
+    let p = Project::load(&file)?;
+    trust::project(&p, &state::data_dir())?;
+    Ok(p)
 }
 
 fn state_of(p: &Project) -> Value {
@@ -287,22 +321,53 @@ fn read(ctx: &Ctx, name: &str) -> Result<Reply> {
     let Ok(toml) = std::fs::read_to_string(&file) else {
         return Ok((404, json!({"error": format!("no project {name:?}")})));
     };
-    let state = load(ctx, name).map(|p| state_of(&p)).unwrap_or(Value::Null);
+    let model = toml
+        .parse::<toml::Table>()
+        .map_or(Value::Null, |t| json!(t));
+    let (state, parts, error) = match load(ctx, name) {
+        Ok(p) => {
+            let parts: Vec<Value> = p
+                .selections
+                .iter()
+                .filter(|s| s.part_of.is_some())
+                .map(|s| json!({"id": s.id, "bbox": s.bbox, "part_of": s.part_of}))
+                .collect();
+            (state_of(&p), json!(parts), Value::Null)
+        }
+        Err(e) => (Value::Null, json!([]), json!(format!("{e:#}"))),
+    };
     Ok((
         200,
-        json!({"name": name, "path": file, "toml": toml, "state": state,
-               "running": lock(&ctx.running).contains(name)}),
+        json!({"name": name, "path": file, "toml": toml, "model": model, "parts": parts,
+               "state": state, "error": error, "running": lock(&ctx.running).contains(name)}),
     ))
 }
 
-fn write(ctx: &Ctx, name: &str, toml: &str) -> Result<Reply> {
-    if let Err(e) = Project::parse(toml) {
-        return Ok((400, json!({"error": format!("{e:#}")})));
-    }
+/// Saves a project from its TOML, or from its `model` as JSON (the forms;
+/// comments are not kept). It is checked where it will live, executables
+/// included, before it replaces the file.
+fn write(ctx: &Ctx, name: &str, body: &str) -> Result<Reply> {
+    let text = if body.trim_start().starts_with('{') {
+        let model: Value = match serde_json::from_str(body) {
+            Ok(v) => v,
+            Err(e) => return Ok((400, json!({"error": format!("not JSON: {e}")}))),
+        };
+        match toml::to_string(&model) {
+            Ok(t) => t,
+            Err(e) => return Ok((400, json!({"error": format!("not a project: {e}")}))),
+        }
+    } else {
+        body.to_string()
+    };
     let file = ctx.project_file(name);
     std::fs::create_dir_all(file.parent().unwrap_or(Path::new(".")))?;
     let tmp = file.with_extension("toml.tmp");
-    std::fs::write(&tmp, toml)?;
+    std::fs::write(&tmp, &text)?;
+    let checked = Project::load(&tmp).and_then(|p| trust::project(&p, &state::data_dir()));
+    if let Err(e) = checked {
+        let _ = std::fs::remove_file(&tmp);
+        return Ok((400, json!({"error": format!("{e:#}")})));
+    }
     std::fs::rename(&tmp, &file)?;
     Ok((200, json!({"ok": true, "path": file})))
 }
@@ -410,6 +475,7 @@ fn server_start(ctx: &Arc<Ctx>, name: &str) -> Result<Reply> {
     }
     let (tx, rx) = mpsc::channel();
     let (ctx, name) = (Arc::clone(ctx), name.to_string());
+    lock(&ctx.servers).insert(name.clone());
     std::thread::spawn(move || {
         let result = McServer::of(&p).and_then(|srv| {
             srv.start(None, &|| false, &mut |line| {
@@ -420,6 +486,7 @@ fn server_start(ctx: &Arc<Ctx>, name: &str) -> Result<Reply> {
             Ok(code) => json!({"note": "server-exit", "code": code}),
             Err(e) => json!({"note": "server-exit", "error": format!("{e:#}")}),
         };
+        lock(&ctx.servers).remove(&name);
         ctx.publish(&name, "server", end);
         let _ = tx.send(result);
     });
@@ -435,6 +502,69 @@ fn server_stop(ctx: &Ctx, name: &str) -> Result<Reply> {
     match McServer::of(&p)?.request_stop() {
         Ok(()) => Ok((202, json!({"ok": true}))),
         Err(e) => Ok((409, json!({"error": format!("{e:#}")}))),
+    }
+}
+
+fn server_send(ctx: &Ctx, name: &str, command: &str) -> Result<Reply> {
+    let p = load(ctx, name)?;
+    match McServer::of(&p)?.send(command) {
+        Ok(()) => Ok((202, json!({"ok": true}))),
+        Err(e) => Ok((409, json!({"error": format!("{e:#}")}))),
+    }
+}
+
+/// Zips one of the project's built worlds into `exports/` beside the project file.
+fn export_world(ctx: &Ctx, name: &str, query: &str) -> Result<Reply> {
+    let p = load(ctx, name)?;
+    let Some(world) = param(query, "world").filter(|w| p.worlds().contains(w)) else {
+        return Ok((
+            400,
+            json!({"error": "?world= must name one of the project's worlds"}),
+        ));
+    };
+    let dir = p.path.parent().unwrap_or(Path::new(".")).join("exports");
+    let src = p.output_dir().join(&world);
+    let to = export::name_in(&dir, &src);
+    match export::export(&src, &to, p.run.min_free_mb) {
+        Ok(e) => Ok((
+            200,
+            json!({"ok": true, "path": to, "files": e.files, "bytes": e.bytes, "zip_bytes": e.zip_bytes}),
+        )),
+        Err(e) => Ok((400, json!({"error": format!("{e:#}")}))),
+    }
+}
+
+fn options() -> Value {
+    let keys: Vec<Value> = meld_core::args::keys()
+        .into_iter()
+        .map(|(key, switch)| json!({"key": key, "switch": switch}))
+        .collect();
+    json!(keys)
+}
+
+/// Which Arnis a run would use (never downloads), with its version and capabilities.
+fn arnis(ctx: &Ctx) -> Result<Reply> {
+    let data = state::data_dir();
+    let pinned = json!({"repo": install::REPO, "version": install::VERSION, "min": install::MIN_VERSION,
+                        "required": install::REQUIRED_CAPS, "cached": install::cached(&data)});
+    let Some(found) = install::find_here(ctx.arnis.clone(), None, &data) else {
+        return Ok((200, json!({"found": false, "pinned": pinned})));
+    };
+    let mut out = json!({"found": true, "path": found.path, "source": found.source.to_string(), "pinned": pinned});
+    match install::probe(&meld_core::arnis::Arnis::new(&found.path)) {
+        Ok(pr) => {
+            out["version"] = pr.version.to_string().into();
+            out["caps"] = json!(pr.caps);
+        }
+        Err(e) => out["error"] = format!("{e:#}").into(),
+    }
+    Ok((200, out))
+}
+
+fn arnis_install() -> Result<Reply> {
+    match install::install(&state::data_dir(), install::VERSION) {
+        Ok(exe) => Ok((200, json!({"ok": true, "path": exe}))),
+        Err(e) => Ok((400, json!({"error": format!("{e:#}")}))),
     }
 }
 
@@ -524,6 +654,34 @@ mod tests {
         assert_eq!(code, 200, "{body}");
         let (code, body) = call(&addr, "PUT", "/api/projects/api", t, "format = 1\n");
         assert_eq!(code, 400, "{body}");
+        // An executable Meld did not install or find, by TOML or by model: refused.
+        let evil = toml.replace(
+            "[[selection]]",
+            "arnis = \"C:/Windows/System32/calc.exe\"\n[[selection]]",
+        );
+        let (code, body) = call(&addr, "PUT", "/api/projects/api", t, &evil);
+        assert!(
+            code == 400 && body.contains("trusted-executables.txt"),
+            "{body}"
+        );
+        let model = r#"{"format":1,"name":"Api","output":"saves","server":{"java":"C:/Windows/System32/calc.exe"}}"#;
+        let (code, body) = call(&addr, "PUT", "/api/projects/api", t, model);
+        assert!(code == 400 && body.contains("[server] java"), "{body}");
+        // The forms' JSON model becomes TOML.
+        let model = r#"{"format":1,"name":"Json","output":"saves","selection":[{"id":"b","world":"W","bbox":[47.1,9.5,47.2,9.6],"settings":{"scale":1,"caves":true}}]}"#;
+        assert_eq!(call(&addr, "PUT", "/api/projects/json", t, model).0, 200);
+        let (_, body) = call(&addr, "GET", "/api/projects/json", t, "");
+        let v: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(v["model"]["selection"][0]["settings"]["caves"], true);
+        assert!(
+            v["toml"].as_str().unwrap().contains("[[selection]]"),
+            "{body}"
+        );
+        let (code, body) = call(&addr, "GET", "/api/options", t, "");
+        assert!(
+            code == 200 && body.contains(r#""key":"caves","switch":true"#),
+            "{body}"
+        );
         assert_eq!(call(&addr, "GET", "/api/projects/..%2Fx", t, "").0, 400);
         assert_eq!(call(&addr, "POST", "/api/projects/nope/run", t, "").0, 404);
         let (code, body) = call(&addr, "GET", "/api/projects/api", t, "");

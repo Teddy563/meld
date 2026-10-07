@@ -4,19 +4,18 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use meld_core::arnis::Arnis;
 use meld_core::convert;
+use meld_core::export;
 use meld_core::import;
-use meld_core::install::{self, Found, Probe};
-use meld_core::plan::{self, Disk};
+use meld_core::install;
 use meld_core::progress::Event;
 use meld_core::project::Project;
-use meld_core::queue::{self, Note};
-use meld_core::report::Report;
+use meld_core::queue::Note;
 use meld_core::server::Server;
 use meld_core::state::{self, State};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-mod serve;
+use meld2::{resolve, run_project, serve, show_plan};
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -90,6 +89,17 @@ enum Cmd {
         #[arg(long)]
         threads: Option<usize>,
     },
+    /// Zip a world (a backup, or to hand it on), after checking the disk.
+    Export {
+        /// The world folder (with level.dat).
+        world: PathBuf,
+        /// The zip to write [default: `<world>-<unix time>.zip` beside it].
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Disk to keep free after the zip, in MB.
+        #[arg(long, default_value_t = 1024)]
+        min_free_mb: u64,
+    },
     /// Which Arnis Meld uses, and installing the pinned release.
     #[command(subcommand)]
     Arnis(ArnisCmd),
@@ -122,6 +132,13 @@ enum ServerCmd {
         /// Java to run it with [default: JAVA_HOME, the Modrinth app's, `java`].
         #[arg(long)]
         java: Option<PathBuf>,
+    },
+    /// Send one console command to the running server (started here or by the API).
+    Send {
+        project: PathBuf,
+        /// The command, e.g. `say hello` or `save-all flush`.
+        #[arg(required = true, num_args = 1..)]
+        command: Vec<String>,
     },
     /// Ask the running server to save and stop, and wait until it has.
     Stop { project: PathBuf },
@@ -230,6 +247,24 @@ fn real_main() -> Result<()> {
                 c.mca_bytes as f64 / 1e6,
                 c.blinear_bytes as f64 / 1e6,
                 c.verified
+            );
+            Ok(())
+        }
+        Cmd::Export {
+            world,
+            out,
+            min_free_mb,
+        } => {
+            let to = out.unwrap_or_else(|| {
+                export::name_in(world.parent().unwrap_or(Path::new(".")), &world)
+            });
+            let e = export::export(&world, &to, min_free_mb)?;
+            println!(
+                "{}: {} file(s), {:.1} MB -> {:.1} MB",
+                to.display(),
+                e.files,
+                e.bytes as f64 / 1e6,
+                e.zip_bytes as f64 / 1e6
             );
             Ok(())
         }
@@ -348,24 +383,11 @@ fn save_import(from: &Path, to: &Path, imported: import::Imported) -> Result<()>
     Ok(())
 }
 
-/// The project's `arnis`, resolved against the project file.
-fn project_arnis(p: &Project) -> Option<PathBuf> {
-    let dir = p.path.parent().unwrap_or(Path::new("."));
-    p.arnis.as_ref().map(|a| dir.join(a))
-}
-
-/// Finds (or downloads) Arnis and checks its version and capabilities.
-fn resolve(flag: Option<PathBuf>, project: Option<&Project>) -> Result<(Arnis, Found, Probe)> {
-    let found = install::locate(flag, project.and_then(project_arnis), &state::data_dir())?;
-    let arnis = Arnis::new(&found.path);
-    let probe = install::probe(&arnis)?;
-    Ok((arnis, found, probe))
-}
-
 fn server_cmd(cmd: ServerCmd) -> Result<()> {
     let (ServerCmd::Setup { project, .. }
     | ServerCmd::Start { project, .. }
     | ServerCmd::Stop { project }
+    | ServerCmd::Send { project, .. }
     | ServerCmd::Status { project, .. }) = &cmd;
     let p = Project::load(project)?;
     let srv = Server::of(&p)?;
@@ -379,6 +401,11 @@ fn server_cmd(cmd: ServerCmd) -> Result<()> {
         ServerCmd::Start { java, .. } => {
             let code = srv.start(java, &|| false, &mut |l| println!("{l}"))?;
             println!("server exited ({code})");
+            Ok(())
+        }
+        ServerCmd::Send { command, .. } => {
+            srv.send(&command.join(" "))?;
+            println!("sent; the console shows the reply (`meld2 server status`)");
             Ok(())
         }
         ServerCmd::Stop { .. } => {
@@ -417,7 +444,7 @@ fn arnis_cmd(cmd: ArnisCmd) -> Result<()> {
             let project = project.map(|p| Project::load(&p)).transpose()?;
             let pin = format!("{} v{}", install::REPO, install::VERSION);
             let Some(found) =
-                install::find_here(arnis, project.as_ref().and_then(project_arnis), &data)
+                install::find_here(arnis, project.as_ref().and_then(Project::arnis_path), &data)
             else {
                 println!(
                     "no Arnis found; `meld2 run` will download {pin} to {}",
@@ -446,177 +473,13 @@ fn arnis_cmd(cmd: ArnisCmd) -> Result<()> {
         }
         ArnisCmd::Path { arnis, project } => {
             let project = project.map(|p| Project::load(&p)).transpose()?;
-            let found = install::find_here(arnis, project.as_ref().and_then(project_arnis), &data)
-                .context("no Arnis found; run `meld2 arnis install`")?;
+            let found =
+                install::find_here(arnis, project.as_ref().and_then(Project::arnis_path), &data)
+                    .context("no Arnis found; run `meld2 arnis install`")?;
             println!("{}", found.path.display());
             Ok(())
         }
     }
-}
-
-/// Runs a project: lock, find Arnis, plan, rebuild what was asked, build,
-/// check, and write the JSON report. Text goes to `say`, progress to `on`;
-/// `meld2 run` prints both, `meld2 serve` streams them.
-pub fn run_project(
-    path: &Path,
-    arnis: Option<PathBuf>,
-    rebuild: Option<&[String]>,
-    say: &mut dyn FnMut(String),
-    on: &mut dyn FnMut(&str, &Note),
-) -> Result<queue::Summary> {
-    let project = Project::load(path)?;
-    let dir = state::project_dir(&project);
-    let _lock = state::lock(&dir)?;
-    let (arnis, found, probe) = resolve(arnis, Some(&project))?;
-    say(format!(
-        "{}: {} selection(s), {} bake(s), {} job(s) at once, arnis {} ({}, {})",
-        project.name,
-        project.selections.len(),
-        project.bakes.len(),
-        project.run.jobs,
-        probe.version,
-        found.source,
-        found.path.display()
-    ));
-    let plans = show_plan(&project, &arnis, say)?;
-    if let Some(ids) = rebuild {
-        start_over(&project, &dir, &plans, ids, say)?;
-    }
-
-    let stop_file = dir.join("stop");
-    let _ = std::fs::remove_file(&stop_file);
-    let mut report = Report::new(&project.path, &project.name);
-    let summary = queue::run(
-        &project,
-        &arnis,
-        &probe.caps,
-        &dir,
-        &|| stop_file.exists(),
-        &mut |id, note| {
-            report.note(id, &note);
-            on(id, &note);
-        },
-    )?;
-    let _ = std::fs::remove_file(&stop_file);
-
-    // Final check: what Arnis still finds missing in every built selection.
-    let st = State::load(&dir)?;
-    for sel in &project.selections {
-        if st.selections.get(&sel.id).map(|s| s.status) == Some(state::Status::Done) {
-            let missing = plan::selection(&project, sel, &arnis)?.todo_chunks();
-            report.missing_chunks.insert(sel.id.clone(), missing);
-            if missing > 0 {
-                say(format!(
-                    "[{}] final check: {missing} chunk(s) missing; `meld2 run --rebuild={}` builds it again",
-                    sel.id, sel.id
-                ));
-            }
-        }
-    }
-    let checked = report.missing_chunks.len();
-    let missing: u64 = report.missing_chunks.values().sum();
-    say(format!(
-        "final check: {checked} built selection(s), {missing} chunk(s) missing"
-    ));
-    let written = report.write(&dir, summary)?;
-    say(format!(
-        "{}: {} done, {} skipped, {} stopped, {} failed (report: {})",
-        project.name,
-        summary.done,
-        summary.skipped,
-        summary.stopped,
-        summary.failed,
-        written.display()
-    ));
-    Ok(summary)
-}
-
-/// `--rebuild`: forgets the selections' saved state and Arnis's partial job,
-/// so they build every piece again over what is there.
-fn start_over(
-    project: &Project,
-    dir: &Path,
-    plans: &[(String, plan::Plan)],
-    ids: &[String],
-    say: &mut dyn FnMut(String),
-) -> Result<()> {
-    // `li` also names the parts `li-1`, `li-2`, ... of a polygon selection.
-    let named = |id: &str, r: &str| {
-        id == r
-            || id
-                .strip_prefix(r)
-                .and_then(|t| t.strip_prefix('-'))
-                .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
-    };
-    for r in ids {
-        if !project.selections.iter().any(|s| named(&s.id, r)) {
-            bail!("--rebuild: no selection {r:?}");
-        }
-    }
-    let mut st = State::load(dir)?;
-    for (sel, (_, plan)) in project.selections.iter().zip(plans) {
-        if !ids.is_empty() && !ids.iter().any(|r| named(&sel.id, r)) {
-            continue;
-        }
-        let job = project
-            .output_dir()
-            .join(&sel.world)
-            .join("arnis_one_world/jobs")
-            .join(plan.job_dir());
-        if job.exists() {
-            std::fs::remove_dir_all(&job).with_context(|| format!("removing {}", job.display()))?;
-        }
-        st.selections.remove(&sel.id);
-        say(format!(
-            "[{}] rebuild: all {} piece(s); {} existing chunk(s) are replaced",
-            sel.id,
-            plan.units.len(),
-            plan.chunks() - plan.todo_chunks()
-        ));
-    }
-    st.save(dir)
-}
-
-/// The `--plan-units` dry run of every selection, summed against free disk.
-/// Fails when the estimate does not fit.
-fn show_plan(
-    project: &Project,
-    arnis: &Arnis,
-    say: &mut dyn FnMut(String),
-) -> Result<Vec<(String, plan::Plan)>> {
-    let plans = plan::project(project, arnis)?;
-    say(format!(
-        "  {:<16} {:>6} {:>7} {:>9} {:>9} {:>9}",
-        "selection", "pieces", "regions", "chunks", "to build", "est. MB"
-    ));
-    let mut need = 0.0;
-    for (id, p) in &plans {
-        need += p.todo_mb();
-        say(format!(
-            "  {id:<16} {:>6} {:>7} {:>9} {:>9} {:>9.1}",
-            p.units.len(),
-            p.regions(),
-            p.chunks(),
-            p.todo_chunks(),
-            p.todo_mb()
-        ));
-    }
-    let saves = project.output_dir();
-    let free = plan::free_mb(&saves)?;
-    let reserve = project.run.min_free_mb;
-    let line = format!(
-        "~{need:.0} MB to write (+{:.0} % margin), {free} MB free on {}, keeping {reserve} MB free",
-        (plan::MARGIN - 1.0) * 100.0,
-        saves.display()
-    );
-    match plan::verdict(need, free, reserve) {
-        Disk::Ok => say(format!("  disk: ok, {line}")),
-        Disk::Tight => say(format!("  disk: WARNING, tight: {line}")),
-        Disk::Short => bail!(
-            "not enough disk: {line}. Free space on that volume, move `output`, shrink the selections, or lower run.min_free_mb"
-        ),
-    }
-    Ok(plans)
 }
 
 /// One line per thing worth seeing; percentages every 10 %.
