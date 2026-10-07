@@ -2,12 +2,12 @@
 
 Date: 2026-10-07.
 
-Releases: the work is cut into **Phases 1–5**. Each phase is a pre-release `2.0.0-alpha.N` (Phase 1 was `alpha.1`, Phase 2 `alpha.2`; Phase 3 is `alpha.3`). **2.0.0-beta.1 is the release with all five phases merged.** rc and 2.0.0 come after the user's UI pass. Arnis at Scale now covers most of Meld's engine features, so Meld 2 is mainly the orchestrator, server and projects layer.
+Releases: the work is cut into **Phases 1–5**. Each phase is a pre-release `2.0.0-alpha.N` (Phase 1 was `alpha.1`, Phase 2 `alpha.2`, Phase 3 `alpha.3`; Phase 4 is `alpha.4`). **2.0.0-beta.1 is the release with all five phases merged.** rc and 2.0.0 come after the user's UI pass. Arnis at Scale now covers most of Meld's engine features, so Meld 2 is mainly the orchestrator, server and projects layer.
 
 Baselines:
 - Meld 1.9.9: `Teddy563/meld` @ `4152dcb`, tag `v1.9.9`.
 - Arnis at Scale 3.4.0-beta.1: `Teddy563/arnis` `arnis-scale-single` @ `47b4d8e7`, binary `work/release/arnis-3.4.0-beta.1.exe`.
-- Meld 2: branch `meld-2.0`, worktree `work/wt-meld2`, folder `meld2/`. Phase branches: `meld-2.0-phase-1` = `52f8101`, `meld-2.0-phase-2` = `1ace4fe`, `meld-2.0-phase-3` (local).
+- Meld 2: branch `meld-2.0`, worktree `work/wt-meld2`, folder `meld2/`. Phase branches: `meld-2.0-phase-1` = `52f8101`, `meld-2.0-phase-2` = `1ace4fe`, `meld-2.0-phase-3` = `7c0b678`, `meld-2.0-phase-4` (local).
 
 Every Meld claim below cites a file and line that I read or grepped on 4152dcb. Arnis claims cite the `wt-single` tree.
 
@@ -81,18 +81,18 @@ In Meld 1, one project is one world, one selection and one locked origin (`src/p
 
 | Feature | Meld 1.9.9 source | → | How in Meld 2 |
 |---|---|---|---|
-| One-click Leaf server: catalog, install, EULA, start scripts, JVM sizing | `mcserver.py:41-293` | M | Port it |
-| Paper | Leaf only (`LEAF_API`, `mcserver.py:41`); plugins already resolved for paper loaders (`:117`) | M | New: PaperMC exposes the same downloads API shape |
-| Multiverse sub-worlds | `mcserver.py:17,49-50` | M | A natural fit for multi-world projects |
-| Voxy server-side plugin | `mcserver.py:56` | M | LOD pregeneration itself is Arnis `--voxy-lod` (stock) |
-| Server start, stop, console, command, backup | `server.py:7165-7276` | M | Port it |
+| One-click Leaf server: catalog, install, EULA, start scripts, JVM sizing | `mcserver.py:41-293` | M | **Done in Phase 4:** `meld2 server setup` (newest build of the version, sha256; EULA only on request; `ram_mb`). No start scripts: `meld2 server start` is the launcher |
+| Paper | Leaf only (`LEAF_API`, `mcserver.py:41`); plugins already resolved for paper loaders (`:117`) | M | **Done in Phase 4:** `flavor = "paper"` (fill v3 API, sha256). Not run in the e2e |
+| Multiverse sub-worlds | `mcserver.py:17,49-50` | M | **Done in Phase 4:** a second world adds Multiverse-Core and `mv import <world> normal` on the first start |
+| Voxy server-side plugin | `mcserver.py:56` | M | `plugins = ["voxy-server-side"]` (any Modrinth slug, `@` pins a build); not run. `voxy_lod` is a setting (Phase 4) |
+| Server start, stop, console, command, backup | `server.py:7165-7276` | M | **Phase 4:** start, stop (console `stop`, kill after 60 s), status and log tail, over the CLI and the API. Console commands and backup: Phase 5 |
 | World border (vanilla) | `level_dat.py:103-123` | A | `--world-border` |
 | Level name | `level_dat.py:55-91` | A | `--world-name` |
-| WorldGuard `regions.yml` and Skript border/zones | `border.py` (930 lines) | M | **Rewrite.** `border.py:172-176` projects equirectangularly; One World is Web Mercator |
+| WorldGuard `regions.yml` and Skript border/zones | `border.py` (930 lines) | M | **WorldGuard done in Phase 4,** in the One World frame (`frame.rs`): a `poly2d` per selection. Skript walls, buffered rings and country lookups: later |
 | Datapacks carried through the cell merge | `merge.py:208-222` | X | Not needed: One World writes in place, so there is no merge |
-| zip / tar.zst export | `export.py:767-812` | M | Port it |
+| zip / tar.zst export | `export.py:767-812` | M | Not done; Phase 5 |
 | Linear v1 export | `export.py:231-348` | X | B_Linear supersedes it for Leaf ≥ 1.21.11 (`12-BLINEAR-COMPARISON.md`) |
-| B_Linear export via region-convert | `export.py:941-998` | O | `--region-format blinear` is refused with `--one-world`. Meld 2 converts after the build (§2) |
+| B_Linear export via region-convert | `export.py:941-998` | O | **Done in Phase 4:** `--region-format blinear` is refused with `--one-world`, so Meld converts after the build (`convert.rs`, region-convert linked as a crate) |
 
 There is no upload. A grep for sftp/ftp/upload finds only the preset import and the UI file upload (`server.py:3926,7469`). Upload is listed as new work in §2.
 
@@ -133,8 +133,8 @@ There is no upload. A grep for sftp/ftp/upload finds only the preset import and 
 
 | Feature | Meld 1.9.9 source | → | How in Meld 2 |
 |---|---|---|---|
-| region-convert (Rust; mca, linear, B_Linear v2/v3) | `region-convert/src` | O | Reuse it as a crate (it is already Rust) |
-| `meldconvert.py` CLI | `meldconvert.py:418-446` | M | `meld2 convert` |
+| region-convert (Rust; mca, linear, B_Linear v2/v3) | `region-convert/src` | O | **Done in Phase 4:** a path dependency of meld-core (MIT) |
+| `meldconvert.py` CLI | `meldconvert.py:418-446` | M | **Done in Phase 4:** `meld2 convert` (to B_Linear) |
 | Native B_Linear generation | `project.py:343-354` | A | `--region-format blinear`, without One World only |
 | Compress while generating, stream-and-free | `export.py:538-765` | X | Not in 2.0 |
 | Export safety: disk preflight, verify, resumable manifest | `export.py:88-176` | M | Part of disk planning |
@@ -173,12 +173,12 @@ There is no upload. A grep for sftp/ftp/upload finds only the preset import and 
 | **Multi-selection queue** | One job per process. One writer per One World (`arnis_one_world/owner.pid`) | A queue with `run.jobs` at once; selections on the same world are serialised | Phase 1 ✔ |
 | **Resumable jobs across restarts** | A job resumes only if it is rerun with the same bbox and N (`scale/mod.rs:13-15`). Nothing records which jobs are pending | `state.json` per project: pending, running, stopped, failed or done, plus the command | Phase 1 ✔ |
 | **Scheduling pieces across selections** | `--threads` and `--one-world-workers` are per process; nothing is shared across processes | An even split of `cpu_target` and `ram_budget_mb` between jobs (done). Rebalanced at each job start; workers sized by `--one-world-workers auto` from the piece count within the share | Phase 1 ✔ / Phase 2 ✔ |
-| **Server integration** | None | Leaf and Paper staging, Multiverse world per selection world, Voxy, console and backups | Phase 4 |
+| **Server integration** | None | Leaf and Paper staging, Multiverse world per selection world, Voxy, console and backups | Phase 4 ✔ (console commands, backups: Phase 5) |
 | **Country bakes as jobs** | `--osm-pbf geofabrik` bakes inline inside the first job; `--prewarm` works per bbox | `[[bake]]` (a `--prewarm --osm-pbf` over the selections that read one extract) and `prewarm = true` (the selection's command with `--prewarm`), run ahead of the builds | Phase 3 ✔ |
 | **Disk and size planning** | Prints nothing before it builds. `--plan-units` gives chunks per piece | `meld2 plan` and the start of each run: chunks still to build × 3.84 MB per region against free disk, +25 % and `run.min_free_mb`; refuse when short, warn when tight | Phase 2 ✔ |
 | **Project dashboard** | None | `meld2 serve` (JSON API, SSE, a minimal page) and the GUI: worlds, selections, pieces, logs, disk | Phase 3 ✔ / Phase 5 |
 | Polygon selections | bbox only | Cover the rings with piece-sized bboxes | Phase 3 ✔ |
-| B_Linear for One Worlds | Refused with `--one-world` (`--region-format` help; `REMAINING.md`) | Convert after the build with region-convert | Phase 4 |
+| B_Linear for One Worlds | Refused with `--one-world` (`--region-format` help; `REMAINING.md`) | Convert after the build with region-convert | Phase 4 ✔ |
 | Progress across pieces | Piece mode reports `progress` but it does not follow pieces: e2e showed **44.3 % at 2/16 pieces**. `done.chunks` counts only that run | Meld shows pieces done/of (done); totals summed per world | Phase 1 ✔ |
 | Rebuilding with new settings | A rerun resumes by rect and N, whatever the settings | A partial job with changed settings is refused (done). `--rebuild` clears Arnis's job folder | Phase 1 ✔ / Phase 3 ✔ |
 | Headless remote control | No daemon | `meld2 stop` (done); `meld2 serve` with a token | Phase 1 ✔ / Phase 3 ✔ |
@@ -203,10 +203,13 @@ meld2/                      Cargo workspace, version 2.0.0-alpha.N (N = phase)
                             state.rs     state.json in the data dir (atomic writes)
                             report.rs    JSON run report from the notes          (Phase 3)
                             import.rs    Meld 1 project.json / preset → TOML     (Phase 3)
+                            frame.rs     One World frame, manifest               (Phase 4)
+                            convert.rs   B_Linear post-convert (region-convert)  (Phase 4)
+                            server.rs    Leaf/Paper setup, process, WorldGuard   (Phase 4)
   cli/    meld2 (bin)       run · status · stop · caps      (Phase 1)
                             plan · arnis status|install|path (Phase 2)
                             serve · import · run --rebuild  (Phase 3)
-                            convert                         (Phase 4)
+                            convert · server setup|start|stop|status (Phase 4)
   gui/    (Phase 5)          Tauri 2 shell over meld-core, same web UI that `serve` hosts
 ```
 
@@ -300,7 +303,15 @@ Meld 1 does have a saved format (verified):
 | `cpu_target_pct` | `[run] cpu_target` |
 | `offline_elevation` | `offline`, plus `prewarm = true` so the caches are filled first |
 | `overpass_url` | `overpass_url` |
-| `native_region_format` | refused under One World; becomes a post-convert |
+| `native_region_format` | refused under One World; becomes a post-convert (`[server] format = "blinear"`) |
+| `voxy_lod`, `disable_height_limit`, `aws_only_elevation`, `building_facades` | same name (Phase 4) |
+| `props` (dict of families) | `props = "a,b"`, or `"none"`; only when a family is off, as Meld 1 sent it |
+| `world_time` | same, when not Arnis's 6000 |
+| `tree_realm`, `overture_source`, `facade_detail`, `facade_px`, `mapillary_facade_mode`, `signage` | same, when a value Arnis takes and not Arnis's default |
+| `mapillary_facades` | `false` only (Meld 1's tri-state) |
+| `generate_3d_models` | `use_3d = false` (`--no-3d`) unless it was on |
+| `rotation`, `body` | mapped at 0 and `earth`; otherwise dropped with a note (One World is Earth at rotation 0) |
+| `mapillary_token` | dropped with a note: a credential; Arnis reads `MAPILLARY_TOKEN` |
 | governor, stagger, prefetch, sidecar, timer, `canonical_regions`, `seam_buffer_chunks`, `gpu_accel`, `mc_version`, height room keys | dropped, and the import lists them |
 
 Meld 1 worlds use an equirectangular frame, and One World cannot extend them (`01-TECHNICAL-INTEGRATION.md`, risk table). An import therefore starts new worlds; the old ones stay playable.
@@ -314,7 +325,7 @@ Meld 1 worlds use an equirectangular frame, and One World cannot extend them (`0
 | **Phase 1** (`2.0.0-alpha.1`, done) | core + CLI: format-1 project model; settings→argv table with capability gate; spawn, NDJSON, Job Object kill; queue with job budget and one writer per world; `state.json` resume; `run / status / stop / caps` | fmt, clippy `-D warnings` and 12 unit tests green (parser, golden argv, progress on recorded NDJSON, resume decisions, fake-Arnis loop, tree kill); e2e against `arnis-3.4.0-beta.1.exe` (§5) | 30 | Arnis `progress` is not proportional in piece mode (worked around); the Unix coordinator does not die with Meld |
 | **Phase 2** (`2.0.0-alpha.2`) scale and safety | `meld2 plan` (size and disk from `--plan-units`) ✔; budget rebalancing when a job ends ✔; pinned Arnis download and verify ✔; Unix parent-death ✔; one `run` per project (lock) ✔; keep the machine awake (Windows ✔). Moved to Phase 3: `--rebuild`, JSON run report, keep-awake on Linux/macOS | plan within ±25 % of actual bytes on 3 areas and 2 scales; a run refused when the disk is short; tampered download rejected; `kill -9 meld2` on Linux leaves 0 arnis; a second `run` refused; report lists every piece | 45 | bytes per chunk swings with caves and scale; GitHub rate limits |
 | **Phase 3** (`2.0.0-alpha.3`, done) server mode and data jobs | `meld2 serve` (JSON API, token, localhost by default); job kinds `bake`/`prewarm` (country bakes; a `--prewarm-first` step before a big selection); from Phase 2: `--rebuild`, JSON run report, keep-awake on Linux/macOS; polygon selections; `meld2 import` from Meld 1; final check via `existing_chunks`; regenerate an area | Liechtenstein bake job, then the builds pass with `--offline`; import of a real 1.9.9 project and of 3 bundled presets; a curl-driven run over `serve`; country polygon with 0 missing chunks | 70 | Bake time on large countries (Austria ≈ 103 s single-threaded in arnis-tiles); polygon edge cases |
-| **Phase 4** server integration and output | Leaf and Paper staging; Multiverse world per project world; Voxy plugin; start, stop, console, backup; WorldGuard/Skript borders recomputed in Web Mercator; B_Linear post-convert (region-convert crate); zip/tar.zst with preflight | Leaf boots a 2-world project (`Done (` marker); a B_Linear world loads in Leaf 1.21.11; WorldGuard ring within 1 block of `--world-border`; an export refused when the disk is short | 80 | In-game checks need a person (`REMAINING.md` › Needs the user); Leaf/Paper API drift; check the region-convert fork's licence |
+| **Phase 4** (`2.0.0-alpha.4`, done) server integration and output | Leaf and Paper staging; Multiverse world per project world; Voxy plugin; start, stop, console, backup; WorldGuard/Skript borders recomputed in Web Mercator; B_Linear post-convert (region-convert crate); zip/tar.zst with preflight | Leaf boots a 2-world project (`Done (` marker); a B_Linear world loads in Leaf 1.21.11; WorldGuard ring within 1 block of `--world-border`; an export refused when the disk is short | 80 | In-game checks need a person (`REMAINING.md` › Needs the user); Leaf/Paper API drift; check the region-convert fork's licence |
 | **Phase 5** desktop GUI | Tauri 2: dashboard, map editing of selections (port the Leaflet UI), per-piece live progress, tray, single instance, updater | GUI e2e on Windows; Playwright smoke test on the `serve` UI; tray stop and resume | 110 | Porting a 7k-line UI; WebKitGTK |
 | **2.0.0-beta.1** | All five phases merged | everything above green together | — | — |
 | **rc.1** (after the user's UI pass) | Linux and macOS CI; docs; migration guide; benchmark vs 1.9.9 on the same area | green on 3 OSes; wall time ≤ 1.9.9 on the gate area | 30 | macOS signing |
@@ -418,3 +429,47 @@ Each world records exactly one area.
 - The Linux run of the watchdog, keep-awake and `kill -9` tests.
 - Plan accuracy at a second scale.
 - State only saves progress at piece events, so the page's bar moves per piece; live percentages are in the SSE stream (Phase 5 UI).
+
+## 8. Phase 4 as delivered (`2.0.0-alpha.4`, local branch `meld-2.0-phase-4`)
+
+**Commits on `meld-2.0`** (not pushed): see `git log meld-2.0-phase-3..meld-2.0-phase-4`.
+
+| Commit | Contents |
+|---|---|
+| import | The Meld 1 keys with an Arnis flag: `voxy_lod`, `props`, `world_time`, `tree_realm`, `disable_height_limit`, `overture_source`, `signage`, `aws_only_elevation`, `generate_3d_models` (`use_3d`), the facade keys; `rotation`/`body` only at 0/`earth`; `mapillary_token` dropped (credential) |
+| lattice | `frame.rs` (Arnis's Web Mercator, the manifest); polygon parts are runs of whole pieces on the lattice from block 0 of the world's frame, and carry its `origin` |
+| convert | `meld2 convert`: region-convert linked as a crate; parallel convert into `<dir>.meld-tmp/`, read-back of up to 8 regions chunk for chunk, then the swap; guarded destination |
+| server | `[server]`, `meld2 server setup/start/stop/status`, the API endpoints, WorldGuard regions, the queue's `convert:<world>` step |
+| fixes from e2e | newest Java, `slug@version` plugin pins, plugin bookkeeping, re-hash of present jars, no repeated Multiverse import, `--force` replaces only worlds, jar names checked |
+| docs | README, this plan, version 2.0.0-alpha.4 |
+
+**B_Linear: why a linked crate.** The options were the bundled `region_converter` binary, a pinned download of it, a Rust port, or the crate. The crate is already in this repository (`region-convert/`, MIT, LuminolMC), already proven byte-identical to Arnis's writer (`12-BLINEAR-COMPARISON.md`), and has a library API (`read_region`, `encode_region_to_writer`, `write_region_with_transaction`). Linking it costs no codec code and no binary to find, pin or hash at run time; a port would re-implement and re-prove about 400 lines of format code. Cost: meld-core compiles zstd and the converter's CLI dependencies. The licence risk in §4 is closed: MIT. At 2.0.0, `region-convert/` must move with `meld2/`.
+
+**Gates:** `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`: 31 passed on Windows (29 core, 2 cli). New: frame math against Arnis's own checks, lattice-snapped polygons (with and without a world on disk), the conversion (read-back, swap, guard, stop), the queue's convert step, the WorldGuard ring against a real Arnis area, the setup guards, the import keys.
+
+**e2e** (`work/meld2-e2e/p4/`: `e2e-phase4.sh`, `e2e-api.sh`, `verify.py`; logs in `logs/`). Leaf 1.21.11 build 179, Java 21 (the only complete Java on this machine), Arnis 3.4.0-beta.1.
+
+| Step | Result |
+|---|---|
+| run: bake, Vaduz (4 pieces) and Schaan (16) with `world_border`, then `convert:Vaduz`, `convert:Schaan` | 5 done; 0 chunks missing; Arnis "World border set around -128,-112 to 127,111" and "-576,-560 to 575,559" |
+| run again | 5 skipped, both conversions "did not change since" |
+| independent check (`verify.py` on `work/blinear-compare/bl.py`: python-zstandard, python-xxhash, zlib), **every** chunk | Vaduz 4 regions / 224 chunks, Schaan 16 / 5,040: NBT bytes equal, xxh32 valid, timestamps = Anvil × 1000; 20.8 MB → 4.4 MB |
+| setup on a folder Meld did not create / start before setup / start without the EULA | refused, refused, refused |
+| setup `--accept-eula` | junctions to both `[BLinear]` copies, `leaf-global.yml` `B_LINEAR`, regions.yml ×2, Leaf jar sha256, WorldGuard 7.0.16, WorldEdit 7.4.0, Multiverse-Core 5.8.1 sha512 |
+| CLI start, status, stop | `Preparing level "Vaduz"`, `Done (17.1s)`, `mv import Schaan` → "World 'Schaan' imported!", 0 ERROR lines; status `running (ready)`; stop: chunks saved, exit 0 in 1.5 s; region folders still `.b_linear` only |
+| WorldGuard | loaded both worlds and saved Meld's `meld-vaduz`/`meld-schaan` regions back in its own format (so it parsed them) |
+| border | WorldGuard ring = manifest extent (0 blocks); border centred on it with the ring's longer side (256, 1152); Leaf migrated it to `data/world_border.dat` with the same centre and size |
+| API (`e2e-api.sh`) | status 200; stop when idle 409; setup 200; start 202 → `ready`; start again 409; stop 202 → not running; an API start stopped by `meld2 server stop`; SSE carried 273 console lines and `server-exit` code 0 twice |
+| `run --rebuild=vaduz` after the server played on the copy | `convert:Vaduz` refused ("changed since Meld converted it"); `meld2 convert --force` then converted and verified; Leaf booted on it again |
+| first attempt with the newest plugins | WorldEdit 7.4.5 and WorldGuard 7.0.17 are Java 25 builds (class 69) and failed on Java 21. Led to "newest Java" and `@` pins |
+| Liechtenstein as a polygon (Natural Earth outline), scale 0.25, one-region pieces | 12 parts, 53 pieces, each exactly 1,024 chunks; all 12 areas on the 512 lattice; origin 47.1576, 9.545805 (the polygon's centre); 3 m 44 s; final check **0 missing** |
+| plan accuracy at scale 0.25 | plan 204 MB, region files 222.7 MB (−8 %); with Phase 2's scale-1 figures (−9 %, −13 %), within ±25 % at two scales |
+
+**Not run on this machine:** Paper (code path only); Voxy server-side; a client joining the server (needs a person: `REMAINING.md`); the Linux watchdog, keep-awake and `kill -9` tests (WSL's Ubuntu disk is missing, Docker is down).
+
+**Moves to Phase 5** besides its own scope:
+- Console commands from the CLI/API (`server send`), world backup, zip/tar.zst export with disk preflight.
+- Skript particle walls, buffered rings and country lookups (Meld 1 `border.py`); WorldGuard flags/owners.
+- Start scripts for running the server without Meld; detaching `server start` from the CLI.
+- The Linux runs above; a client join on Leaf with a B_Linear world.
+- `project.arnis` and `[server] java` run any executable the project names: fine for a trusted project file, but the API's token is then full control of the machine. Restrict both to an allow-list or the data dir before `serve` is exposed beyond a trusted LAN.

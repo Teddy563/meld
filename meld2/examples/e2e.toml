@@ -12,6 +12,7 @@ cpu_target = 80
 scale = 1.0
 unit_regions = 1     # one-region pieces, so even a tiny area has several to resume
 map_item = false
+world_border = true  # Arnis puts the vanilla border around each world
 
 [[selection]]
 id = "vaduz"
@@ -23,3 +24,10 @@ id = "schaan"
 bbox = [47.1600, 9.5000, 47.1700, 9.5150]
 world = "Schaan"
 settings = { snow_mode = "off", rocks = true }
+
+# A Leaf server for both worlds: `meld2 server setup examples/e2e.toml --accept-eula`,
+# then `meld2 server start examples/e2e.toml`. Vaduz is the main level; Schaan
+# comes in through Multiverse-Core.
+[server]
+format = "blinear"   # the run converts both worlds; Leaf 1.21.11 serves the copies
+port = 25565
