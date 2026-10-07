@@ -158,6 +158,17 @@ impl Process {
         self.lock().id()
     }
 
+    /// CPU seconds of the run and everything it started so far, and the
+    /// most memory (MB) the whole tree had committed at once: the Job
+    /// Object's accounting, which takes in Arnis's nested piece jobs.
+    // ponytail: Windows only; on Unix getrusage sees a child only once it is waited for.
+    pub fn tree_usage(&self) -> Option<(f64, u64)> {
+        #[cfg(windows)]
+        return self.job.usage();
+        #[cfg(unix)]
+        None
+    }
+
     /// Stops the run and everything it started.
     pub fn kill(&self) {
         #[cfg(windows)]
@@ -197,9 +208,10 @@ mod job {
     use std::process::Child;
     use windows_sys::Win32::Foundation::CloseHandle;
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicAccountingInformation,
+        JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
+        TerminateJobObject, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
 
     /// A Job Object handle, kept as an integer so it can cross threads.
@@ -243,6 +255,40 @@ mod job {
                 );
             }
             Ok(())
+        }
+
+        /// CPU seconds and peak committed MB of every process the job has held.
+        pub fn usage(&self) -> Option<(f64, u64)> {
+            // SAFETY: the handle is open until drop; each struct is a live
+            // local of the size passed.
+            unsafe {
+                let mut acc: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = std::mem::zeroed();
+                let mut lim: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+                let q = |class, out: *mut core::ffi::c_void, size: usize| {
+                    QueryInformationJobObject(
+                        self.0 as _,
+                        class,
+                        out,
+                        size as u32,
+                        std::ptr::null_mut(),
+                    )
+                };
+                let a = q(
+                    JobObjectBasicAccountingInformation,
+                    &mut acc as *mut _ as *mut _,
+                    std::mem::size_of_val(&acc),
+                );
+                let l = q(
+                    JobObjectExtendedLimitInformation,
+                    &mut lim as *mut _ as *mut _,
+                    std::mem::size_of_val(&lim),
+                );
+                if a == 0 || l == 0 {
+                    return None;
+                }
+                let ticks = (acc.TotalUserTime + acc.TotalKernelTime) as f64;
+                Some((ticks / 1e7, (lim.PeakJobMemoryUsed / (1 << 20)) as u64))
+            }
         }
 
         pub fn terminate(&self) {

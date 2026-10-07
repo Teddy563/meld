@@ -584,7 +584,20 @@ impl<'p> Runner<'_, 'p> {
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 match progress::parse(&line) {
-                    Some(e) => {
+                    Some(mut e) => {
+                        // Pieces are processes of their own; count them all.
+                        if let (
+                            Event::Done {
+                                cpu_s,
+                                tree_peak_mb,
+                                ..
+                            },
+                            Some((cpu, peak)),
+                        ) = (&mut e, p.tree_usage())
+                        {
+                            *cpu_s = Some(cpu);
+                            *tree_peak_mb = Some(peak);
+                        }
                         let _ = tx.send((id.clone(), Msg::Event(e)));
                     }
                     None => {
@@ -922,6 +935,10 @@ world = "W2"
                     if let Note::Skipped(_) = n {
                         notes.push(format!("{id} skipped"));
                     }
+                    // Meld measures the whole process tree where it can (Windows).
+                    if let Note::Event(Event::Done { tree_peak_mb, .. }) = n {
+                        notes.push(format!("{id} tree {}", tree_peak_mb.is_some()));
+                    }
                 },
             )
             .unwrap()
@@ -941,6 +958,7 @@ world = "W2"
         let w1: Vec<_> = calls.lines().filter(|l| l.contains(" W1 ")).collect();
         assert_eq!(w1.len(), 2, "{calls}");
         assert!(w1[0].ends_with("--prewarm ") && !w1[1].contains("--prewarm"));
+        assert!(notes.contains(&format!("b tree {}", cfg!(windows))), "{notes:?}");
         let s = State::load(&state_dir).unwrap();
         assert_eq!(s.selections["a"].pieces_done, 2);
         assert_eq!(s.selections["b"].chunks, Some(7));

@@ -37,9 +37,15 @@ pub enum Event {
     /// Closes a successful run.
     Done {
         wall_s: f64,
+        /// Arnis's own process; Meld puts the whole process tree's here
+        /// where it can measure it (Windows: the run's Job Object).
         cpu_s: Option<f64>,
         peak_rss_mb: Option<u64>,
         chunks: u64,
+        /// Not Arnis's: the memory the whole process tree had committed at
+        /// its peak, from the Job Object (Windows).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tree_peak_mb: Option<u64>,
     },
     /// A record type this Meld does not know; later v1 Arnis may add some.
     #[serde(other)]

@@ -116,6 +116,7 @@ impl Report {
                 cpu_s,
                 peak_rss_mb,
                 chunks,
+                ..
             }) => {
                 step.wall_s = Some(*wall_s);
                 step.cpu_s = *cpu_s;
