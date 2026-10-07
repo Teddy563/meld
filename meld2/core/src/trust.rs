@@ -6,6 +6,10 @@
 //! there they must be an executable Meld installed or finds by itself, or one
 //! the machine's owner listed in `<data>/trusted-executables.txt`, a file the
 //! API never writes.
+//!
+//! The folders such a project writes to or copies from (`output`, `[server]
+//! dir`, `[server] datapacks`) must likewise lie in the workspace the API
+//! serves, or in a folder listed in `<data>/trusted-folders.txt`.
 
 use crate::install;
 use crate::project::Project;
@@ -14,6 +18,80 @@ use std::path::{Path, PathBuf};
 
 /// The allow-list in the data dir: one executable path per line, `#` comments.
 pub const FILE: &str = "trusted-executables.txt";
+/// The folder allow-list: one folder per line; it and everything in it is allowed.
+pub const FOLDERS: &str = "trusted-folders.txt";
+
+fn listed(file: &Path) -> Vec<PathBuf> {
+    std::fs::read_to_string(file)
+        .unwrap_or_default()
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// `p` absolute, with `.` and `..` resolved, and links resolved as far as
+/// the folders exist (so a junction cannot lead out).
+pub fn real(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in std::path::absolute(p)
+        .unwrap_or_else(|_| p.to_path_buf())
+        .components()
+    {
+        match c {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            c => out.push(c),
+        }
+    }
+    let mut rest = vec![];
+    let mut base = out.as_path();
+    loop {
+        if let Ok(c) = std::fs::canonicalize(base) {
+            return rest.iter().rev().fold(c, |acc, r| acc.join(r));
+        }
+        match (base.parent(), base.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name.to_os_string());
+                base = parent;
+            }
+            _ => return out,
+        }
+    }
+}
+
+/// Fails unless the project's folders are in `workspace` or a listed folder.
+pub fn folders(p: &Project, workspace: &Path, data: &Path) -> Result<()> {
+    let dir = p.path.parent().unwrap_or(Path::new("."));
+    let mut paths = vec![("output", p.output_dir())];
+    if let Some(s) = &p.server {
+        paths.push(("[server] dir", dir.join(&s.dir)));
+        paths.extend(
+            s.datapacks
+                .iter()
+                .map(|d| ("[server] datapacks", dir.join(d))),
+        );
+    }
+    let list = data.join(FOLDERS);
+    let roots: Vec<PathBuf> = std::iter::once(workspace.to_path_buf())
+        .chain(listed(&list))
+        .map(|r| real(&r))
+        .collect();
+    for (what, path) in paths {
+        if !roots.iter().any(|r| real(&path).starts_with(r)) {
+            bail!(
+                "{what} {} is outside the workspace {}; to allow it, add the folder to {} on this machine",
+                path.display(),
+                workspace.display(),
+                list.display()
+            );
+        }
+    }
+    Ok(())
+}
 
 fn same(a: &Path, b: &Path) -> bool {
     match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
@@ -26,14 +104,7 @@ fn same(a: &Path, b: &Path) -> bool {
 /// Fails unless `exe` is one of `known` or listed in `<data>/trusted-executables.txt`.
 pub fn check(what: &str, exe: &Path, known: &[PathBuf], data: &Path) -> Result<()> {
     let list = data.join(FILE);
-    let listed: Vec<PathBuf> = std::fs::read_to_string(&list)
-        .unwrap_or_default()
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .map(PathBuf::from)
-        .collect();
-    if known.iter().chain(&listed).any(|k| same(exe, k)) {
+    if known.iter().chain(&listed(&list)).any(|k| same(exe, k)) {
         return Ok(());
     }
     bail!(
@@ -119,6 +190,25 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("[server] java"));
+
+        // Folders: inside the workspace, or listed.
+        let ws = d.join("ws");
+        let put = |text: &str| {
+            let f = ws.join("p/project.toml");
+            std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+            std::fs::write(&f, format!("format = 1\nname = \"p\"\n{text}")).unwrap();
+            folders(&Project::load(&f).unwrap(), &ws, &d)
+        };
+        put("output = \"saves\"\n[server]\ndir = \"../srv\"\n").unwrap();
+        let e = put("output = \"../../out\"\n").unwrap_err().to_string();
+        assert!(
+            e.contains("outside the workspace") && e.contains(FOLDERS),
+            "{e}"
+        );
+        let e = put("output = \"s\"\n[server]\ndatapacks = [\"../../../x.zip\"]\n");
+        assert!(e.unwrap_err().to_string().contains("datapacks"));
+        std::fs::write(d.join(FOLDERS), format!("{}\n", d.join("out").display())).unwrap();
+        put("output = \"../../out/w\"\n").unwrap();
         std::fs::remove_dir_all(d).unwrap();
     }
 }

@@ -144,38 +144,37 @@ pub fn verdict(need_mb: f64, free_mb: u64, reserve_mb: u64) -> Disk {
 
 /// Free megabytes on the volume holding `path` (or its nearest existing parent).
 pub fn free_mb(path: &Path) -> Result<u64> {
+    space_mb(path).map(|(free, _)| free)
+}
+
+/// Free and total megabytes on the volume holding `path` (or its nearest existing parent).
+pub fn space_mb(path: &Path) -> Result<(u64, u64)> {
     let dir = path
         .ancestors()
         .find(|p| p.exists())
         .unwrap_or(Path::new("."));
-    free_bytes(dir)
-        .map(|b| b / (1024 * 1024))
+    space(dir)
+        .map(|(f, t)| (f / (1024 * 1024), t / (1024 * 1024)))
         .with_context(|| format!("reading free space of {}", dir.display()))
 }
 
 #[cfg(windows)]
-fn free_bytes(dir: &Path) -> std::io::Result<u64> {
+fn space(dir: &Path) -> std::io::Result<(u64, u64)> {
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     let wide: Vec<u16> = dir.as_os_str().encode_wide().chain([0]).collect();
-    let mut free = 0u64;
-    // SAFETY: a NUL-terminated path and a live out-pointer; the other outs may be null.
-    let ok = unsafe {
-        GetDiskFreeSpaceExW(
-            wide.as_ptr(),
-            &mut free,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    };
+    let (mut free, mut total) = (0u64, 0u64);
+    // SAFETY: a NUL-terminated path and live out-pointers; the last may be null.
+    let ok =
+        unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, &mut total, std::ptr::null_mut()) };
     if ok == 0 {
         return Err(std::io::Error::last_os_error());
     }
-    Ok(free)
+    Ok((free, total))
 }
 
 #[cfg(unix)]
-fn free_bytes(dir: &Path) -> std::io::Result<u64> {
+fn space(dir: &Path) -> std::io::Result<(u64, u64)> {
     use std::os::unix::ffi::OsStrExt;
     let c = std::ffi::CString::new(dir.as_os_str().as_bytes())?;
     // SAFETY: a NUL-terminated path and a zeroed struct statvfs fills in.
@@ -185,7 +184,10 @@ fn free_bytes(dir: &Path) -> std::io::Result<u64> {
             return Err(std::io::Error::last_os_error());
         }
         #[allow(clippy::unnecessary_cast)] // the field widths differ between Linux and macOS
-        Ok(st.f_bavail as u64 * st.f_frsize as u64)
+        Ok((
+            st.f_bavail as u64 * st.f_frsize as u64,
+            st.f_blocks as u64 * st.f_frsize as u64,
+        ))
     }
 }
 

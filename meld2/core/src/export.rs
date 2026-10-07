@@ -1,6 +1,7 @@
-//! A world as a zip: a backup, or a world to hand to someone. The disk is
-//! checked first against the world's full size (region files are already
-//! compressed, so they go in stored), and the zip appears only when complete.
+//! A world as a zip or a tar.zst: a backup, or a world to hand to someone.
+//! The disk is checked first against the world's full size (region files
+//! are already compressed, so a zip stores them), the archive is read back
+//! (every entry and byte counted), and it appears only when complete.
 
 use crate::plan::{self, Disk};
 use anyhow::{bail, Context, Result};
@@ -16,15 +17,18 @@ pub struct Exported {
     pub zip_bytes: u64,
 }
 
-/// `<dir>/<World>-<unix time>.zip`.
-pub fn name_in(dir: &Path, world: &Path) -> PathBuf {
+/// The archive kinds, by their file extension.
+pub const FORMATS: &[&str] = &["zip", "tar.zst"];
+
+/// `<dir>/<World>-<unix time>.<ext>`.
+pub fn name_in(dir: &Path, world: &Path, ext: &str) -> PathBuf {
     let t = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
     let w = world
         .file_name()
         .map_or("world".into(), |n| n.to_string_lossy());
-    dir.join(format!("{w}-{t}.zip"))
+    dir.join(format!("{w}-{t}.{ext}"))
 }
 
 fn files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
@@ -40,8 +44,14 @@ fn files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// Zips `world` (a folder with level.dat) into `to`, keeping `reserve_mb` free.
+/// Packs `world` (a folder with level.dat) into `to`, a `.zip` or a
+/// `.tar.zst`, keeping `reserve_mb` free.
 pub fn export(world: &Path, to: &Path, reserve_mb: u64) -> Result<Exported> {
+    let name = to.to_string_lossy();
+    let zst = name.ends_with(".tar.zst");
+    if !zst && !name.ends_with(".zip") {
+        bail!("{} must end in .zip or .tar.zst", to.display());
+    }
     if !world.join("level.dat").is_file() {
         bail!("{} is not a world (no level.dat)", world.display());
     }
@@ -64,29 +74,47 @@ pub fn export(world: &Path, to: &Path, reserve_mb: u64) -> Result<Exported> {
             dir.display()
         );
     }
-    let part = to.with_extension("zip.part");
+    let part = PathBuf::from(format!("{name}.part"));
+    let rel = |f: &Path| -> Result<String> {
+        Ok(f.strip_prefix(world)?.to_string_lossy().replace('\\', "/"))
+    };
     let result = (|| -> Result<u64> {
-        let mut zip = zip::ZipWriter::new(std::fs::File::create(&part)?);
-        for f in &list {
-            let rel = f.strip_prefix(world)?.to_string_lossy().replace('\\', "/");
-            let packed = matches!(
-                f.extension().and_then(|x| x.to_str()),
-                Some("mca" | "b_linear" | "linear" | "zip" | "png")
-            );
-            let opts = SimpleFileOptions::default()
-                .large_file(true)
-                .compression_method(if packed {
-                    CompressionMethod::Stored
-                } else {
-                    CompressionMethod::Deflated
-                });
-            zip.start_file(rel, opts)?;
-            std::io::copy(&mut std::fs::File::open(f)?, &mut zip)
-                .with_context(|| format!("reading {}", f.display()))?;
+        if zst {
+            let enc = zstd::Encoder::new(std::fs::File::create(&part)?, 3)?;
+            let mut tar = tar::Builder::new(enc);
+            for f in &list {
+                tar.append_path_with_name(f, rel(f)?)
+                    .with_context(|| format!("reading {}", f.display()))?;
+            }
+            tar.into_inner()?.finish()?.flush()?;
+        } else {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&part)?);
+            for f in &list {
+                let packed = matches!(
+                    f.extension().and_then(|x| x.to_str()),
+                    Some("mca" | "b_linear" | "linear" | "zip" | "png")
+                );
+                let opts = SimpleFileOptions::default()
+                    .large_file(true)
+                    .compression_method(if packed {
+                        CompressionMethod::Stored
+                    } else {
+                        CompressionMethod::Deflated
+                    });
+                zip.start_file(rel(f)?, opts)?;
+                std::io::copy(&mut std::fs::File::open(f)?, &mut zip)
+                    .with_context(|| format!("reading {}", f.display()))?;
+            }
+            zip.finish()?.flush()?;
         }
-        let mut file = zip.finish()?;
-        file.flush()?;
-        Ok(file.metadata()?.len())
+        let (n, b) = read_back(&part, zst)?;
+        if (n, b) != (list.len(), bytes) {
+            bail!(
+                "read back {n} file(s) / {b} bytes, wrote {} / {bytes}",
+                list.len()
+            );
+        }
+        Ok(part.metadata()?.len())
     })();
     match result {
         Ok(zip_bytes) => {
@@ -102,6 +130,26 @@ pub fn export(world: &Path, to: &Path, reserve_mb: u64) -> Result<Exported> {
             Err(e)
         }
     }
+}
+
+/// Files and bytes in an archive, every entry read through.
+fn read_back(archive: &Path, zst: bool) -> Result<(usize, u64)> {
+    let (mut n, mut b) = (0, 0);
+    let f = std::fs::File::open(archive)?;
+    if zst {
+        let mut tar = tar::Archive::new(zstd::Decoder::new(f)?);
+        for e in tar.entries()? {
+            b += std::io::copy(&mut e?, &mut std::io::sink())?;
+            n += 1;
+        }
+    } else {
+        let mut z = zip::ZipArchive::new(f)?;
+        for i in 0..z.len() {
+            b += std::io::copy(&mut z.by_index(i)?, &mut std::io::sink())?;
+            n += 1;
+        }
+    }
+    Ok((n, b))
 }
 
 #[cfg(test)]
@@ -140,6 +188,18 @@ mod tests {
             export(&d.join("out"), &d.join("x.zip"), 0).is_err(),
             "not a world"
         );
+        assert!(export(&w, &d.join("x.rar"), 0).is_err());
+        let tz = d.join("out/Vaduz.tar.zst");
+        let e = export(&w, &tz, 0).unwrap();
+        assert_eq!((e.files, e.bytes), (2, 5003));
+        let mut tar =
+            tar::Archive::new(zstd::Decoder::new(std::fs::File::open(&tz).unwrap()).unwrap());
+        let names: Vec<String> = tar
+            .entries()
+            .unwrap()
+            .map(|e| e.unwrap().path().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["level.dat", "region/r.0.0.mca"]);
         std::fs::remove_dir_all(d).unwrap();
     }
 }

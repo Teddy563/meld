@@ -16,6 +16,7 @@ semver = "1"
 sha2 = "0.10"
 tar = "0.4"
 ureq = "3"
+zstd = "0.13"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 # B_Linear: the codec Meld 1 bundles as region-convert (MIT, LuminolMC), in this repo.
 region_converter = { path = "../../region-convert" }

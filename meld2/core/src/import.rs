@@ -492,6 +492,59 @@ fn convert(s: &Map<String, Json>, out: &mut Imported) -> (Table, Table) {
                 }
                 continue;
             }
+            // Share lists (`--grass-mix`, `--land-mix`, `--cave-biomes`), as
+            // Meld 1's `arnis_cmd.py` sent them: the shares above 0.
+            "grass_mix" | "untagged_mix" | "cave_biome_amounts" => {
+                let to = match k {
+                    "grass_mix" => "grass_mix",
+                    "untagged_mix" => "land_mix",
+                    _ => "cave_biomes",
+                };
+                let m = v.as_object();
+                let shares: Vec<(String, i64)> = m
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|(n, p)| Some((n.clone(), p.as_f64()?.clamp(0.0, 400.0) as i64)))
+                    .collect();
+                // Cave amounts all at 100 are Arnis's default.
+                let default = to == "cave_biomes" && shares.iter().all(|s| s.1 == 100);
+                let spec: Vec<String> = shares
+                    .iter()
+                    .filter(|s| s.1 > 0 || to == "cave_biomes")
+                    .map(|(n, p)| format!("{n}={p}"))
+                    .collect();
+                if !default && !spec.is_empty() {
+                    d.insert(to.into(), Value::String(spec.join(",")));
+                }
+                m.is_some()
+            }
+            "vertical_exaggeration" => {
+                if let Some(n) = num(k).filter(|n| *n != 1.0) {
+                    d.insert("height_multiplier".into(), Value::Float(n));
+                }
+                num(k).is_some()
+            }
+            // What Arnis always does (roofs, trees, land cover, landmark
+            // models, every elevation source, its own zoom): Meld 1's default
+            // values need no flag. Another value has no Arnis flag.
+            "roof"
+            | "trees"
+            | "land_cover"
+            | "poi_3d_only"
+            | "regional_elevation_only"
+            | "elevation_zoom" => {
+                let default = match k {
+                    "regional_elevation_only" => v == &Json::Bool(false),
+                    "elevation_zoom" => v.as_str() == Some("auto"),
+                    _ => v == &Json::Bool(true),
+                };
+                if default {
+                    out.dropped.push(k.into());
+                } else {
+                    out.unmapped.push(k.into());
+                }
+                continue;
+            }
             "native_region_format" => {
                 if v.as_str()
                     .is_some_and(|f| f.eq_ignore_ascii_case("blinear"))
@@ -658,7 +711,7 @@ mod tests {
         ] {
             assert!(!out.unmapped.contains(&gone.into()), "{gone}");
         }
-        assert!(out.unmapped.contains(&"roof".into()));
+        assert!(out.dropped.contains(&"roof".into())); // true is what Arnis always does
         assert!(out.toml.contains("# Not carried (no Meld 2 setting yet): "));
     }
 
@@ -671,7 +724,10 @@ mod tests {
                 "facade_px": 32, "mapillary_facades": false, "overture_source": "parquet",
                 "road_detail_level": "auto", "river_bed_v1": true,
                 "tree_size_weights": {"big": 70, "giant": 0},
-                "field_mix": {"farm": 100, "moss": 10}, "farm_crops": {"wheat": 50}}
+                "field_mix": {"farm": 100, "moss": 10}, "farm_crops": {"wheat": 50},
+                "grass_mix": {"coarse": 6, "farm": 0}, "untagged_mix": {"farm": 25},
+                "cave_biome_amounts": {"lush": 150, "ice": 100}, "vertical_exaggeration": 1.5,
+                "roof": true, "trees": false}
         });
         let out = preset(&preset_json).unwrap();
         for want in [
@@ -689,9 +745,18 @@ mod tests {
             "facade_px = 32",
             "mapillary_facades = false",
             "overture_source = \"parquet\"",
+            "grass_mix = \"coarse=6\"",
+            "land_mix = \"farm=25\"",
+            "cave_biomes = \"ice=100,lush=150\"",
+            "height_multiplier = 1.5",
         ] {
             assert!(out.toml.contains(want), "{want} not in\n{}", out.toml);
         }
+        assert!(out.dropped.contains(&"roof".to_string()));
+        assert!(
+            out.unmapped.contains(&"trees".to_string()),
+            "trees off: no Arnis flag"
+        );
         let mut json: Json =
             serde_json::from_str(include_str!("../tests/fixtures/meld1-project.json")).unwrap();
         json["selection"]["polygons"] =

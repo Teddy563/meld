@@ -85,6 +85,9 @@ pub struct Budget {
     /// Share of the cores, in percent, for the bakes and prewarms (Arnis's
     /// Bake CPU Usage). Unset: `cpu_target`.
     pub bake_cpu: Option<u32>,
+    /// `"zip"` or `"tar.zst"`: after a run, pack each world it built into
+    /// `exports/` beside the project file.
+    pub export: Option<String>,
 }
 
 impl Default for Budget {
@@ -95,6 +98,7 @@ impl Default for Budget {
             ram_budget_mb: None,
             min_free_mb: 1024,
             bake_cpu: None,
+            export: None,
         }
     }
 }
@@ -203,6 +207,14 @@ impl Project {
         if self.run.bake_cpu.is_some_and(|c| !(10..=100).contains(&c)) {
             bail!("run.bake_cpu must be 10 to 100");
         }
+        if let Some(e) = self
+            .run
+            .export
+            .as_ref()
+            .filter(|e| !crate::export::FORMATS.contains(&e.as_str()))
+        {
+            bail!("run.export {e:?}: \"zip\" or \"tar.zst\"");
+        }
         args::check(&self.defaults).context("in [defaults]")?;
         let mut ids = HashSet::new();
         for s in &self.selections {
@@ -217,7 +229,11 @@ impl Project {
             args::check(&s.settings).with_context(|| format!("in selection {}", s.id))?;
         }
         if let Some(server) = &self.server {
-            server.check(&self.worlds())?;
+            let ids: Vec<&str> = (self.selections.iter())
+                .chain(&self.shapes)
+                .map(|s| s.id.as_str())
+                .collect();
+            server.check(&self.worlds(), &ids)?;
         }
         let mut bakes = HashSet::new();
         for b in &self.bakes {
@@ -629,6 +645,7 @@ osm_pbf = \"x.osm.pbf\"
                 "colour",
             ),
             (GOOD.replace("jobs = 2", "jobs = 0"), "jobs"),
+            (GOOD.replace("jobs = 2", "export = \"rar\""), "run.export"),
         ];
         for (text, want) in cases {
             let err = format!("{:#}", Project::parse(&text).unwrap_err());

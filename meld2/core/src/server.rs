@@ -14,6 +14,7 @@ use crate::frame::Manifest;
 use crate::project::Project;
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -47,6 +48,35 @@ pub struct Conf {
     pub datapacks: Vec<PathBuf>,
     pub java: Option<PathBuf>,
     pub motd: String,
+    /// Flags, owners and members of the WorldGuard regions Meld writes.
+    pub worldguard: Guard,
+    /// SkBee particle walls along every region, in
+    /// `plugins/Skript/scripts/meld-border.sk` (adds the Skript and SkBee plugins).
+    pub skript_walls: bool,
+}
+
+/// `[server.worldguard]`: what every `meld-<id>` region gets, a
+/// selection's own under `[server.worldguard.selection.<id>]`, and the
+/// `__global__` region's flags (outside every selection), e.g.
+/// `global_flags = { block-break = "deny", block-place = "deny" }`.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct Guard {
+    pub flags: BTreeMap<String, toml::Value>,
+    pub owners: Vec<String>,
+    pub members: Vec<String>,
+    pub global_flags: BTreeMap<String, toml::Value>,
+    pub selection: BTreeMap<String, Region>,
+}
+
+/// One selection's region: its flags go over the shared ones; its owners
+/// and members, when given, replace them.
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct Region {
+    pub flags: BTreeMap<String, toml::Value>,
+    pub owners: Vec<String>,
+    pub members: Vec<String>,
 }
 
 impl Default for Conf {
@@ -65,6 +95,8 @@ impl Default for Conf {
             datapacks: vec![],
             java: None,
             motd: "A Meld world".into(),
+            worldguard: Guard::default(),
+            skript_walls: false,
         }
     }
 }
@@ -112,7 +144,8 @@ const JVM_FLAGS: &[&str] = &[
 ];
 
 impl Conf {
-    pub fn check(&self, worlds: &[String]) -> Result<()> {
+    /// Checks the table against the project's worlds and selection ids.
+    pub fn check(&self, worlds: &[String], ids: &[&str]) -> Result<()> {
         let plain = |s: &str, extra: &[char]| {
             !s.is_empty()
                 && s.chars()
@@ -139,6 +172,30 @@ impl Conf {
             .with_context(|| format!("[server] ip {:?}", self.ip))?;
         if self.ram_mb < 512 {
             bail!("[server] ram_mb must be at least 512");
+        }
+        let g = &self.worldguard;
+        if let Some(id) = g.selection.keys().find(|k| !ids.contains(&k.as_str())) {
+            bail!("[server.worldguard.selection.{id}]: no selection {id:?}");
+        }
+        let regions = std::iter::once((&g.flags, &g.owners, &g.members)).chain(
+            g.selection
+                .values()
+                .map(|r| (&r.flags, &r.owners, &r.members)),
+        );
+        for (flags, owners, members) in regions {
+            for (k, v) in flags.iter().chain(&g.global_flags) {
+                if !plain(k, &['-']) || yaml_scalar(v).is_none() {
+                    bail!("[server.worldguard] flag {k:?} = {v}: a flag name and a plain value");
+                }
+            }
+            // Minecraft names: 3-16 letters, digits and _.
+            if let Some(p) = owners
+                .iter()
+                .chain(members)
+                .find(|p| !(3..=16).contains(&p.len()) || !plain(p, &['_']))
+            {
+                bail!("[server.worldguard] {p:?} is not a player name");
+            }
         }
         Ok(())
     }
@@ -282,6 +339,10 @@ impl<'a> Server<'a> {
                 write_new(&regions, &yml, force, say)?;
             }
         }
+        if self.conf.skript_walls {
+            let sk = dir.join("plugins/Skript/scripts/meld-border.sk");
+            write_new(&sk, &self.skript()?, true, say)?;
+        }
         for pack in &self.conf.datapacks {
             let pack = self
                 .project
@@ -350,6 +411,13 @@ impl<'a> Server<'a> {
             let mut plugins = self.conf.plugins.clone();
             if self.conf.worlds.len() > 1 && !plugins.iter().any(|p| p == "multiverse-core") {
                 plugins.push("multiverse-core".into());
+            }
+            if self.conf.skript_walls {
+                for p in ["skript", "skbee"] {
+                    if !plugins.iter().any(|x| x.split('@').next() == Some(p)) {
+                        plugins.push(p.into());
+                    }
+                }
             }
             let mut installed = vec![];
             for slug in &plugins {
@@ -476,15 +544,18 @@ impl<'a> Server<'a> {
         s
     }
 
-    /// WorldGuard regions for a world's selections, in its One World frame:
+    /// A world's regions in its One World frame: `(region, selection, ring)`,
     /// a polygon's rings as drawn, a bbox as the chunks Arnis builds for it.
-    pub fn regions_yml(&self, world: &str) -> Result<Option<String>> {
+    #[allow(clippy::type_complexity)]
+    fn rings(
+        &self,
+        world: &str,
+    ) -> Result<Option<(Manifest, Vec<(String, String, Vec<[i64; 2]>)>)>> {
         let Some(m) = Manifest::load(&self.project.output_dir().join(world))? else {
             return Ok(None);
         };
         let f = m.frame();
-        let (min_y, max_y) = m.y_range();
-        let mut rings: Vec<(String, Vec<[i64; 2]>)> = vec![];
+        let mut rings = vec![];
         for s in self
             .project
             .selections
@@ -502,28 +573,110 @@ impl<'a> Server<'a> {
             };
             let (x0, x1) = (chunk(f.x(west), false), chunk(f.x(east), true) - 1);
             let (z0, z1) = (chunk(f.z(north), false), chunk(f.z(south), true) - 1);
-            rings.push((s.id.clone(), vec![[x0, z0], [x1, z0], [x1, z1], [x0, z1]]));
+            let ring = vec![[x0, z0], [x1, z0], [x1, z1], [x0, z1]];
+            rings.push((s.id.clone(), s.id.clone(), ring));
         }
         for s in self.project.shapes.iter().filter(|s| s.world == world) {
             for (i, ring) in s.polygon.iter().enumerate() {
                 let pts = ring
                     .iter()
                     .map(|&[lat, lon]| [f.x(lon).round() as i64, f.z(lat).round() as i64]);
-                rings.push((format!("{}-{}", s.id, i + 1), pts.collect()));
+                rings.push((format!("{}-{}", s.id, i + 1), s.id.clone(), pts.collect()));
             }
         }
+        Ok(Some((m, rings)))
+    }
+
+    /// WorldGuard regions for a world's selections (`meld-<id>`, with
+    /// `[server.worldguard]`'s flags, owners and members), plus `__global__`
+    /// when `global_flags` are set.
+    pub fn regions_yml(&self, world: &str) -> Result<Option<String>> {
+        let Some((m, rings)) = self.rings(world)? else {
+            return Ok(None);
+        };
+        let (min_y, max_y) = m.y_range();
+        let g = &self.conf.worldguard;
         let mut y = String::from("# Written by Meld: one region per selection, in the world's One World frame.\nregions:\n");
-        for (id, pts) in rings {
+        if !g.global_flags.is_empty() {
+            // WorldGuard drops a region missing priority, owners or members.
             let _ = writeln!(
                 y,
-                "  meld-{}:\n    type: poly2d\n    min-y: {min_y}\n    max-y: {max_y}\n    priority: 0\n    flags: {{}}\n    owners: {{}}\n    members: {{}}\n    points:",
-                id.to_lowercase()
+                "  __global__:\n    type: global\n    priority: 0\n    flags: {}\n    owners: {{}}\n    members: {{}}",
+                flags_yaml(&g.global_flags)
+            );
+        }
+        for (id, sel, pts) in rings {
+            let own = g.selection.get(&sel);
+            let mut flags = g.flags.clone();
+            flags.extend(own.map(|r| r.flags.clone()).unwrap_or_default());
+            let pick = |mine: Option<&Vec<String>>, all: &Vec<String>| {
+                let v = mine.filter(|v| !v.is_empty()).unwrap_or(all);
+                if v.is_empty() {
+                    "{}".to_string()
+                } else {
+                    format!("{{players: [{}]}}", v.join(", "))
+                }
+            };
+            let _ = writeln!(
+                y,
+                "  meld-{}:\n    type: poly2d\n    min-y: {min_y}\n    max-y: {max_y}\n    priority: 0\n    flags: {}\n    owners: {}\n    members: {}\n    points:",
+                id.to_lowercase(),
+                flags_yaml(&flags),
+                pick(own.map(|r| &r.owners), &g.owners),
+                pick(own.map(|r| &r.members), &g.members),
             );
             for [x, z] in pts {
                 let _ = writeln!(y, "    - {{x: {x}, z: {z}}}");
             }
         }
         Ok(Some(y))
+    }
+
+    /// `meld-border.sk`: SkBee dust walls along every region of the served
+    /// worlds, drawn near players only. Meld 1's wall renderer (`border.py`),
+    /// without its buffered rings and fling-back.
+    pub fn skript(&self) -> Result<String> {
+        let mut sets = String::new();
+        let mut n = 0;
+        for w in &self.conf.worlds {
+            let Some((_, rings)) = self.rings(w)? else {
+                continue;
+            };
+            let level = level_name(w);
+            let mut count: BTreeMap<String, usize> = BTreeMap::new();
+            for (_, _, ring) in rings {
+                for (a, b) in ring.iter().zip(ring.iter().cycle().skip(1)) {
+                    // At most 24 blocks a segment, so a player's 3 x 3 cells find it.
+                    let len = (((b[0] - a[0]).pow(2) + (b[1] - a[1]).pow(2)) as f64).sqrt();
+                    let steps = (len / 24.0).ceil().max(1.0) as i64;
+                    let at = |t: i64, k: usize| {
+                        a[k] as f64 + (b[k] - a[k]) as f64 * t as f64 / steps as f64
+                    };
+                    for i in 0..steps {
+                        let (ax, az, bx, bz) = (at(i, 0), at(i, 1), at(i + 1, 0), at(i + 1, 1));
+                        let key = format!(
+                            "c{}_{}",
+                            ((ax + bx) / 2.0 / 128.0).floor(),
+                            ((az + bz) / 2.0 / 128.0).floor()
+                        );
+                        let c = count.entry(key.clone()).or_default();
+                        *c += 1;
+                        let _ = writeln!(
+                            sets,
+                            "    set {{meldwall::{level}::{key}::{c}}} to vector({ax:.0}, 0, {az:.0})"
+                        );
+                        let _ = writeln!(
+                            sets,
+                            "    set {{meldwallb::{level}::{key}::{c}}} to vector({bx:.0}, 0, {bz:.0})"
+                        );
+                        n += 1;
+                    }
+                }
+            }
+        }
+        Ok(SKRIPT
+            .replace("{SETS}", sets.trim_end())
+            .replace("{N}", &n.to_string()))
     }
 
     /// Runs the server until it ends: `stop()` (or `meld2 server stop`)
@@ -763,7 +916,8 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     Ok(())
 }
 
-fn dir_bytes(dir: &Path) -> Result<u64> {
+/// Bytes of every file under `dir`.
+pub fn dir_bytes(dir: &Path) -> Result<u64> {
     let mut n = 0;
     for e in std::fs::read_dir(dir)? {
         let e = e?;
@@ -988,6 +1142,87 @@ pub fn find_java(given: Option<PathBuf>, need: u32) -> Result<PathBuf> {
     }
 }
 
+/// A flag value as YAML: strings quoted, numbers and booleans plain.
+fn yaml_scalar(v: &toml::Value) -> Option<String> {
+    match v {
+        toml::Value::String(s) => serde_json::to_string(s).ok(),
+        toml::Value::Integer(i) => Some(i.to_string()),
+        toml::Value::Float(f) => Some(f.to_string()),
+        toml::Value::Boolean(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+fn flags_yaml(flags: &BTreeMap<String, toml::Value>) -> String {
+    let body: Vec<String> = flags
+        .iter()
+        .filter_map(|(k, v)| Some(format!("{k}: {}", yaml_scalar(v)?)))
+        .collect();
+    format!("{{{}}}", body.join(", "))
+}
+
+/// The wall script; `{SETS}` are the segments, bucketed in 128-block cells.
+/// The draw loop is Meld 1's (`border.py` `_wall_draw_block`), whose loop
+/// numbering was fixed in game there.
+const SKRIPT: &str = r#"# meld-border.sk - written by Meld: particle walls along the Meld regions.
+# Needs Skript and SkBee (dust). The WorldGuard regions do the protecting; this only draws.
+# {N} wall segments. Reload with /sk reload meld-border
+
+options:
+    radius: 96
+    wall-h: 6
+    ticks: 10
+
+on load:
+    delete {meldwall::*}
+    delete {meldwallb::*}
+{SETS}
+
+every {@ticks} ticks:
+    loop all players:
+        set {_px} to x-coordinate of loop-player
+        set {_py} to y-coordinate of loop-player
+        set {_pz} to z-coordinate of loop-player
+        set {_w} to world of loop-player
+        set {_wn} to "%world of loop-player%"
+        set {_cx} to floor({_px} / 128)
+        set {_cz} to floor({_pz} / 128)
+        delete {_k::*}
+        set {_k::1} to "c%{_cx} - 1%_%{_cz} - 1%"
+        set {_k::2} to "c%{_cx}%_%{_cz} - 1%"
+        set {_k::3} to "c%{_cx} + 1%_%{_cz} - 1%"
+        set {_k::4} to "c%{_cx} - 1%_%{_cz}%"
+        set {_k::5} to "c%{_cx}%_%{_cz}%"
+        set {_k::6} to "c%{_cx} + 1%_%{_cz}%"
+        set {_k::7} to "c%{_cx} - 1%_%{_cz} + 1%"
+        set {_k::8} to "c%{_cx}%_%{_cz} + 1%"
+        set {_k::9} to "c%{_cx} + 1%_%{_cz} + 1%"
+        loop {_k::*}:
+            loop {meldwall::%{_wn}%::%loop-value-2%::*}:
+                set {_a} to loop-value-3
+                set {_dx} to (x of {_a}) - {_px}
+                set {_dz} to (z of {_a}) - {_pz}
+                if ({_dx} * {_dx}) + ({_dz} * {_dz}) <= {@radius} * {@radius}:
+                    set {_b} to {meldwallb::%{_wn}%::%loop-value-2%::%loop-index-2%}
+                    set {_ax} to x of {_a}
+                    set {_az} to z of {_a}
+                    set {_bx} to x of {_b}
+                    set {_bz} to z of {_b}
+                    set {_n} to ceil(sqrt(({_bx} - {_ax}) ^ 2 + ({_bz} - {_az}) ^ 2) / 4)
+                    if {_n} < 1:
+                        set {_n} to 1
+                    loop integers from 0 to {_n}:
+                        set {_t} to loop-value-4 / {_n}
+                        set {_x} to {_ax} + ({_bx} - {_ax}) * {_t}
+                        set {_z} to {_az} + ({_bz} - {_az}) * {_t}
+                        loop integers from -{@wall-h} to {@wall-h}:
+                            make 1 of dust using dustOption(aqua, 2.2) at location({_x}, {_py} + loop-value-5, {_z}, {_w})
+
+command /meldborder:
+    trigger:
+        send "Meld walls: {N} segments, drawn within {@radius} blocks every {@ticks} ticks"
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1022,9 +1257,17 @@ mod tests {
         .unwrap();
         std::fs::write(
             dir.join("p.toml"),
-            "format = 1\nname = \"V\"\noutput = \"saves\"\n[server]\n[[selection]]\nid = \"vaduz\"\nbbox = [47.1390, 9.5200, 47.1410, 9.5230]\nworld = \"Vaduz\"\n",
+            "format = 1\nname = \"V\"\noutput = \"saves\"\n[server]\nskript_walls = true\n[server.worldguard]\nflags = { greeting = \"Hi\" }\nowners = [\"Teddy563\"]\nglobal_flags = { block-break = \"deny\" }\n[server.worldguard.selection.vaduz]\nflags = { pvp = \"deny\" }\nmembers = [\"Alex_1\"]\n[[selection]]\nid = \"vaduz\"\nbbox = [47.1390, 9.5200, 47.1410, 9.5230]\nworld = \"Vaduz\"\n",
         )
         .unwrap();
+        let text = std::fs::read_to_string(dir.join("p.toml")).unwrap();
+        for (from, to, want) in [
+            ("Alex_1", "a b", "not a player name"),
+            ("selection.vaduz", "selection.nope", "no selection"),
+        ] {
+            let err = format!("{:#}", Project::parse(&text.replace(from, to)).unwrap_err());
+            assert!(err.contains(want), "{err}");
+        }
         let p = Project::load(&dir.join("p.toml")).unwrap();
         let s = Server::of(&p).unwrap();
         assert_eq!(s.conf.worlds, ["Vaduz"]);
@@ -1035,6 +1278,11 @@ mod tests {
             "min-y: -2032",
             "- {x: -128, z: -112}",
             "- {x: 127, z: 111}",
+            "__global__:\n    type: global",
+            "flags: {block-break: \"deny\"}",
+            "flags: {greeting: \"Hi\", pvp: \"deny\"}",
+            "owners: {players: [Teddy563]}",
+            "members: {players: [Alex_1]}",
         ] {
             assert!(yml.contains(want), "{want} not in\n{yml}");
         }
@@ -1088,6 +1336,14 @@ b"
         assert!(srv
             .join("plugins/WorldGuard/worlds/Vaduz/regions.yml")
             .is_file());
+        // The walls: the 256 x 224 ring in segments of at most 24 blocks.
+        let sk =
+            std::fs::read_to_string(srv.join("plugins/Skript/scripts/meld-border.sk")).unwrap();
+        assert!(
+            sk.contains("set {meldwall::Vaduz::c-1_-1::1} to vector(-128, 0, -112)"),
+            "{sk}"
+        );
+        assert!(sk.contains("# 42 wall segments"), "{}", &sk[..300]);
         std::fs::remove_dir_all(dir).unwrap();
     }
 
