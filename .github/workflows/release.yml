@@ -1,20 +1,22 @@
-name: Build Meld
+name: Build Meld 2
 
-# Produces the four portable archives. Each one is a folder the user extracts and runs - it
-# carries its own Python and its own arnis binary, so the target machine needs nothing
-# installed. There is no installer to build and nothing to uninstall.
+# On the meld-2.0 branch this file builds Meld 2 (the Rust workspace in meld2/): the
+# `meld2` CLI and the Meld desktop app (Tauri) for Windows, Linux x86_64 and macOS
+# (universal), attached to the GitHub release of the tag.
 #
-# Unsigned. On Windows that means a SmartScreen prompt on first run ("More info" -> "Run
-# anyway"); on macOS, Gatekeeper refuses outright until the app is notarised, which needs a
-# paid Apple Developer account. Both are cost decisions, not build problems - see the Meld
-# section of the README.
+# Which workflow a tag runs is decided by the file AT THE TAGGED COMMIT. A `v2.*` tag on
+# a meld-2.0 commit runs this file; a Meld 1 tag (`v1.*`, `meld-v*`) on a main commit runs
+# main's Python workflow, which this branch does not touch. This file only answers `v2.*`,
+# so a stray v1 tag on a meld-2.0 commit builds nothing rather than the wrong app.
+#
+# Unsigned, like Meld 1's releases: Windows shows a SmartScreen prompt on first run
+# ("More info" -> "Run anyway"), macOS Gatekeeper needs "Open Anyway" until the app is
+# notarised (a paid Apple Developer account). Arnis is not bundled: the app and the CLI
+# download the pinned Arnis release on first use and check its SHA-256 (meld2/core/src/install.rs).
 
 on:
   push:
-    # Both spellings. `meld-v*` is what the earlier releases used; a bare `v*` matches the arnis
-    # fork's convention and is what gets tagged now. A tag that matches neither builds nothing at
-    # all and does so silently, which is a bad way to find out.
-    tags: ["v*", "meld-v*"]
+    tags: ["v2.*"]
   workflow_dispatch:
     inputs:
       draft:
@@ -25,49 +27,51 @@ on:
 permissions:
   contents: write
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  # Three files carry this release's version and they are read by different code:
-  # packaging/build.py NAMES every asset from CHANGELOG.md's first "## " heading,
-  # src/__init__.py is what a running Meld reports about itself, and the tag is what
-  # users think they downloaded. v1.9.8 shipped assets named Meld-1.9.7-* because the
-  # changelog entry was missing and nothing compared the three - and since the upload
-  # step only adds and overwrites, re-running the build left BOTH namings on the
-  # release. Cheap check, runs before anything is built.
+  # The tag, the workspace version and the release notes file must agree, or the assets
+  # and the app's own version would disagree with what users think they downloaded.
   version-guard:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Tag, CHANGELOG and __init__ must agree
-        shell: bash
+      - name: Tag, meld2/Cargo.toml and release notes must agree
         run: |
-          tag="${GITHUB_REF_NAME#v}"; tag="${tag#meld-v}"
-          changelog=$(grep -m1 '^## ' CHANGELOG.md | sed -E 's/^## +\[?v?([^]) ]+)\]?.*/\1/')
-          module=$(grep -m1 '^__version__' src/__init__.py | cut -d'"' -f2)
-          echo "tag=$tag changelog=$changelog module=$module"
-          if [ "$tag" != "$changelog" ]; then
-            echo "::error::tag $GITHUB_REF_NAME says $tag but CHANGELOG.md's first entry says $changelog - every asset would be named Meld-$changelog-*"
+          tag="${GITHUB_REF_NAME#v}"
+          ws=$(grep -m1 '^version = ' meld2/Cargo.toml | cut -d'"' -f2)
+          echo "tag=$tag workspace=$ws"
+          if [ "$tag" != "$ws" ]; then
+            echo "::error::tag $GITHUB_REF_NAME says $tag but meld2/Cargo.toml says $ws"
             exit 1
           fi
-          if [ "$tag" != "$module" ]; then
-            echo "::error::tag $GITHUB_REF_NAME says $tag but src/__init__.py says $module - the app would misreport its own version"
+          if [ ! -f "meld2/docs/RELEASE-$ws.md" ]; then
+            echo "::error::meld2/docs/RELEASE-$ws.md is missing; it is the release body"
             exit 1
           fi
-          echo "tag, CHANGELOG.md and src/__init__.py all agree on $tag"
 
   test:
     needs: [version-guard]
-    # version-guard is skipped on workflow_dispatch (no tag to check), and a skipped
-    # dependency would otherwise skip this job too.
+    # version-guard is skipped on workflow_dispatch; a skipped dependency would skip this too.
     if: always() && (needs.version-guard.result == 'success' || needs.version-guard.result == 'skipped')
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: "3.12"
-      - run: pip install -r requirements.txt pytest
-      - run: python -m pytest tests/ -q
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: meld2
+      - name: Gates
+        working-directory: meld2
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+          cargo test
 
   build:
     needs: test
@@ -76,130 +80,103 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            tag: win-x64
-            archive: zip
-          - os: ubuntu-latest
-            tag: linux-x64
-            archive: tar.gz
-          # Both architectures are built because a universal2 binary would need universal Python
-          # and universal wheels for every dependency, which Pillow and shapely do not reliably
-          # ship.
-          #
-          # The labels match the arnis fork's release workflow, which builds green on both.
-          # macos-13 sat 18 minutes on "Waiting for a runner to pick up this job" and would have
-          # queued until the 6-hour timeout: that image is retired, so the label has nothing to
-          # answer it. A retired runner label fails by hanging, not by erroring, which is the
-          # part that wastes an afternoon.
-          - os: macos-15-intel
-            tag: mac-x64
-            archive: tar.gz
+            tag: windows-x86_64
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+          - os: ubuntu-22.04
+            tag: linux-x86_64
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+          # One universal build for Intel and Apple silicon, like the pinned Arnis asset.
           - os: macos-latest
-            tag: mac-arm64
-            archive: tar.gz
-
+            tag: macos-universal
+            target: universal-apple-darwin
+            bundles: app,dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          python-version: "3.12"
-
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip wheel
-          pip install -r requirements.txt -r requirements-build.txt
-
-      - name: Linux tray dependencies
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: meld2
+          key: ${{ matrix.tag }}
+      - name: Linux libraries for Tauri
         if: runner.os == 'Linux'
-        # pystray's Linux backends are thin wrappers over GTK/AppIndicator. They are needed at
-        # BUILD time so PyInstaller can find the modules; at run time the user's desktop has to
-        # provide the tray itself, which GNOME no longer does without an extension.
         run: |
           sudo apt-get update
-          sudo apt-get install -y gir1.2-ayatanaappindicator3-0.1 libgirepository1.0-dev \
-                                  libcairo2-dev python3-gi
-          pip install pygobject || echo "pygobject unavailable - Meld falls back to headless"
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-      - name: Build
-        run: python packaging/build.py --archive
-        env:
-          MELD_ARNIS_REPO: Teddy563/arnis
+      - name: Version
+        id: v
+        run: echo "version=$(grep -m1 '^version = ' meld2/Cargo.toml | cut -d'"' -f2)" >> "$GITHUB_OUTPUT"
 
-      - name: Smoke test the frozen build
-        shell: bash
-        # Proves the packaged app starts on a machine that is not the developer's, and - the
-        # part that source tests cannot cover - that nothing tries to write into the read-only
-        # PyInstaller payload. A build that only fails on a user's machine is the whole reason
-        # this step exists.
+      - name: CLI
+        working-directory: meld2
         run: |
-          export MELD_DATA_DIR="${RUNNER_TEMP}/axl-data"
-          if [ "${{ runner.os }}" = "Windows" ]; then
-            ./dist/Meld/Meld-console.exe --check
-          elif [ "${{ runner.os }}" = "macOS" ]; then
-            ./dist/Meld.app/Contents/MacOS/Meld-console --check
+          mkdir -p ../dist
+          name="meld2-${{ steps.v.outputs.version }}-${{ matrix.tag }}"
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cargo build --release -p meld2 --target aarch64-apple-darwin
+            cargo build --release -p meld2 --target x86_64-apple-darwin
+            lipo -create -output meld2 target/aarch64-apple-darwin/release/meld2 target/x86_64-apple-darwin/release/meld2
           else
-            ./dist/Meld/Meld-console --check
+            cargo build --release -p meld2 --target ${{ matrix.target }}
+            cp target/${{ matrix.target }}/release/meld2$([ "${{ runner.os }}" = "Windows" ] && echo .exe) .
           fi
+          # Smoke test on a machine that is not the developer's: it starts, and it finds no
+          # Arnis without downloading one.
+          export MELD2_HOME="$RUNNER_TEMP/meld2-home"
+          ./meld2* --version
+          ./meld2* arnis status
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "../dist/$name.zip" meld2.exe
+          else
+            tar czf "../dist/$name.tar.gz" meld2
+          fi
+
+      - name: Desktop app
+        working-directory: meld2/gui
+        run: |
+          npx --yes @tauri-apps/cli@^2 build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+          b=../target/${{ matrix.target }}/release/bundle
+          v=${{ steps.v.outputs.version }}
+          shopt -s nullglob
+          for f in $b/nsis/*.exe; do cp "$f" "../../dist/Meld-$v-windows-x86_64-setup.exe"; done
+          for f in $b/deb/*.deb; do cp "$f" "../../dist/Meld-$v-linux-x86_64.deb"; done
+          for f in $b/appimage/*.AppImage; do cp "$f" "../../dist/Meld-$v-linux-x86_64.AppImage"; done
+          for f in $b/dmg/*.dmg; do cp "$f" "../../dist/Meld-$v-macos-universal.dmg"; done
+          ls -la ../../dist
 
       - uses: actions/upload-artifact@v4
         with:
           name: Meld-${{ matrix.tag }}
-          path: dist/Meld-*.${{ matrix.archive }}
+          path: dist/*
           if-no-files-found: error
 
   release:
     needs: build
-    # Publish whatever built. `needs: build` alone skips this job entirely when any platform
-    # fails, so one dead runner costs every archive rather than its own - which is exactly what
-    # happened to the arnis fork's release and cost it four platforms of binaries.
+    # Publish whatever built: one dead runner must not cost the other platforms' assets.
     if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         continue-on-error: true
         with:
           path: artifacts
           merge-multiple: true
-      - name: Stable-alias copies
-        # Duplicate each versioned archive under a fixed name (Meld-win-x64.zip and friends) so
-        # that .../releases/latest/download/Meld-win-x64.zip stays valid forever - the versioned
-        # name changes every release, the alias never does. The copies land in artifacts/ so the
-        # release step below uploads them the same way as everything else. A platform that failed
-        # has no archive here and therefore no alias, which is the right outcome: better a 404
-        # than a stale binary from the previous release.
-        run: |
-          shopt -s nullglob
-          for suffix in win-x64.zip mac-arm64.tar.gz mac-x64.tar.gz linux-x64.tar.gz; do
-            for src in artifacts/Meld-*-"$suffix"; do
-              cp "$src" "artifacts/Meld-$suffix"
-            done
-          done
+      - name: Release notes
+        id: notes
+        run: echo "file=meld2/docs/RELEASE-${GITHUB_REF_NAME#v}.md" >> "$GITHUB_OUTPUT"
       - uses: softprops/action-gh-release@v2
         with:
-          # A platform that failed simply has no archive here; it must not sink the release.
           fail_on_unmatched_files: false
           files: artifacts/*
           draft: ${{ inputs.draft || false }}
-          generate_release_notes: true
-          body: |
-            ## Meld
-
-            Portable - extract the folder anywhere and run it. No installer, no Python needed.
-
-            | Download | For |
-            |---|---|
-            | `Meld-*-win-x64.zip` | Windows 10/11 |
-            | `Meld-*-mac-arm64.tar.gz` | Mac (M1 and later) |
-            | `Meld-*-mac-x64.tar.gz` | Mac (Intel) |
-            | `Meld-*-linux-x64.tar.gz` | Linux |
-
-            **Windows** — `Meld.exe` starts in the tray with no window. Run
-            `packaging\Create-Shortcut.ps1` for a desktop icon. First launch shows a SmartScreen
-            warning because the build is unsigned: *More info* → *Run anyway*.
-
-            **macOS** — the build is not notarised, so Gatekeeper blocks it: open
-            *System Settings → Privacy & Security* and choose *Open Anyway*.
-
-            **Linux** — run `packaging/install-shortcut.sh` for a launcher entry. GNOME has no
-            tray without the AppIndicator extension; `./Meld --no-tray` works regardless.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          body_path: ${{ steps.notes.outputs.file }}
