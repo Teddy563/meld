@@ -39,18 +39,24 @@ impl Arnis {
         Ok(serde_json::from_str(line)?)
     }
 
-    fn output(&self, args: &[&str]) -> Result<String> {
+    /// Runs Arnis to the end and returns its stdout. A failure carries the
+    /// last line of stderr, where Arnis puts its `Error: ...`.
+    pub fn output<S: AsRef<std::ffi::OsStr>>(&self, args: &[S]) -> Result<String> {
         let out = Command::new(&self.path)
             .args(args)
             .stdin(Stdio::null())
             .output()
             .with_context(|| format!("starting {}", self.path.display()))?;
         if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr);
             bail!(
-                "{} {} failed ({})",
+                "{} failed ({}): {}",
                 self.path.display(),
-                args.join(" "),
-                out.status
+                out.status,
+                err.lines()
+                    .rev()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or("")
             );
         }
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())

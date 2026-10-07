@@ -104,6 +104,14 @@ const EXTRA_ARGS: &str = "extra_args";
 /// Piece size when a project does not set one. Pieces are what makes a job resumable.
 pub const DEFAULT_UNIT_REGIONS: i64 = 4;
 
+/// Piece size, in regions per side.
+pub fn unit_regions(settings: &Settings) -> i64 {
+    settings
+        .get(UNIT_REGIONS)
+        .and_then(Value::as_integer)
+        .unwrap_or(DEFAULT_UNIT_REGIONS)
+}
+
 /// Checks keys and value types.
 pub fn check(settings: &Settings) -> Result<()> {
     for (key, value) in settings {
@@ -158,10 +166,7 @@ pub struct Invocation {
 /// The command line that builds `sel` into its One World under `saves`.
 pub fn build(sel: &Selection, settings: &Settings, saves: &Path, share: Share) -> Invocation {
     let [s, w, n, e] = sel.bbox;
-    let units = settings
-        .get(UNIT_REGIONS)
-        .and_then(Value::as_integer)
-        .unwrap_or(DEFAULT_UNIT_REGIONS);
+    let units = unit_regions(settings);
     let mut args: Vec<String> = vec![
         "--bbox".into(),
         format!("{s},{w},{n},{e}"),

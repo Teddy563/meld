@@ -4,6 +4,7 @@ use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use meld_core::arnis::Arnis;
 use meld_core::install::{self, Found, Probe};
+use meld_core::plan::{self, Disk};
 use meld_core::progress::Event;
 use meld_core::project::Project;
 use meld_core::queue::{self, Note};
@@ -24,6 +25,12 @@ enum Cmd {
     Run {
         project: PathBuf,
         /// Arnis executable; see `meld2 arnis status` for the lookup order.
+        #[arg(long)]
+        arnis: Option<PathBuf>,
+    },
+    /// Show each selection's pieces, regions and estimated size against free disk.
+    Plan {
+        project: PathBuf,
         #[arg(long)]
         arnis: Option<PathBuf>,
     },
@@ -75,6 +82,11 @@ fn main() {
 fn real_main() -> Result<()> {
     match Cli::parse().cmd {
         Cmd::Run { project, arnis } => run(&project, arnis),
+        Cmd::Plan { project, arnis } => {
+            let project = Project::load(&project)?;
+            let (arnis, _, _) = resolve(arnis, Some(&project))?;
+            show_plan(&project, &arnis)
+        }
         Cmd::Status { project } => status(project.as_deref()),
         Cmd::Stop { project } => {
             let p = Project::load(&project)?;
@@ -165,6 +177,7 @@ fn run(path: &Path, arnis: Option<PathBuf>) -> Result<()> {
         found.source,
         found.path.display()
     );
+    show_plan(&project, &arnis)?;
 
     let dir = state::project_dir(&project);
     let stop_file = dir.join("stop");
@@ -190,6 +203,44 @@ fn run(path: &Path, arnis: Option<PathBuf>) -> Result<()> {
     );
     if summary.failed > 0 {
         bail!("{} selection(s) failed", summary.failed);
+    }
+    Ok(())
+}
+
+/// The `--plan-units` dry run of every selection, summed against free disk.
+/// Fails when the estimate does not fit.
+fn show_plan(project: &Project, arnis: &Arnis) -> Result<()> {
+    let plans = plan::project(project, arnis)?;
+    println!(
+        "  {:<16} {:>6} {:>7} {:>9} {:>9} {:>9}",
+        "selection", "pieces", "regions", "chunks", "to build", "est. MB"
+    );
+    let mut need = 0.0;
+    for (id, p) in &plans {
+        need += p.todo_mb();
+        println!(
+            "  {id:<16} {:>6} {:>7} {:>9} {:>9} {:>9.1}",
+            p.units.len(),
+            p.regions(),
+            p.chunks(),
+            p.todo_chunks(),
+            p.todo_mb()
+        );
+    }
+    let saves = project.output_dir();
+    let free = plan::free_mb(&saves)?;
+    let reserve = project.run.min_free_mb;
+    let line = format!(
+        "~{need:.0} MB to write (+{:.0} % margin), {free} MB free on {}, keeping {reserve} MB free",
+        (plan::MARGIN - 1.0) * 100.0,
+        saves.display()
+    );
+    match plan::verdict(need, free, reserve) {
+        Disk::Ok => println!("  disk: ok, {line}"),
+        Disk::Tight => println!("  disk: WARNING, tight: {line}"),
+        Disk::Short => bail!(
+            "not enough disk: {line}. Free space on that volume, move `output`, shrink the selections, or lower run.min_free_mb"
+        ),
     }
     Ok(())
 }

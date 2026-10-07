@@ -3,6 +3,7 @@
 pub mod args;
 pub mod arnis;
 pub mod install;
+pub mod plan;
 pub mod progress;
 pub mod project;
 pub mod queue;

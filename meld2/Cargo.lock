@@ -329,6 +329,7 @@ version = "2.0.0-alpha.2"
 dependencies = [
  "anyhow",
  "flate2",
+ "libc",
  "semver",
  "serde",
  "serde_json",

@@ -62,6 +62,9 @@ pub struct Budget {
     pub cpu_target: u32,
     /// Memory split evenly between the jobs, in MB. Unset lets each Arnis read free RAM.
     pub ram_budget_mb: Option<u64>,
+    /// Disk space, in MB, a run must leave free on the saves volume after its
+    /// estimated size (plus 25 % margin); a run that would not is refused.
+    pub min_free_mb: u64,
 }
 
 impl Default for Budget {
@@ -70,6 +73,7 @@ impl Default for Budget {
             jobs: 1,
             cpu_target: 90,
             ram_budget_mb: None,
+            min_free_mb: 1024,
         }
     }
 }
