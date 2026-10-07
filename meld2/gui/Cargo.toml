@@ -1,0 +1,17 @@
+[package]
+name = "meld-gui"
+description = "Meld 2 desktop app: the meld2 serve UI in a window, with a tray"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meld2 = { path = "../cli" }
+meld-core = { path = "../core" }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tiny_http = "0.12"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
