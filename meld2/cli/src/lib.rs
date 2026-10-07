@@ -12,6 +12,7 @@ use meld_core::state::{self, State};
 use std::path::{Path, PathBuf};
 
 mod assets;
+pub mod bench;
 pub mod serve;
 
 /// Finds (or downloads) Arnis and checks its version and capabilities.
@@ -61,6 +62,7 @@ pub fn run_project(
     let stop_file = dir.join("stop");
     let _ = std::fs::remove_file(&stop_file);
     let mut report = Report::new(&project.path, &project.name);
+    let mut built: Vec<String> = vec![];
     let summary = queue::run(
         &project,
         &arnis,
@@ -69,6 +71,11 @@ pub fn run_project(
         &|| stop_file.exists(),
         &mut |id, note| {
             report.note(id, &note);
+            if let Note::Finished(st) = &note {
+                if st.status == state::Status::Done {
+                    built.push(id.to_string());
+                }
+            }
             on(id, &note);
         },
     )?;
@@ -94,6 +101,9 @@ pub fn run_project(
         "final check: {checked} built selection(s), {missing} chunk(s) missing"
     ));
     let written = report.write(&dir, summary)?;
+    if let Some(ext) = &project.run.export {
+        auto_export(&project, &built, ext, say);
+    }
     say(format!(
         "{}: {} done, {} skipped, {} stopped, {} failed (report: {})",
         project.name,
@@ -104,6 +114,36 @@ pub fn run_project(
         written.display()
     ));
     Ok(summary)
+}
+
+/// `[run] export`: packs each world a selection of this run built, into
+/// `exports/` beside the project file. A failure is reported, not fatal.
+fn auto_export(project: &Project, built: &[String], ext: &str, say: &mut dyn FnMut(String)) {
+    let dir = project
+        .path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("exports");
+    for world in project.worlds() {
+        let ran = project
+            .selections
+            .iter()
+            .any(|s| s.world == world && built.contains(&s.id));
+        if !ran {
+            continue;
+        }
+        let src = project.output_dir().join(&world);
+        let to = meld_core::export::name_in(&dir, &src, ext);
+        match meld_core::export::export(&src, &to, project.run.min_free_mb) {
+            Ok(e) => say(format!(
+                "export: {} ({} file(s), {:.1} MB)",
+                to.display(),
+                e.files,
+                e.zip_bytes as f64 / 1e6
+            )),
+            Err(e) => say(format!("export of {world} failed: {e:#}")),
+        }
+    }
 }
 
 /// `--rebuild`: forgets the selections' saved state and Arnis's partial job,
@@ -192,4 +232,46 @@ pub fn show_plan(
         ),
     }
     Ok(plans)
+}
+
+/// The cache's parts (its top-level folders and files) with their sizes in bytes.
+pub fn cache_parts(root: &Path) -> Vec<(String, u64)> {
+    let mut parts: Vec<(String, u64)> = std::fs::read_dir(root)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| {
+            let p = e.path();
+            let bytes = if p.is_dir() {
+                meld_core::server::dir_bytes(&p).unwrap_or(0)
+            } else {
+                e.metadata().map_or(0, |m| m.len())
+            };
+            (e.file_name().to_string_lossy().into_owned(), bytes)
+        })
+        .collect();
+    parts.sort();
+    parts
+}
+
+/// Empties one part of the cache, or all of it; Arnis fetches again what it needs.
+pub fn clear_cache(root: &Path, what: &str) -> Result<()> {
+    let names: Vec<String> = cache_parts(root).into_iter().map(|p| p.0).collect();
+    let pick: Vec<&String> = names
+        .iter()
+        .filter(|n| what == "all" || *n == what)
+        .collect();
+    if pick.is_empty() {
+        bail!("no cache part {what:?}; there are: {}", names.join(", "));
+    }
+    for n in pick {
+        let p = root.join(n);
+        let r = if p.is_dir() {
+            std::fs::remove_dir_all(&p)
+        } else {
+            std::fs::remove_file(&p)
+        };
+        r.with_context(|| format!("removing {}", p.display()))?;
+    }
+    Ok(())
 }

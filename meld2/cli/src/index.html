@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Meld</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<link rel="stylesheet" href="assets/leaflet/leaflet.css">
+<link rel="stylesheet" href="assets/leaflet/leaflet.draw.css">
+<script src="assets/leaflet/leaflet.js"></script>
+<script src="assets/leaflet/leaflet.draw.js"></script>
 <style>
   /* The frame is Meld 1.9.9's (web/index.html): status rail left, full-bleed map,
      settings rail right. The components and colours are Arnis at Scale's
@@ -1229,6 +1229,153 @@ api("/api/options").then((x) => { options = x; if (cur) renderSettings(); }, () 
 arnisCard();
 route();
 
+</script>
+<!-- meld2-extras: the System, Benchmarks and Presets cards and the map's place search.
+     One block, appended; it adds its cards to #sideL / #side and a Leaflet control,
+     and uses the page's api(), esc(), $, map, cur and openProject(). -->
+<style id="meld2-extras-css">
+  #x-spark { width: 100%; height: 46px; display: block; margin-top: 6px; }
+  .x-search { background: var(--ui-card, #2a2a2a); padding: 4px; border-radius: 6px; width: 260px; }
+  .x-search input { width: 100%; box-sizing: border-box; }
+  .x-search div { cursor: pointer; font-size: 12px; padding: 3px 4px; color: var(--ui-text, #ddd); }
+  .x-search div:hover { background: rgba(255,255,255,.08); }
+  .x-table { font-size: 11.5px; border-collapse: collapse; width: 100%; }
+  .x-table td, .x-table th { padding: 2px 4px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .x-table td:first-child, .x-table th:first-child { text-align: left; }
+</style>
+<script id="meld2-extras">
+"use strict";
+(() => {
+  const card = (id, icon, title, sub, body, collapsed) => {
+    const d = document.createElement("div");
+    d.className = "card" + (collapsed ? " collapsed" : "");
+    d.id = id;
+    d.innerHTML = `<div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-${icon}"/></svg></span><div><h3>${title}</h3><p>${sub}</p></div>${collapsed !== undefined ? '<svg class="icon chev"><use href="#i-chevron"/></svg>' : ""}</div><div class="card-body">${body}</div>`;
+    return d;
+  };
+
+  // ---- System: CPU, RAM, disk now and the last five minutes (Meld 1's left rail) ----
+  $("sideL").appendChild(card("cardSystem", "monitor", "System", "CPU, memory and disk",
+    `<div class="stat" id="x-cpu">CPU –</div><div class="bar"><i id="x-cpub"></i></div>
+     <div class="stat" id="x-ram">RAM –</div><div class="bar"><i id="x-ramb" class="ok"></i></div>
+     <div class="stat" id="x-disk">Disk –</div>
+     <canvas id="x-spark" title="CPU (gold) and RAM (green), last five minutes"></canvas>
+     <div class="stat" id="x-update"></div>`));
+  const gb = (mb) => (mb / 1024).toFixed(1);
+  function spark(hist) {
+    const cv = $("x-spark"), w = cv.clientWidth || 240, h = 46, dpr = window.devicePixelRatio || 1;
+    cv.width = w * dpr; cv.height = h * dpr;
+    const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    const line = (vals, color) => {
+      if (vals.length < 2) return;
+      const step = w / 149;
+      g.beginPath();
+      vals.forEach((v, i) => { const x = w - (vals.length - 1 - i) * step, y = h - (v / 100) * (h - 2) - 1; i ? g.lineTo(x, y) : g.moveTo(x, y); });
+      g.strokeStyle = color; g.lineWidth = 1.5; g.stroke();
+    };
+    line(hist.map((s) => s.ram_total_mb ? 100 * s.ram_used_mb / s.ram_total_mb : 0), "#86b45a");
+    line(hist.map((s) => s.cpu_pct || 0), "#e3a417");
+  }
+  async function system() {
+    try {
+      const s = await api("/api/system"), n = s.now;
+      if (n.cpu_pct != null) { $("x-cpu").textContent = `CPU ${n.cpu_pct.toFixed(0)} % · ${s.cores} threads`; $("x-cpub").style.width = n.cpu_pct + "%"; }
+      if (n.ram_total_mb) { $("x-ram").textContent = `RAM ${gb(n.ram_used_mb)} / ${gb(n.ram_total_mb)} GB`; $("x-ramb").style.width = (100 * n.ram_used_mb / n.ram_total_mb) + "%"; }
+      if (n.disk_total_mb) $("x-disk").textContent = `Disk ${gb(n.disk_free_mb)} GB free of ${gb(n.disk_total_mb)} GB`;
+      spark(s.history);
+    } catch (_) { /* the next poll tries again */ }
+  }
+  system(); setInterval(system, 2000);
+  api("/api/update").then((u) => {
+    if (u.newer) $("x-update").innerHTML = `Meld ${esc(u.newer)} is out: <a href="${esc(u.url)}" target="_blank" rel="noopener">release notes</a>`;
+  }, () => {});
+
+  // ---- place search on the map (Nominatim through the server) ----
+  const Search = L.Control.extend({
+    onAdd() {
+      const d = L.DomUtil.create("div", "x-search");
+      d.innerHTML = `<input id="x-q" placeholder="Search a place…" autocomplete="off"><div id="x-res"></div>`;
+      L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d);
+      return d;
+    },
+  });
+  new Search({ position: "topleft" }).addTo(map);
+  let places = [];
+  $("x-q").addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter" || e.target.value.trim().length < 2) return;
+    $("x-res").textContent = "Searching…";
+    try { places = await api(`/api/search?q=${encodeURIComponent(e.target.value.trim())}`); }
+    catch (err) { $("x-res").textContent = err.message; return; }
+    $("x-res").innerHTML = places.map((p, i) => `<div data-i="${i}">${esc(p.name)}</div>`).join("") || "No place found.";
+  });
+  $("x-res").addEventListener("click", (e) => {
+    const p = places[e.target.dataset.i]; if (!p) return;
+    if (p.bbox) map.fitBounds([[p.bbox[0], p.bbox[1]], [p.bbox[2], p.bbox[3]]]); else map.setView([p.lat, p.lon], 14);
+    $("x-res").innerHTML = "";
+  });
+
+  // ---- Presets: the project's [defaults] under a name ----
+  $("side").appendChild(card("cardPresets", "sliders", "Presets", "Save or apply [defaults]",
+    `<select id="x-presets" style="width:100%"></select>
+     <div class="row"><button id="x-apply">Apply to project</button><button id="x-pdel" class="danger">Delete</button></div>
+     <div class="row"><input id="x-pname" placeholder="name" maxlength="64" style="flex:1;min-width:0"><button id="x-psave">Save project's</button></div>
+     <div class="msg" id="x-pmsg"></div>`, true));
+  async function presets() {
+    const list = await api("/api/presets").catch(() => []);
+    $("x-presets").innerHTML = list.map((p) => `<option value="${esc(p.name)}">${esc(p.name)} (${Object.keys(p.defaults).length})${p.description ? " · " + esc(p.description) : ""}</option>`).join("") || "<option value=''>no presets yet</option>";
+  }
+  const needProject = () => { if (!cur) { say("x-pmsg", "Open a project first.", true); return false; } return true; };
+  $("x-psave").onclick = async () => {
+    if (!needProject()) return;
+    try { const r = await post(`/api/projects/${cur.name}/preset?save=${encodeURIComponent($("x-pname").value.trim())}`);
+      say("x-pmsg", "Saved" + (r.left_out.length ? `; left out: ${r.left_out.join(", ")}` : ".")); presets(); }
+    catch (e) { say("x-pmsg", e.message, true); }
+  };
+  $("x-apply").onclick = async () => {
+    if (!needProject() || !$("x-presets").value) return;
+    try { await post(`/api/projects/${cur.name}/preset?apply=${encodeURIComponent($("x-presets").value)}`); say("x-pmsg", "Applied."); openProject(cur.name, true, true).then(renderSettings); }
+    catch (e) { say("x-pmsg", e.message, true); }
+  };
+  $("x-pdel").onclick = async () => {
+    if (!$("x-presets").value) return;
+    try { await api(`/api/presets/${$("x-presets").value}`, { method: "DELETE" }); presets(); } catch (e) { say("x-pmsg", e.message, true); }
+  };
+  presets();
+
+  // ---- Benchmarks: run a small matrix, see the results ----
+  $("side").appendChild(card("cardBench", "ruler", "Benchmarks", "The same area, one build per arm",
+    `<div class="row"><input id="x-bw" placeholder="workers e.g. 1,2" style="flex:1;min-width:0"><input id="x-bc" placeholder="cells e.g. 1,2" style="flex:1;min-width:0"></div>
+     <button class="wide" id="x-brun">Run bench</button>
+     <select id="x-blist" style="width:100%;margin-top:6px"></select>
+     <div class="msg" id="x-bmsg"></div><div id="x-bout" style="overflow:auto"></div>`, true));
+  const nums = (v) => v.split(",").map((x) => x.trim()).filter(Boolean).map((x) => isNaN(+x) ? x : +x);
+  async function benches(show) {
+    const b = await api("/api/bench").catch(() => ({ benches: [] }));
+    $("x-blist").innerHTML = b.benches.map((x) => `<option value="${x.id}">${new Date(x.started * 1000).toLocaleString()} · ${x.arms.length} arm(s)${x.ab ? " · A/B" : ""}${x.finished ? "" : " · running"}</option>`).join("") || "<option value=''>no benches yet</option>";
+    if (b.running) say("x-bmsg", `bench ${b.running} running…`);
+    if (show && b.benches.length) report(b.benches[0].id);
+  }
+  async function report(id) {
+    if (!id) return;
+    const r = await api(`/api/bench/${id}`);
+    const f = (v, d = 1) => v == null ? "–" : (+v).toFixed(d);
+    $("x-bout").innerHTML = `<table class="x-table"><tr><th>arm</th><th>wall s</th><th>CPU %</th><th>RSS MB</th><th>tree MB</th><th>chunks/s</th><th>MB</th></tr>${r.rows.map((x) => x.error
+      ? `<tr><td>${esc(x.name)}</td><td colspan="6" class="bad">${esc(x.error)}</td></tr>`
+      : `<tr><td>${esc(x.name)}</td><td>${f(x.wall_s)}</td><td>${f(x.cpu_pct, 0)}</td><td>${x.peak_rss_mb ?? "–"}</td><td>${x.tree_peak_mb ?? "–"}</td><td>${f(x.chunks_per_s, 0)}</td><td>${f(x.disk_mb)}</td></tr>`).join("")}</table>
+      ${r.pair_error ? `<div class="stat bad">A/B: ${esc(r.pair_error)}</div>` : r.pair_diff ? `<div class="stat good">A/B: same pair${r.pair_diff.length ? "; differs in " + esc(r.pair_diff.join("; ")) : ""}</div>` : ""}`;
+  }
+  $("x-blist").onchange = (e) => report(e.target.value);
+  $("x-brun").onclick = async () => {
+    const body = { workers: nums($("x-bw").value), cells: nums($("x-bc").value) };
+    try { const r = await post("/api/bench", JSON.stringify(body)); say("x-bmsg", `bench ${r.id} started`); benches(); }
+    catch (e) { say("x-bmsg", e.message, true); }
+  };
+  es.addEventListener("message", (m) => {
+    const e = JSON.parse(m.data);
+    if (e.project === "bench" && e.note === "bench-end") { say("x-bmsg", e.error ? e.error : "bench finished", !!e.error); benches(true); }
+  });
+  benches(true);
+})();
 </script>
 </body>
 </html>

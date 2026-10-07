@@ -3,10 +3,12 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use meld_core::arnis::Arnis;
+use meld_core::bench;
 use meld_core::convert;
 use meld_core::export;
 use meld_core::import;
 use meld_core::install;
+use meld_core::preset;
 use meld_core::progress::Event;
 use meld_core::project::Project;
 use meld_core::queue::Note;
@@ -42,6 +44,9 @@ enum Cmd {
         project: PathBuf,
         #[arg(long)]
         arnis: Option<PathBuf>,
+        /// Print each selection's Arnis command line instead (no Arnis needed).
+        #[arg(long)]
+        print_cmd: bool,
     },
     /// Show the saved state of one project, or list every project Meld knows.
     Status { project: Option<PathBuf> },
@@ -89,13 +94,17 @@ enum Cmd {
         #[arg(long)]
         threads: Option<usize>,
     },
-    /// Zip a world (a backup, or to hand it on), after checking the disk.
+    /// Pack a world into a zip or a tar.zst (a backup, or to hand it on),
+    /// after checking the disk; the archive is read back before it appears.
     Export {
         /// The world folder (with level.dat).
         world: PathBuf,
-        /// The zip to write [default: `<world>-<unix time>.zip` beside it].
+        /// The archive to write [default: `<world>-<unix time>.<format>` beside it].
         #[arg(long)]
         out: Option<PathBuf>,
+        /// `zip` or `tar.zst` (used when --out is not given).
+        #[arg(long, default_value = "zip")]
+        format: String,
         /// Disk to keep free after the zip, in MB.
         #[arg(long, default_value_t = 1024)]
         min_free_mb: u64,
@@ -103,6 +112,69 @@ enum Cmd {
     /// Which Arnis Meld uses, and installing the pinned release.
     #[command(subcommand)]
     Arnis(ArnisCmd),
+    /// Build one area once per arm and record wall time, CPU, peak RSS,
+    /// chunks/s and disk size (bench.json, bench.csv, bench.md). Arms are
+    /// every combination of --workers, --cells, --threads and --scale, or an
+    /// A/B (--b-arnis, --a, --b) that must build the same pair.
+    Bench {
+        /// min_lat,min_lng,max_lat,max_lng [default: central Vaduz, 3 x 3 regions].
+        #[arg(long, value_delimiter = ',')]
+        bbox: Option<Vec<f64>>,
+        /// A setting every arm shares, `key=value` (repeatable).
+        #[arg(long = "set")]
+        set: Vec<String>,
+        /// Workers per arm, e.g. `1,2,auto`.
+        #[arg(long, value_delimiter = ',')]
+        workers: Vec<String>,
+        /// Piece sizes (unit_regions), e.g. `1,2`.
+        #[arg(long, value_delimiter = ',')]
+        cells: Vec<i64>,
+        /// Threads per arm, e.g. `4,8`.
+        #[arg(long, value_delimiter = ',')]
+        threads: Vec<i64>,
+        /// Scales per arm, e.g. `1,0.5`.
+        #[arg(long, value_delimiter = ',')]
+        scale: Vec<f64>,
+        /// Builds of each arm.
+        #[arg(long, default_value_t = 1)]
+        repeats: u32,
+        /// The Arnis to bench (side A of an A/B).
+        #[arg(long)]
+        arnis: Option<PathBuf>,
+        /// A/B: side B's Arnis.
+        #[arg(long)]
+        b_arnis: Option<PathBuf>,
+        /// A/B: a setting only side A has, `key=value` (repeatable).
+        #[arg(long = "a")]
+        a: Vec<String>,
+        /// A/B: a setting only side B has, `key=value` (repeatable).
+        #[arg(long = "b")]
+        b: Vec<String>,
+        /// Folder for the worlds and the report [default: <data>/bench/<unix time>].
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Named presets of `[defaults]`: list, show, save from a project, apply
+    /// to one, delete, or import Meld 1 presets.
+    #[command(subcommand)]
+    Preset(PresetCmd),
+    /// Look a place up (OpenStreetMap Nominatim, one request a second).
+    Search {
+        #[arg(required = true, num_args = 1..)]
+        query: Vec<String>,
+    },
+    /// Whether a newer Meld is released (GitHub, Teddy563/meld). Installs nothing.
+    Update {
+        /// Ask now, not the answer remembered for a day.
+        #[arg(long)]
+        force: bool,
+    },
+    /// The Arnis cache in the data dir: its parts and sizes; --clear empties one.
+    Cache {
+        /// A part's name, or `all`.
+        #[arg(long)]
+        clear: Option<String>,
+    },
     /// A Leaf or Paper server for the project's worlds, from its `[server]` table.
     #[command(subcommand)]
     Server(ServerCmd),
@@ -147,6 +219,34 @@ enum ServerCmd {
         project: PathBuf,
         #[arg(long, default_value_t = 20)]
         lines: usize,
+    },
+}
+
+#[derive(Subcommand)]
+enum PresetCmd {
+    List,
+    Show {
+        name: String,
+    },
+    /// Save a project's `[defaults]` (machine and place keys left out).
+    Save {
+        name: String,
+        #[arg(long)]
+        from: PathBuf,
+        #[arg(long, default_value = "")]
+        description: String,
+    },
+    /// Lay a preset over a project's `[defaults]` (the file is rewritten without comments).
+    Apply {
+        name: String,
+        project: PathBuf,
+    },
+    Delete {
+        name: String,
+    },
+    /// Import Meld 1 presets: a preset .json or a folder of them.
+    Import {
+        path: PathBuf,
     },
 }
 
@@ -201,7 +301,24 @@ fn real_main() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::Plan { project, arnis } => {
+        Cmd::Plan {
+            project,
+            print_cmd: true,
+            ..
+        } => {
+            let p = Project::load(&project)?;
+            for s in &p.selections {
+                let inv = meld_core::args::build(
+                    s,
+                    &p.settings_for(s),
+                    &p.output_dir(),
+                    Default::default(),
+                );
+                println!("[{}] arnis {}", s.id, inv.args.join(" "));
+            }
+            Ok(())
+        }
+        Cmd::Plan { project, arnis, .. } => {
             let project = Project::load(&project)?;
             let (arnis, _, _) = resolve(arnis, Some(&project))?;
             show_plan(&project, &arnis, &mut |line| println!("{line}")).map(drop)
@@ -222,6 +339,120 @@ fn real_main() -> Result<()> {
             Ok(())
         }
         Cmd::Arnis(cmd) => arnis_cmd(cmd),
+        Cmd::Bench {
+            bbox,
+            set,
+            workers,
+            cells,
+            threads,
+            scale,
+            repeats,
+            arnis,
+            b_arnis,
+            a,
+            b,
+            out,
+        } => {
+            let ab = b_arnis.is_some() || !a.is_empty() || !b.is_empty();
+            if ab
+                && !(workers.is_empty()
+                    && cells.is_empty()
+                    && threads.is_empty()
+                    && scale.is_empty())
+            {
+                bail!("an A/B (--b-arnis, --a, --b) takes no matrix; put shared settings in --set");
+            }
+            let bbox = match bbox.as_deref() {
+                None => None,
+                Some(&[s, w, n, e]) => Some([s, w, n, e]),
+                Some(_) => bail!("--bbox: min_lat,min_lng,max_lat,max_lng"),
+            };
+            let req = bench::Request {
+                bbox,
+                set: pairs(&set)?,
+                workers: workers.iter().map(|w| value(w)).collect(),
+                cells,
+                threads,
+                scales: scale,
+                repeats,
+                arnis,
+                ab: ab
+                    .then(|| -> Result<bench::Ab> {
+                        Ok(bench::Ab {
+                            a: pairs(&a)?,
+                            b: pairs(&b)?,
+                            b_arnis,
+                        })
+                    })
+                    .transpose()?,
+            };
+            let out = out.unwrap_or_else(|| {
+                let t = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_secs());
+                state::data_dir().join("bench").join(t.to_string())
+            });
+            let mut tenths = HashMap::new();
+            let r = meld2::bench::run(&req, &out, &mut |l| println!("{l}"), &mut |id, note| {
+                show(id, note, &mut tenths)
+            })?;
+            println!("\n{}", r.table());
+            if let Some(d) = &r.pair_diff {
+                println!(
+                    "A/B: the same pair (frame and areas equal); manifests differ in: {}",
+                    if d.is_empty() {
+                        "nothing".into()
+                    } else {
+                        d.join("; ")
+                    }
+                );
+            }
+            println!("report: {}", out.join("bench.json").display());
+            if let Some(e) = &r.pair_error {
+                bail!("A/B: {e}");
+            }
+            if r.rows.iter().any(|r| r.error.is_some()) {
+                bail!("some arms failed");
+            }
+            Ok(())
+        }
+        Cmd::Preset(cmd) => preset_cmd(cmd),
+        Cmd::Search { query } => {
+            for p in meld_core::web::search(&query.join(" "), false)? {
+                let bbox = p.bbox.map_or(String::new(), |b| {
+                    format!("  bbox {},{},{},{}", b[0], b[1], b[2], b[3])
+                });
+                println!("{:.5},{:.5}  {}{bbox}", p.lat, p.lon, p.name);
+            }
+            Ok(())
+        }
+        Cmd::Update { force } => {
+            let u = meld_core::web::check_update(&state::data_dir(), force);
+            match (&u.newer, &u.error) {
+                (Some(v), _) => println!(
+                    "Meld {v} is out (this is {}): {}",
+                    u.current,
+                    u.url.as_deref().unwrap_or("")
+                ),
+                (None, Some(e)) => bail!("could not check: {e}"),
+                (None, None) => println!("Meld {} is the newest release", u.current),
+            }
+            Ok(())
+        }
+        Cmd::Cache { clear } => {
+            let root = state::data_dir().join("cache");
+            if let Some(what) = clear {
+                meld2::clear_cache(&root, &what)?;
+                println!("cleared {what}");
+            }
+            let parts = meld2::cache_parts(&root);
+            for (name, bytes) in &parts {
+                println!("  {name:<24} {:>10.1} MB", *bytes as f64 / 1e6);
+            }
+            let total: u64 = parts.iter().map(|p| p.1).sum();
+            println!("{} ({:.1} MB)", root.display(), total as f64 / 1e6);
+            Ok(())
+        }
         Cmd::Server(cmd) => server_cmd(cmd),
         Cmd::Convert {
             world,
@@ -253,10 +484,14 @@ fn real_main() -> Result<()> {
         Cmd::Export {
             world,
             out,
+            format,
             min_free_mb,
         } => {
+            if !export::FORMATS.contains(&format.as_str()) {
+                bail!("--format: zip or tar.zst");
+            }
             let to = out.unwrap_or_else(|| {
-                export::name_in(world.parent().unwrap_or(Path::new(".")), &world)
+                export::name_in(world.parent().unwrap_or(Path::new(".")), &world, &format)
             });
             let e = export::export(&world, &to, min_free_mb)?;
             println!(
@@ -379,6 +614,130 @@ fn save_import(from: &Path, to: &Path, imported: import::Imported) -> Result<()>
     list("NOT MAPPED", &imported.unmapped);
     for note in &imported.notes {
         println!("  note: {note}");
+    }
+    Ok(())
+}
+
+/// A setting value from the command line: TOML when it parses (`2`, `0.5`,
+/// `true`, `"x"`), else the text.
+fn value(v: &str) -> toml::Value {
+    format!("x = {v}")
+        .parse::<toml::Table>()
+        .ok()
+        .and_then(|t| t.get("x").cloned())
+        .unwrap_or_else(|| v.into())
+}
+
+/// `key=value` arguments as settings.
+fn pairs(list: &[String]) -> Result<meld_core::project::Settings> {
+    list.iter()
+        .map(|kv| {
+            let (k, v) = kv
+                .split_once('=')
+                .with_context(|| format!("{kv:?}: use key=value"))?;
+            Ok((k.trim().to_string(), value(v.trim())))
+        })
+        .collect()
+}
+
+fn preset_cmd(cmd: PresetCmd) -> Result<()> {
+    let data = state::data_dir();
+    match cmd {
+        PresetCmd::List => {
+            let all = preset::list(&data);
+            if all.is_empty() {
+                println!("no presets in {}", preset::dir(&data).display());
+            }
+            for p in all {
+                println!(
+                    "{:<24} {} key(s)  {}",
+                    p.name,
+                    p.defaults.len(),
+                    p.description
+                );
+            }
+        }
+        PresetCmd::Show { name } => {
+            let p = preset::load(&data, &name)?;
+            println!("# {}\n{}", p.description, toml::to_string(&p.defaults)?);
+        }
+        PresetCmd::Save {
+            name,
+            from,
+            description,
+        } => {
+            let p = Project::load(&from)?;
+            let gone = preset::save(&data, &name, &description, &p.defaults)?;
+            println!("saved {name} ({} key(s))", p.defaults.len() - gone.len());
+            if !gone.is_empty() {
+                println!("  left out (machine or place): {}", gone.join(", "));
+            }
+        }
+        PresetCmd::Apply { name, project } => {
+            let p = preset::load(&data, &name)?;
+            let text = std::fs::read_to_string(&project)
+                .with_context(|| format!("reading {}", project.display()))?;
+            std::fs::write(&project, preset::apply(&text, &p)?)?;
+            println!("applied {name} to {}", project.display());
+        }
+        PresetCmd::Delete { name } => {
+            preset::delete(&data, &name)?;
+            println!("deleted {name}");
+        }
+        PresetCmd::Import { path } => {
+            let files: Vec<PathBuf> = if path.is_dir() {
+                let mut v: Vec<PathBuf> = std::fs::read_dir(&path)?
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|p| p.extension().is_some_and(|x| x == "json"))
+                    .collect();
+                v.sort();
+                v
+            } else {
+                vec![path]
+            };
+            let mut n = 0;
+            for f in files {
+                let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&f)?)
+                    .with_context(|| format!("in {}", f.display()))?;
+                if json.get("meld_preset").is_none() {
+                    continue;
+                }
+                let imported = import::preset(&json)?;
+                let name: String = f
+                    .file_stem()
+                    .map_or("preset".into(), |s| s.to_string_lossy().into_owned())
+                    .chars()
+                    .map(|c| {
+                        if c.is_ascii_alphanumeric() || c == '-' {
+                            c
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect();
+                let p = preset::parse(&name, &imported.toml)?;
+                let desc = json["description"]
+                    .as_str()
+                    .or(json["name"].as_str())
+                    .unwrap_or_default();
+                let gone = preset::save(&data, &name, desc, &p.defaults)?;
+                println!(
+                    "{} -> preset {name} ({} key(s))",
+                    f.display(),
+                    p.defaults.len()
+                );
+                if !imported.unmapped.is_empty() {
+                    println!("  NOT MAPPED: {}", imported.unmapped.join(", "));
+                }
+                if !gone.is_empty() {
+                    println!("  left out: {}", gone.join(", "));
+                }
+                n += 1;
+            }
+            if n == 0 {
+                bail!("no Meld 1 preset found");
+            }
+        }
     }
     Ok(())
 }

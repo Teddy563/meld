@@ -73,9 +73,30 @@ const FILES: &[(&str, &[u8])] = files![
     "tree-size-tall.webp",
     "water-detail-default.webp",
     "water-detail-scaled.webp",
+    // Leaflet 1.9.4 (BSD-2) and Leaflet.draw 1.0.4 (MIT), so the map works offline.
+    "leaflet/leaflet.js",
+    "leaflet/leaflet.css",
+    "leaflet/leaflet.draw.js",
+    "leaflet/leaflet.draw.css",
+    "leaflet/images/layers.png",
+    "leaflet/images/layers-2x.png",
+    "leaflet/images/marker-icon.png",
+    "leaflet/images/marker-icon-2x.png",
+    "leaflet/images/marker-shadow.png",
+    "leaflet/images/spritesheet.png",
+    "leaflet/images/spritesheet-2x.png",
+    "leaflet/images/spritesheet.svg",
 ];
 
-/// The file named `name`, if the page has one by that name.
-pub fn get(name: &str) -> Option<&'static [u8]> {
-    FILES.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
+/// The file named `name`, if the page has one by that name, with its type.
+pub fn get(name: &str) -> Option<(&'static [u8], &'static str)> {
+    let (_, bytes) = FILES.iter().find(|(n, _)| *n == name)?;
+    let kind = match name.rsplit('.').next() {
+        Some("js") => "text/javascript",
+        Some("css") => "text/css",
+        Some("png") => "image/png",
+        Some("svg") => "image/svg+xml",
+        _ => "image/webp",
+    };
+    Some((bytes, kind))
 }
