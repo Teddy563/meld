@@ -1,0 +1,202 @@
+{
+  "_": "The settings form: Arnis at Scale's Settings page (src/gui/index.html, arnis-scale-phase-6) in its order, with its labels, help, controls and defaults, over Meld's keys. Served at /api/options; the page renders it. Row: k key ('@' = a project or selection field), l label, d help line, tip tooltip, t control, o options, def Arnis's default, icon, on (enabled when) and show (shown when) conditions, why (the hint while disabled), run (a [run] key on the project), scope (project or selection only), badge (not in Arnis's GUI). A test in args.rs fails when a setting Meld knows is neither here nor under hidden.",
+  "sections": [
+    { "id": "world", "title": "World", "desc": "How the world plays when you first join it.", "icon": "globe", "rows": [
+      { "k": "@id", "l": "Selection", "d": "Its name in the list and in the project file.", "t": "text", "icon": "tag", "scope": "selection", "badge": "Meld" },
+      { "k": "gamemode", "l": "Game Mode", "tip": "Player game mode for the generated world.", "t": "cards", "def": "creative", "o": [
+        ["survival", "Survival", "Gather, craft and survive with health and hunger.", "heart"],
+        ["creative", "Creative", "Unlimited blocks and free flight.", "blocks"],
+        ["spectator", "Spectator", "Fly through everything without touching it.", "eye"] ] },
+      { "k": "world_time", "l": "World Time", "d": "Time of day the world starts at.", "t": "time", "icon": "sun", "def": 6000 },
+      { "k": "world_type", "l": "World Type", "d": "What lies past the edge of the area. Java only.", "tip": "What Minecraft generates past the edge of the area (Java only). Void leaves empty space, so the area is an island; Flat continues it with a flat grass plain.", "t": "seg", "icon": "layers", "o": "void=Void;flat=Flat", "def": "void" },
+      { "k": "map_item", "l": "World Map Item", "d": "Start with a map of the whole area in your inventory. Java only.", "t": "switch", "icon": "map", "def": true },
+      { "k": "@world", "l": "Custom World Name", "d": "The One World this selection builds into. Selections with the same name extend one world.", "tip": "Arnis's One World is always on in Meld: every selection joins the world named here, at its real position.", "t": "text", "icon": "pencil", "scope": "selection" }
+    ] },
+    { "id": "generation", "title": "Generation", "desc": "Choose what gets built from the real-world map data.", "icon": "box", "rows": [
+      { "k": "mode", "l": "Generation Mode", "t": "cards", "def": "geo-terrain", "o": [
+        ["geo-terrain", "Objects + Terrain", "Buildings, roads and nature on real elevation.", "earth"],
+        ["geo-only", "Objects only", "Buildings, roads and nature on flat ground.", "building"],
+        ["terrain-only", "Terrain only", "Real elevation and land cover without buildings or roads.", "mountain"] ] },
+      { "k": "overture", "l": "Additional Buildings", "d": "Fills gaps in OpenStreetMap with satellite-detected footprints.", "tip": "Adds buildings that are missing from OpenStreetMap, using footprints from Overture Maps. Most useful in rural areas with little mapping. Since these are detected from satellite imagery, a few buildings may be placed where none exist.", "t": "switch", "icon": "building", "def": true },
+      { "k": "use_3d", "l": "3D Models & Props", "d": "Famous landmarks plus cars, boats, cranes and wind turbines.", "tip": "Adds detailed 3D content: community-contributed models for famous landmarks such as the Eiffel Tower, plus bundled schematic props like cars, boats, cranes, aeroplanes and wind turbines. Turn off to disable all of them.", "t": "switch", "icon": "landmark", "def": true },
+      { "k": "interior", "l": "Interior Generation", "d": "Rooms, furniture and loot chests. Experimental and slower.", "t": "switch", "icon": "house", "def": false },
+      { "k": "signage", "l": "Signage", "d": "Readable street names, traffic signs and shop plates. Java only.", "tip": "Readable image signs (Java only). Basic covers public signage: street names, traffic signs, transit stops and billboards. Full adds shop name plates, house numbers and crossing signs.", "t": "seg", "icon": "signpost", "o": "none=None;basic=Basic;full=Full", "def": "basic" },
+      { "k": "overture_source", "l": "Overture Source", "d": "Which Overture transport to read. Both carry the same buildings.", "t": "select", "icon": "database", "o": "auto=Auto;tiles=Vector Tiles;parquet=GeoParquet", "def": "auto", "on": "overture", "badge": "CLI" }
+    ] },
+    { "id": "nature", "title": "Terrain & Nature", "desc": "What lies below the surface and how trees are grown.", "icon": "trees", "rows": [
+      { "k": "height_multiplier", "l": "Terrain Height", "d": "1.00 is real height. Higher values make hills and mountains taller.", "tip": "Stretches the terrain vertically; buildings and trees keep their size. Relief that would pass the build height is compressed to fit, so turn on Extend build height for high values in the mountains.", "t": "slider", "icon": "mountain", "min": 0.25, "max": 4, "step": 0.05, "fmt": "x", "def": 1 },
+      { "k": "fillground", "l": "Fill Ground", "d": "Stone and ores below the surface for survival mining.", "tip": "Fills stone and ore veins under the surface for survival mining. Slower to generate, larger worlds.", "t": "switch", "icon": "pickaxe", "def": false, "link": [false, "caves", false] },
+      { "k": "caves", "l": "Caves", "d": "Caves, underground rivers and cave biomes under hills.", "tip": "Carves Minecraft-style caves, underground rivers and cave biomes beneath hills and mountains. Turns on Fill Ground and is slower to generate.", "t": "switch", "icon": "cave", "def": false, "link": [true, "fillground", true] },
+      { "k": "canopy_height", "l": "Real Tree Cover", "d": "Trees stand where real ones do, at roughly their height.", "tip": "Uses a global canopy height map so trees stand where real ones do, at roughly their real height. Off falls back to land cover, which treats every wooded cell as full forest.", "t": "switch", "icon": "trees", "def": true },
+      { "k": "legacy_trees", "l": "Legacy trees", "d": "Simple procedural trees instead of detailed models.", "t": "switch", "icon": "tree", "def": false },
+      { "k": "max_tree_size", "l": "Max Tree Size", "d": "Taller trees are swapped for a smaller species.", "tip": "Tallest tree allowed, in blocks: Small 6, Medium 12, Big 20, Tall 28, Giant above. Anything over the cap drops to a smaller species where its group has one.", "t": "seg", "icon": "ruler", "o": "small=Small;medium=Medium;big=Big;tall=Tall;giant=Giant", "def": "giant" }
+    ] },
+    { "id": "facades", "title": "Building Facades", "desc": "Dress building walls with textures from photographs.", "icon": "brick-wall", "rows": [
+      { "k": "facade_source", "l": "Facade Source", "tip": "Preset uses bundled photographs picked by building type, everywhere, with no account. Mapillary uses real street photos of the actual buildings, where they exist.", "t": "cards", "def": "off", "keys": { "building_facades": false, "mapillary_facades": false }, "o": [
+        ["off", "Off", "Walls use the colours and materials from the map data.", "off"],
+        ["preset", "Preset", "Bundled photos picked by building type. Java only.", "image"],
+        ["mapillary", "Mapillary", "Real street photos of each building, where available.", "camera"] ] },
+      { "k": "@token", "l": "Mapillary Token", "d": "Meld passes MAPILLARY_TOKEN from its own environment to Arnis, so the project file never holds the credential.", "tip": "Free from mapillary.com/developer. Set MAPILLARY_TOKEN before starting Meld. Without it there is nothing to download.", "t": "note", "icon": "key", "show": "facade_source=mapillary" },
+      { "k": "mapillary_facade_mode", "l": "Facade Mode", "d": "Hang the photos themselves, or match wall blocks to them.", "tip": "Photos hangs the photograph itself on the wall (Java 1.21.4+). Blocks builds colour-matched walls only, which works on every world format.", "t": "seg", "icon": "image", "o": "blocks=Blocks;photos=Photos", "def": "photos", "show": "facade_source=mapillary" },
+      { "k": "facade_detail", "l": "Facade Detail", "d": "Higher detail is sharper but needs a modern graphics card.", "tip": "Standard fits any graphics card the game runs on. High is sharper but needs a modern one on whatever machine opens the world.", "t": "seg", "icon": "sparkles", "o": "standard=Standard;high=High", "def": "standard", "show": "facade_source!=off" },
+      { "k": "facade_px", "l": "Facade Resolution", "d": "Pixels per block of a facade panel.", "t": "num", "icon": "image", "min": 1, "step": 1, "def": 16, "show": "facade_source!=off", "badge": "CLI" }
+    ] },
+    { "id": "map", "title": "Map & Input", "desc": "Fine-tune the selected area and the map you pick it on.", "icon": "map", "rows": [
+      { "k": "@bbox", "l": "Bounding Box", "d": "Type exact coordinates instead of drawing on the map.", "t": "text", "icon": "frame", "ph": "Format: lat,lng,lat,lng", "scope": "selection" },
+      { "k": "scale", "l": "World Scale", "d": "1.00 is real-world size. Smaller worlds generate faster.", "t": "slider", "icon": "scale", "min": 0.05, "max": 2.5, "step": 0.05, "fmt": "2", "def": 1 },
+      { "k": "origin", "l": "Origin", "d": "Pins the One World frame (lat,lon). Empty: the centre of the world's first selection.", "t": "text", "icon": "frame", "ph": "Auto", "badge": "CLI" },
+      { "k": "ground_level", "l": "Ground Level", "d": "Y of the ground.", "t": "num", "icon": "layers", "step": 1, "def": -62, "badge": "CLI" }
+    ] },
+    { "id": "application", "title": "Application", "desc": "Where worlds are saved and how Arnis itself behaves.", "icon": "monitor", "rows": [
+      { "k": "@name", "l": "Project Name", "d": "The title in the Projects list.", "t": "text", "icon": "tag", "scope": "project", "badge": "Meld" },
+      { "k": "@output", "l": "Java Save Path", "d": "Folder new Java worlds are created in, relative to the project file.", "t": "text", "icon": "folder", "ph": "saves", "scope": "project" }
+    ] },
+    { "id": "advanced", "title": "Advanced", "desc": "Options for mods, compatibility and experiments. Most worlds never need them.", "icon": "sliders", "rows": [
+      { "k": "disable_height_limit", "l": "Extend build height", "d": "Raises the height limit for 1:1 mountains. Not for Realms.", "tip": "Bundles a pack that raises the build height for 1:1 terrain. Works on Java 1.21.4+ (not Realms-compatible).", "t": "switch", "icon": "arrow-up", "def": false },
+      { "k": "aws_only_elevation", "l": "Legacy Terrain", "d": "Older, coarser elevation source for when the default fails.", "tip": "Use the legacy AWS Terrain Tiles source (~30m) instead of the high-resolution Mapterhorn terrain. Escape hatch if the primary elevation sources are unreachable; lower terrain detail.", "t": "switch", "icon": "history", "def": false },
+      { "k": "bake_lighting", "l": "Bake lighting", "d": "Precomputed light for LOD mods like Voxy. Slower.", "tip": "Precompute lighting so distant chunks render lit in LOD mods (Voxy/Chunky) without visiting them. Not needed for vanilla; slower generation.", "t": "switch", "icon": "lightbulb", "def": false },
+      { "k": "voxy_lod", "l": "Pre-generate Voxy LOD", "d": "Distant terrain renders on first join. Java only.", "tip": "Write the Voxy mod's LOD cache with the world, so distant terrain renders on first join without running /voxy import. Java only; turns on baked lighting and takes longer.", "t": "switch", "icon": "layers", "def": false },
+      { "k": "extra_args", "l": "Extra Arnis Flags", "d": "Flags Meld does not model, separated by spaces; passed unchecked.", "t": "list", "icon": "file-text", "ph": "--flag value", "badge": "Meld" }
+    ] },
+    { "id": "features", "title": "Extra Features", "desc": "Extra controls for very large areas and experimental generation.", "icon": "zap",
+      "note": "Meld builds every selection as a One World in pieces, so Arnis's Extra Features, Big Worlds and One World switches are always on here.",
+      "groups": [
+      { "title": "Performance & Large Worlds", "rows": [
+        { "k": "cpu_target", "l": "CPU Usage", "d": "Share of the cores generation may use.", "tip": "Auto keeps the usual 90% of the cores. Lower values leave room for other programs, and generation gets slower. On the project it is split between the jobs at once. Unavailable while Threads is set.", "t": "slider", "icon": "gauge", "min": 0, "max": 100, "step": 10, "fmt": "auto%", "def": 0, "run": true, "on": "!threads", "why": "Unavailable while Threads is set." },
+        { "k": "threads", "l": "Threads", "d": "Exact number of worker threads. 0 is automatic.", "tip": "Sets the worker count directly instead of a share of the cores. Unavailable while CPU Usage is set.", "t": "num", "icon": "cpu", "min": 0, "max": 1024, "step": 1, "def": 0, "on": "!cpu_target", "why": "Unavailable while CPU Usage is set." },
+        { "k": "ram_budget_mb", "l": "Memory Budget", "d": "Memory a run may assume, in MB. 0 is automatic.", "tip": "Used in place of the free-memory reading when Arnis decides whether to stream regions to disk. Lower it to keep memory free for other programs. On the project it is split between the jobs at once.", "t": "num", "icon": "memory-stick", "min": 0, "step": 1, "unit": "MB", "def": 0, "run": true },
+        { "k": "max_downloads", "l": "Parallel Downloads", "d": "Downloads kept in flight at once.", "tip": "Covers elevation, Mapillary, 3D models and Overture. Lower it on a slow or metered connection.", "t": "num", "icon": "download", "min": 1, "max": 32, "step": 1, "def": 16 },
+        { "k": "workers", "l": "Parallel Workers", "d": "Pieces of a large area built at once.", "tip": "Splits a large area into pieces and builds several side by side. Auto picks a count from free memory and cores.", "t": "select", "icon": "layers", "o": "auto=Auto;1=1;2=2;3=3;4=4;5=5;6=6", "def": "auto" },
+        { "k": "unit_regions", "l": "Cell Size", "d": "Regions in each piece; the selection snaps to whole cells.", "tip": "One region is 512 by 512 blocks. Each cell is built as one piece, and a stop resumes at whole pieces. Smaller cells lose less work to a failure, larger ones build fewer seams.", "t": "select", "icon": "puzzle", "o": "2=2x2;4=4x4;8=8x8", "def": 4 },
+        { "k": "snap", "l": "Selection Snap", "d": "Whole cells inside the selection, or covering it.", "tip": "Fit Inside keeps the whole cells that lie inside the selection, centred on it, so nothing outside what you drew is built. Cover grows the selection outward to whole cells. Off (Meld) builds the box as drawn; polygons always cover their cells.", "t": "select", "icon": "grid-2x2", "o": "=Off;fit=Fit Inside;cover=Cover", "def": "" },
+        { "k": "jobs", "l": "Jobs at Once", "d": "Selections built at the same time; never two on one world.", "t": "num", "icon": "layers", "min": 1, "step": 1, "def": 1, "run": true, "scope": "project", "badge": "Meld" },
+        { "k": "min_free_mb", "l": "Keep Free on Disk", "d": "Disk a run must leave free after its estimated size; one that would not is refused.", "t": "num", "icon": "hard-drive", "min": 0, "step": 256, "unit": "MB", "def": 1024, "run": true, "scope": "project", "badge": "Meld" }
+      ] },
+      { "title": "Meld Generation (Experimental)", "desc": "Changes what gets built: snow, roads, fields, trees, caves and water.", "sub": [
+        { "title": "Terrain", "rows": [
+          { "preview": "snow", "rows": [
+            { "k": "snow_mode", "l": "Snow", "d": "Where snow lies on the terrain.", "tip": "Realistic follows the climatic snow line for the latitude. Manual lays snow from a Y you choose. Off has no snowfall. (Peaks is not offered: a One World refuses it.)", "t": "radio", "icon": "snowflake", "o": "realistic=Realistic;manual=Manual;off=Off", "def": "realistic" },
+            { "k": "snow_y", "l": "Snow Line Y", "d": "Snow lies from this height up.", "t": "num", "icon": "ruler", "min": -2048, "max": 2048, "step": 1, "def": 120, "show": "snow_mode=manual" }
+          ] },
+          { "preview": "scatter", "rows": [
+            { "k": "rocks", "l": "Rocks", "d": "Small rocks on open grass and cropland.", "tip": "Andesite and tuff rocks scattered over open grassland and cropland. Needs land cover.", "t": "switch", "icon": "blocks", "def": false },
+            { "k": "bushes", "l": "Bushes", "d": "Small bushes on open grass and cropland.", "tip": "Ten species of small bushes over open grassland and cropland. Needs land cover.", "t": "switch", "icon": "shrub", "def": false },
+            { "k": "rock_density", "l": "Rock Density", "d": "Share of chunks that get a rock. Requires Rocks.", "t": "slider", "icon": "blocks", "min": 0, "max": 0.2, "step": 0.01, "fmt": "2", "def": 0.02, "on": "rocks" },
+            { "k": "bush_density", "l": "Bush Density", "d": "Share of chunks that get a bush. Requires Bushes.", "tip": "Where a chunk rolls both a rock and a bush, the rock wins.", "t": "slider", "icon": "shrub", "min": 0, "max": 0.2, "step": 0.01, "fmt": "2", "def": 0.05, "on": "bushes" }
+          ] }
+        ] },
+        { "title": "Roads & Buildings", "rows": [
+          { "preview": "roads", "rows": [
+            { "k": "road_detail", "l": "Road Detail", "d": "How much road marking and minor ways to build.", "tip": "Max builds every highway and marking as mapped. Clean keeps at most a centre stripe, for scales from about 0.7. Compact also leaves out footways, paths, service roads, tracks and crossings, for lower scales.", "t": "radio", "icon": "route", "o": "max=Max;clean=Clean;compact=Compact", "def": "max" }
+          ] },
+          { "k": "buildings", "l": "No Buildings", "d": "Roads, rail, water and land cover only.", "tip": "Leaves out OSM buildings, building parts, doors and entrances, and the Overture footprints. Terrain is built as usual.", "t": "off", "icon": "building", "def": true },
+          { "k": "loot_table", "l": "Chest Loot Table", "d": "Loot file for interior chests. Requires Interior Generation.", "tip": "A JSON loot table in place of the built-in one. Run arnis --dump-loot-table FILE to get the built-in table to start from. Empty uses the built-in table.", "t": "text", "icon": "box", "ph": "Built-in loot", "on": "interior" }
+        ] },
+        { "title": "Fields & Trees", "rows": [
+          { "preview": "fields", "rows": [
+            { "k": "field_mix", "l": "Field Layout", "d": "How farmland is split into parcels.", "tip": "Classic keeps the uniform crop sheet. Smallholding: many small plots of every crop. Patchwork: balanced mixed farmland. Prairie: large wheat-led fields. Pasture: grass and wildflowers with a few crop plots. Parcels take about 15% longer.", "t": "radio", "icon": "wheat", "o": "classic=Classic;smallholding=Smallholding;patchwork=Patchwork;prairie=Prairie;pasture=Pasture", "def": "classic" },
+            { "k": "farm_crops", "l": "Farm Crops", "d": "Crop shares for farm plots, from the layout's own.", "tip": "Relative shares, starting from the Field Layout's own; each plot grows one crop. Sent only when they differ from the layout's. With Classic, changed shares turn farmland into crop plots.", "t": "mix", "icon": "sprout", "from": "field_mix", "max": 100,
+              "names": "wheat=Wheat;potato=Potato;carrot=Carrot;beetroot=Beetroot;sunflower=Sunflower;pumpkin=Pumpkin;fallow=Fallow",
+              "presets": {
+                "classic": { "wheat": 100, "potato": 0, "carrot": 0, "beetroot": 0, "sunflower": 0, "pumpkin": 0, "fallow": 0 },
+                "smallholding": { "wheat": 22, "potato": 18, "carrot": 18, "beetroot": 14, "sunflower": 12, "pumpkin": 10, "fallow": 6 },
+                "patchwork": { "wheat": 40, "potato": 15, "carrot": 15, "beetroot": 8, "sunflower": 12, "pumpkin": 5, "fallow": 5 },
+                "prairie": { "wheat": 62, "potato": 8, "carrot": 6, "beetroot": 4, "sunflower": 12, "pumpkin": 2, "fallow": 6 },
+                "pasture": { "wheat": 45, "potato": 10, "carrot": 10, "beetroot": 5, "sunflower": 20, "pumpkin": 5, "fallow": 5 } } },
+            { "k": "field_scale", "l": "Parcel Size", "d": "Parcel size against the layout's own.", "tip": "Sizes are in metres, so they also follow the world scale. Applies to a field layout or farm crops.", "t": "slider", "icon": "ruler", "min": 25, "max": 400, "step": 25, "fmt": "%", "def": 100, "on": "field_mix!=classic|farm_crops", "why": "Requires a Field Layout other than Classic, or Farm Crops." }
+          ] },
+          { "preview": "trees", "rows": [
+            { "k": "tree_realm", "l": "Tree Realm", "d": "Which region's trees to plant.", "tip": "Auto picks the trees of the area's ecoregion or location. A forced realm skips the ecoregion mixes and keeps its palms.", "t": "realm", "icon": "earth", "o": "auto=Auto;afr=Africa;asn=Asia;aus=Oceania;ena=E. North America;eur=Europe;fl=Caribbean;ind=Tropical Asia;sam=South America;wna=W. North America;vanilla-plus=Vanilla Plus", "def": "auto" },
+            { "k": "tree_size_weights", "l": "Tree Sizes", "d": "Which sizes to plant, and how often.", "tip": "Heights in blocks. Off leaves the size out; the number is its popularity, 100% the usual mix. Trees placed from measured canopy heights keep their own size.", "t": "mix", "icon": "tree", "all": true, "max": 100, "step": 5, "unit": "%",
+              "names": "small=Small;medium=Medium;big=Big;tall=Tall;giant=Giant", "hints": "small=≤ 6;medium=≤ 12;big=≤ 20;tall=≤ 28;giant=> 28", "base": 100 }
+          ] }
+        ] },
+        { "title": "Caves & Water", "rows": [
+          { "preview": "caves", "rows": [
+            { "k": "cave_style", "l": "Cave Style", "d": "How much of the underground the cave biomes take. Requires Caves.", "tip": "Vanilla: plain caves only. More Vanilla: about 30% of the caves themed. All Mix: every cave biome at its default amount, about 77%. More Mix: every biome past its default, about 89%. The picture is the biome layout, upper caves above deep caves.", "t": "radio", "icon": "cave", "o": "vanilla=Vanilla;more-vanilla=More Vanilla;all-mix=All Mix;more-mix=More Mix", "def": "all-mix", "on": "caves" },
+            { "k": "cave_ores", "l": "Ores", "d": "How many ore veins the rock holds. Requires Caves.", "tip": "Normal is the vanilla ore table. More doubles the veins of every metal and gem ore, at vanilla's heights and vein sizes.", "t": "radio", "icon": "pickaxe", "o": "normal=Normal;more=More", "def": "normal", "on": "caves" },
+            { "k": "cave_biomes", "l": "Cave Biomes", "d": "Each cave biome's amount, from the style's own.", "tip": "Each biome's amount against its default: 100% is the default, 0 turns it off, 200% about doubles its area. Starts from the Cave Style's own; a change makes it custom. Volcanic stays at the bottom, deep dark deep, ice under mountains, coral in flooded pools.", "t": "mix", "icon": "layers", "on": "caves", "from": "cave_style", "all": true, "max": 200, "unit": "%",
+              "names": "lush=Lush;dripstone=Dripstone;deepdark=Deep Dark;mushroom=Mushroom;ice=Ice;amethyst=Amethyst;volcanic=Volcanic;coral=Coral",
+              "presets": { "vanilla": 0, "more-vanilla": 18, "all-mix": 100, "more-mix": 180 } }
+          ] },
+          { "k": "cave_seed", "l": "Cave Seed", "d": "A different cave layout per seed. Requires Caves.", "tip": "Each seed gives the same area a different cave layout. Empty keeps the built-in seed, so an area always gets the same caves. A One World keeps the seed its first area was built with.", "t": "num", "icon": "cave", "min": 0, "step": 1, "ph": "Default", "on": "caves" },
+          { "k": "cave_datum_y", "l": "Cave Datum Y", "d": "Lines caves up between areas. Requires Caves.", "tip": "The Y the caves treat as the world floor, a multiple of 16. One value for every area of a One World makes caves, the lava sea and the deepslate line meet at the seams. Empty follows each area's own bedrock.", "t": "num", "icon": "layers", "min": -2032, "max": 2016, "step": 16, "ph": "Default", "on": "caves" },
+          { "preview": "climate", "rows": [
+            { "k": "climate_mode", "l": "Climate Sampling", "d": "Where the climate behind ground and biomes is read.", "tip": "Origin reads one climate at the centre of the area, or at the One World origin. Per Position reads it at every block with organic borders, so a large world crosses climate zones.", "t": "radio", "icon": "thermometer", "o": "origin=Origin;per-position=Per Position", "def": "origin" }
+          ] },
+          { "preview": "river", "rows": [
+            { "k": "river_bed", "l": "River Bed", "d": "Shape of river, canal and stream beds.", "tip": "U-Shaped gives mapped rivers, canals and streams a smooth bed that deepens with their width. Lakes and the sea keep their bed.", "t": "radio", "icon": "waves", "o": "off=Off;v1=U-Shaped", "def": "off" }
+          ] },
+          { "preview": "water", "rows": [
+            { "k": "water_detail", "l": "Water Detail", "d": "Finer water for small scales.", "tip": "Scaled rounds bed depths instead of flooring them. On small maps it also carves narrow water as bowls, narrows streams and lets water flow over roads not tagged as bridges.", "t": "radio", "icon": "droplets", "o": "default=Default;scaled=Scaled", "def": "default" }
+          ] }
+        ] }
+      ] },
+      { "title": "Experimental", "desc": "Climate, textures, seed and props. Still being tested.", "rows": [
+        { "preview": "grass", "rows": [
+          { "k": "grass_texture", "l": "Grass Texture", "d": "Mapped meadows as loose parcels of grass and flowers.", "tip": "Lays mapped grassland (meadow, grass, village green, orchard) out as parcels of sward, wildflowers, worn and mossy ground, like meadows cut at different times.", "t": "switch", "icon": "sprout", "def": false },
+          { "k": "grass_mix", "l": "Grass Mix", "d": "Parcel mix for grassland, from a preset.", "tip": "A preset, then relative shares of plain sward, wildflowers, moss, worn coarse ground and farm plots. Changed shares keep the default plot sizes. Requires Grass Texture or Land Texture.", "t": "mix", "icon": "sprout", "on": "grass_texture|land_texture", "why": "Requires Grass Texture or Land Texture.", "max": 100,
+            "pick": "default=Default;smallholding=Smallholding;patchwork=Patchwork;prairie=Prairie;pasture=Pasture;classic=Classic",
+            "names": "plains=Plains;flower=Flowers;moss=Moss;coarse=Coarse;farm=Farm",
+            "presets": {
+              "default": { "coarse": 6, "plains": 64, "flower": 22, "farm": 0, "moss": 8 },
+              "classic": { "coarse": 0, "plains": 0, "flower": 0, "farm": 0, "moss": 0 },
+              "smallholding": { "coarse": 12, "plains": 10, "flower": 4, "farm": 70, "moss": 4 },
+              "patchwork": { "coarse": 10, "plains": 8, "flower": 2, "farm": 75, "moss": 5 },
+              "prairie": { "coarse": 6, "plains": 6, "flower": 1, "farm": 85, "moss": 2 },
+              "pasture": { "coarse": 6, "plains": 58, "flower": 24, "farm": 6, "moss": 6 } } }
+        ] },
+        { "preview": "land", "rows": [
+          { "k": "land_texture", "l": "Land Texture", "d": "Untagged land textured from satellite land cover.", "tip": "Cropland the map leaves untagged becomes farm parcels (Land Mix), grassland becomes grass parcels (Grass Mix), so it reads like an aerial photo. Temperate, savanna and dry continental areas only.", "t": "switch", "icon": "wheat", "def": false },
+          { "k": "land_mix", "l": "Land Mix", "d": "Parcel mix for textured cropland, from a preset.", "tip": "A preset, then relative shares of plain sward, wildflowers, moss, worn coarse ground and farm plots. Changed shares keep patchwork's plot sizes. Requires Land Texture.", "t": "mix", "icon": "wheat", "on": "land_texture", "max": 100,
+            "pick": "patchwork=Patchwork;smallholding=Smallholding;prairie=Prairie;pasture=Pasture;classic=Classic",
+            "names": "plains=Plains;flower=Flowers;moss=Moss;coarse=Coarse;farm=Farm",
+            "presets": {
+              "classic": { "coarse": 0, "plains": 0, "flower": 0, "farm": 0, "moss": 0 },
+              "smallholding": { "coarse": 12, "plains": 10, "flower": 4, "farm": 70, "moss": 4 },
+              "patchwork": { "coarse": 10, "plains": 8, "flower": 2, "farm": 75, "moss": 5 },
+              "prairie": { "coarse": 6, "plains": 6, "flower": 1, "farm": 85, "moss": 2 },
+              "pasture": { "coarse": 6, "plains": 58, "flower": 24, "farm": 6, "moss": 6 } } }
+        ] },
+        { "k": "seed", "l": "World Seed", "d": "A different but repeatable look per seed.", "tip": "Mixed into every random choice: building colours, trees, scatter, ground patches. Also seeds the caves when Cave Seed is empty. Empty or 0 keeps the default look. A One World keeps the seed its first area was built with.", "t": "num", "icon": "dices", "min": 0, "step": 1, "ph": "Default" },
+        { "k": "props", "l": "Props", "d": "Which bundled props to place: cars, boats, cranes and more.", "tip": "Auto places them while 3D Models is on. All and None decide whatever 3D Models says; Custom places the families ticked below.", "t": "props", "icon": "box",
+          "o": "auto=Auto;all=All;none=None;custom=Custom",
+          "names": "boat=Boat;car=Car;crane=Crane;excavator=Excavator;fountain=Fountain;helicopter=Helicopter;jetbridge=Jet Bridge;landmark=Landmark;lighthouse=Lighthouse;plane=Plane;playground=Playground;starship=Starship;tombstone=Tombstone;tractor=Tractor;windturbine=Wind Turbine" },
+        { "k": "props_min_scale", "l": "Props Minimum Scale", "d": "No props below this world scale. Empty places them at any.", "tip": "Props keep their block size at any scale, so on a small-scale world they tower over the buildings around them.", "t": "num", "icon": "scale", "min": 0, "max": 10, "step": 0.05, "ph": "Off", "on": "props!=none", "why": "Not with Props: None." },
+        { "k": "tree_pack_dir", "l": "Tree Pack Folder", "d": "Your own tree schematics. Empty uses tree-packs next to Arnis.", "tip": "Your own tree schematics (.schem), in folders realm / community / tree type / size, like the built-in packs. The folders say what a tree is, so file names are free; the size folder is optional. Files that do not load are skipped.", "t": "text", "icon": "tree" },
+        { "k": "tree_pack_mode", "l": "Tree Pack Mode", "d": "Whether your trees join the built-in ones or replace them.", "tip": "Add puts your trees beside the built-in ones. Replace uses only your trees in every realm the folder has trees for; realms without any keep the built-in trees.", "t": "select", "icon": "layers", "o": "add=Add to Built-in;replace=Replace Built-in", "def": "add", "on": "tree_pack_dir", "why": "Requires a Tree Pack Folder." },
+        { "k": "world_border", "l": "World Border", "d": "Keeps players inside the generated area. Java only.", "tip": "Sets the world border after the run: centred on the generated area, as wide as its longer side. A One World's border holds all of its areas. Java only.", "t": "switch", "icon": "fence", "def": false }
+      ] }
+    ] },
+    { "id": "osm", "title": "OSM Data Source", "desc": "Where map data comes from, and building offline. The defaults are the usual downloads.", "icon": "database", "rows": [
+      { "k": "osm_source", "l": "Source", "d": "Where the OpenStreetMap data comes from.", "tip": "The tile archive is a ready-cut OpenStreetMap download that falls back to Overpass where it has no answer. Overpass asks the Overpass servers directly. Region Download reads an .osm.pbf extract, by default the smallest Geofabrik region holding the selection, downloaded once; the area is cut out and kept, so later runs and parallel pieces reuse it.", "t": "select", "icon": "database", "def": "archive", "keys": { "osm_pbf": null, "no_tile_archive": false },
+        "o": "archive=Arnis Tile Archive;overpass=Overpass;pbf=Region Download (Geofabrik)" },
+      { "k": "osm_tiles_url", "l": "Archive URL", "d": "Address of a tile archive, or a folder of baked countries. Empty uses Arnis's own.", "t": "text", "icon": "link", "ph": "https://tiles.arnisproject.com/v1", "show": "osm_source=archive" },
+      { "k": "overpass_url", "l": "Overpass Servers", "d": "Servers to ask, comma separated. Empty uses Arnis's own.", "tip": "Tried in order, for example a self-hosted Overpass instance.", "t": "text", "icon": "server", "ph": "https://api.arnismc.com/overpass/api/interpreter", "show": "osm_source=overpass" },
+      { "k": "osm_pbf", "l": "PBF File", "d": "An .osm.pbf extract covering the area. Empty downloads one from Geofabrik.", "tip": "Empty picks the smallest Geofabrik region whose border holds the selection and downloads it once into the cache.", "t": "text", "icon": "file-text", "ph": "Geofabrik", "empty": "geofabrik", "show": "osm_source=pbf" },
+      { "k": "osm_pbf_url", "l": "Geofabrik Extract", "d": "With Geofabrik: the extract to download. A bake and its selections need the same.", "t": "text", "icon": "link", "ph": "https://download.geofabrik.de/…-latest.osm.pbf", "show": "osm_source=pbf", "badge": "Meld" },
+      { "k": "@bakes", "l": "Bake Selection", "d": "Cuts an extract once, before the builds that read it (the same PBF File and Geofabrik Extract).", "t": "bakes", "icon": "download", "scope": "project", "show": "osm_source=pbf" },
+      { "k": "bake_cpu", "l": "Bake CPU Usage", "d": "Share of the cores downloads and bakes may use.", "tip": "Bakes and the Download Area steps run on this share of the cores, apart from the generation CPU Usage. 75% uses most of the machine and leaves it usable.", "t": "slider", "icon": "gauge", "min": 10, "max": 100, "step": 5, "fmt": "%", "def": 75, "run": true, "scope": "project" },
+      { "k": "offline", "l": "Offline Mode", "d": "Uses only data downloaded before. Fails and lists what is missing.", "tip": "Never uses the network: OpenStreetMap, Overture, elevation, land cover, canopy and 3D models come from the caches only. A run that needs anything they lack stops and names it instead of building flat or empty ground.", "t": "switch", "icon": "wifi-off", "def": false },
+      { "k": "prewarm", "l": "Download Area For Offline Use", "d": "A step before each build fetches what the selection needs, with these settings.", "tip": "Arnis's Download button, as a step of the run: it downloads and caches every input the build reads, then the build reads disk. Mapillary imagery is not included.", "t": "switch", "icon": "download", "def": false },
+      { "k": "prewarm_first", "l": "Warm Caches Before Building Pieces", "d": "Downloads each piece's data first, one at a time.", "tip": "Every piece's data is fetched one piece at a time before the pieces start, so parallel workers read from disk instead of all downloading at once. Not with Offline Mode.", "t": "switch", "icon": "layers", "def": false, "on": "!offline", "why": "Not with Offline Mode." }
+    ] }
+  ],
+  "hidden": {
+    "snow_percent": "Snow Cap Share applies to Peaks only, which a One World refuses."
+  },
+  "server": [
+    { "k": "flavor", "l": "Flavor", "d": "Leaf reads B_Linear.", "t": "seg", "o": "leaf=Leaf;paper=Paper", "def": "leaf" },
+    { "k": "version", "l": "Minecraft Version", "d": "B_Linear needs Leaf 1.21.11 or newer.", "t": "text", "def": "1.21.11" },
+    { "k": "format", "l": "Region Format", "d": "B_Linear converts each world after its build and serves the copy.", "t": "seg", "o": "mca=Anvil;blinear=B_Linear", "def": "mca" },
+    { "k": "dir", "l": "Server Folder", "d": "Relative to the project file.", "t": "text", "def": "server" },
+    { "k": "ip", "l": "IP", "t": "text", "def": "127.0.0.1" },
+    { "k": "port", "l": "Port", "t": "num", "def": 25565 },
+    { "k": "ram_mb", "l": "Memory", "t": "num", "unit": "MB", "def": 4096 },
+    { "k": "link", "l": "Link Worlds", "d": "A junction or symlink; off copies the worlds.", "t": "switch", "def": true },
+    { "k": "worlds", "l": "Worlds", "d": "Comma separated. Empty: every world, the first as the main level.", "t": "list", "sep": "," },
+    { "k": "plugins", "l": "Plugins", "d": "Modrinth slugs, comma separated; slug@version pins a build.", "t": "list", "sep": "," },
+    { "k": "datapacks", "l": "Datapacks", "d": "Zips or folders for the main level, comma separated.", "t": "list", "sep": "," },
+    { "k": "motd", "l": "MOTD", "t": "text", "def": "A Meld world" }
+  ]
+}

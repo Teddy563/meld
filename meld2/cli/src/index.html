@@ -1225,7 +1225,7 @@ function route() {
   else { $("projOverlay").classList.add("on"); listProjects(); renderSettings(); }
 }
 window.addEventListener("hashchange", route);
-api("/api/options").then((x) => { options = x; if (cur) renderSettings(); }, () => {});
+// /api/options is now the settings form; this page keeps its own table until the next commit.
 arnisCard();
 route();
 

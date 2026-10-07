@@ -83,7 +83,7 @@ pub struct Budget {
     /// estimated size (plus 25 % margin); a run that would not is refused.
     pub min_free_mb: u64,
     /// Share of the cores, in percent, for the bakes and prewarms (Arnis's
-    /// Bake CPU Usage). Unset: `cpu_target`.
+    /// Bake CPU Usage). Unset: 75, Arnis's default.
     pub bake_cpu: Option<u32>,
 }
 
@@ -578,7 +578,7 @@ world = "One"
 id = "b"
 bbox = [47.15, 9.52, 47.16, 9.53]
 world = "One"
-settings = { caves = true, snow_mode = "peaks" }
+settings = { caves = true, snow_mode = "off" }
 "#;
 
     #[test]
@@ -591,7 +591,7 @@ settings = { caves = true, snow_mode = "peaks" }
         let b = p.settings_for(&p.selections[1]);
         assert_eq!(b["scale"].as_float(), Some(0.5));
         assert_eq!(b["caves"].as_bool(), Some(true));
-        assert_eq!(b["snow_mode"].as_str(), Some("peaks"));
+        assert_eq!(b["snow_mode"].as_str(), Some("off"));
         let a = p.settings_for(&p.selections[0]);
         assert_eq!(a["caves"].as_bool(), Some(false));
     }
@@ -718,7 +718,7 @@ osm_pbf = \"x.osm.pbf\"
         let big = GOOD.replace("[47.15, 9.52, 47.16, 9.53]", "[47.15, 9.50, 47.18, 9.55]");
         let text = |mode: &str| {
             big.replace(
-                "settings = { caves = true, snow_mode = \"peaks\" }",
+                "settings = { caves = true, snow_mode = \"off\" }",
                 &format!("settings = {{ unit_regions = 1, snap = \"{mode}\" }}"),
             )
         };

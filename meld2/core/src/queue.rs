@@ -172,10 +172,11 @@ pub enum Step<'a> {
 }
 
 impl Step<'_> {
-    /// The CPU share it runs at: `bake_cpu` for bakes and prewarms when set.
+    /// The CPU share it runs at: `bake_cpu` for bakes and prewarms, 75 % unset
+    /// (Arnis's Bake CPU Usage default).
     pub fn cpu_target(&self, run: &crate::project::Budget) -> u32 {
         match self {
-            Step::Bake(_) | Step::Prewarm(_) => run.bake_cpu.unwrap_or(run.cpu_target),
+            Step::Bake(_) | Step::Prewarm(_) => run.bake_cpu.unwrap_or(75),
             Step::Build(_) => run.cpu_target,
         }
     }
