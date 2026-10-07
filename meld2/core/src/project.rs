@@ -82,6 +82,9 @@ pub struct Budget {
     /// Disk space, in MB, a run must leave free on the saves volume after its
     /// estimated size (plus 25 % margin); a run that would not is refused.
     pub min_free_mb: u64,
+    /// Share of the cores, in percent, for the bakes and prewarms (Arnis's
+    /// Bake CPU Usage). Unset: `cpu_target`.
+    pub bake_cpu: Option<u32>,
 }
 
 impl Default for Budget {
@@ -91,6 +94,7 @@ impl Default for Budget {
             cpu_target: 90,
             ram_budget_mb: None,
             min_free_mb: 1024,
+            bake_cpu: None,
         }
     }
 }
@@ -196,6 +200,9 @@ impl Project {
         if !(10..=100).contains(&self.run.cpu_target) {
             bail!("run.cpu_target must be 10 to 100");
         }
+        if self.run.bake_cpu.is_some_and(|c| !(10..=100).contains(&c)) {
+            bail!("run.bake_cpu must be 10 to 100");
+        }
         args::check(&self.defaults).context("in [defaults]")?;
         let mut ids = HashSet::new();
         for s in &self.selections {
@@ -287,7 +294,7 @@ impl Project {
         let all = std::mem::take(&mut self.selections);
         for sel in all {
             if sel.polygon.is_empty() {
-                self.selections.push(sel);
+                self.snap(sel)?;
                 continue;
             }
             if sel.bbox != [0.0; 4] {
@@ -334,6 +341,47 @@ impl Project {
             }
             self.shapes.push(sel);
         }
+        Ok(())
+    }
+
+    /// Adds a bbox selection, first snapped to whole pieces on its world's
+    /// lattice when it sets `snap`: `cover` grows the box to the pieces it
+    /// touches, `fit` shrinks it to the pieces wholly inside. Like a polygon
+    /// part, it then carries the frame's `origin`.
+    fn snap(&mut self, sel: Selection) -> Result<()> {
+        let mode = self
+            .settings_for(&sel)
+            .get(args::SNAP)
+            .and_then(|v| v.as_str().map(String::from));
+        let Some(mode) = mode else {
+            self.selections.push(sel);
+            return Ok(());
+        };
+        check_bbox(&sel.bbox).with_context(|| format!("selection {}", sel.id))?;
+        self.selections.push(sel);
+        let frame = self.frame(&self.selections.last().expect("pushed").world);
+        let mut sel = self.selections.pop().expect("pushed");
+        let frame = frame?.expect("the selection is in its world");
+        let side = args::unit_regions(&self.settings_for(&sel)) as f64 * 512.0;
+        let cover = mode == "cover";
+        let to = |v: f64, up: bool| {
+            if up {
+                (v / side).ceil() * side
+            } else {
+                (v / side).floor() * side
+            }
+        };
+        let [s, w, n, e] = sel.bbox;
+        // North is the smaller z.
+        let (z0, z1) = (to(frame.z(n), !cover), to(frame.z(s), cover));
+        let (x0, x1) = (to(frame.x(w), !cover), to(frame.x(e), cover));
+        if z1 <= z0 || x1 <= x0 {
+            bail!("selection {}: no whole {side}-block piece fits inside; use snap = \"cover\" or a larger box", sel.id);
+        }
+        sel.bbox = [frame.lat(z1), frame.lon(x0), frame.lat(z0), frame.lon(x1)];
+        sel.settings
+            .insert("origin".into(), frame.origin_arg().into());
+        self.selections.push(sel);
         Ok(())
     }
 
@@ -663,5 +711,52 @@ osm_pbf = \"x.osm.pbf\"
         let p = Project::load(&dir.join("p.toml")).unwrap();
         on_lattice(&p, Frame::new(47.2, 9.6, 0.5));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn snap_fits_or_covers_whole_pieces() {
+        let big = GOOD.replace("[47.15, 9.52, 47.16, 9.53]", "[47.15, 9.50, 47.18, 9.55]");
+        let text = |mode: &str| {
+            big.replace(
+                "settings = { caves = true, snow_mode = \"peaks\" }",
+                &format!("settings = {{ unit_regions = 1, snap = \"{mode}\" }}"),
+            )
+        };
+        let b = |mode: &str| {
+            let p = Project::parse(&text(mode)).unwrap();
+            let f = p.frame("One").unwrap().unwrap();
+            let s = &p.selections[1];
+            assert!(s.settings["origin"].as_str().is_some());
+            let [z1, x0, z0, x1] = [
+                f.z(s.bbox[0]),
+                f.x(s.bbox[1]),
+                f.z(s.bbox[2]),
+                f.x(s.bbox[3]),
+            ];
+            for v in [z0, z1, x0, x1] {
+                assert!(
+                    (v / 512.0 - (v / 512.0).round()).abs() < 1e-6,
+                    "{mode}: {v} is off the lattice"
+                );
+            }
+            [z0, x0, z1, x1]
+        };
+        let (fit, cover) = (b("fit"), b("cover"));
+        assert!(cover[0] < fit[0] && cover[1] < fit[1] && cover[2] > fit[2] && cover[3] > fit[3]);
+        // The original box lies between the two.
+        let p = Project::parse(&big).unwrap();
+        let f = Project::parse(&text("cover"))
+            .unwrap()
+            .frame("One")
+            .unwrap()
+            .unwrap();
+        let o = p.selections[1].bbox;
+        assert!(cover[0] <= f.z(o[2]) && f.z(o[2]) <= fit[0]);
+        let tiny =
+            text("fit").replace("[47.15, 9.50, 47.18, 9.55]", "[47.15, 9.52, 47.151, 9.521]");
+        assert!(Project::parse(&tiny)
+            .unwrap_err()
+            .to_string()
+            .contains("no whole"));
     }
 }

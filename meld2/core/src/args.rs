@@ -57,11 +57,18 @@ const OPTS: &[Opt] = &[
     opt("legacy_trees", "--legacy-trees", None, Switch),
     opt("tree_realm", "--tree-realm", Some("tree-realm"), Val),
     opt("tree_size_weights", "--tree-size-weights", Some("tree-size-weights"), Val),
+    // Flags 3.4.0-beta.1 has without a capability name of their own (MIN_VERSION has them).
+    opt("max_tree_size", "--max-tree-size", None, Val),
+    opt("canopy_height", "--canopy-height", None, Val),
+    opt("tree_pack_dir", "--tree-pack-dir", Some("tree-pack-dir"), Val),
+    opt("tree_pack_mode", "--tree-pack-mode", Some("tree-pack-dir"), Val),
     opt("rocks", "--rocks", Some("rocks"), Switch),
     opt("rock_density", "--rock-density", Some("rocks"), Val),
     opt("bushes", "--bushes", Some("bushes"), Switch),
     opt("bush_density", "--bush-density", Some("bushes"), Val),
     opt("props", "--props", Some("props"), Val),
+    opt("props_min_scale", "--props-min-scale", Some("props-min-scale"), Val),
+    opt("loot_table", "--loot-table", Some("loot-table"), Val),
     opt("use_3d", "--no-3d", None, Not),
     opt("overture_source", "--overture-source", None, Val),
     opt("signage", "--signage", None, Val),
@@ -77,6 +84,8 @@ const OPTS: &[Opt] = &[
     opt("cave_style", "--cave-style", Some("cave-style"), Val),
     opt("cave_ores", "--cave-ores", Some("cave-ores"), Val),
     opt("cave_seed", "--cave-seed", Some("cave-seed"), Val),
+    opt("cave_biomes", "--cave-biomes", None, Val),
+    opt("cave_datum_y", "--cave-datum-y", Some("cave-datum-y"), Val),
     opt("snow_mode", "--snow-mode", Some("snow-mode"), Val),
     opt("snow_percent", "--snow-percent", Some("snow-mode"), Val),
     opt("snow_y", "--snow-y", Some("snow-mode"), Val),
@@ -86,13 +95,16 @@ const OPTS: &[Opt] = &[
     opt("farm_crops", "--farm-crops", Some("field-mix"), Val),
     opt("field_scale", "--field-scale", Some("field-mix"), Val),
     opt("grass_texture", "--grass-texture", Some("grass-texture"), Switch),
+    opt("grass_mix", "--grass-mix", Some("grass-texture"), Val),
     opt("land_texture", "--land-texture", Some("land-texture"), Switch),
+    opt("land_mix", "--land-mix", Some("land-texture"), Val),
     // output
     opt("bake_lighting", "--bake-lighting", None, Switch),
     opt("voxy_lod", "--voxy-lod", None, Switch),
     opt("map_item", "--map-item", None, Val),
     opt("world_border", "--world-border", Some("world-border"), Switch),
     opt("gamemode", "--gamemode", None, Val),
+    opt("world_type", "--world-type", None, Val),
     opt("world_time", "--world-time", None, Val),
     // data
     opt("offline", "--offline", Some("offline"), Switch),
@@ -114,6 +126,9 @@ const UNIT_REGIONS: &str = "unit_regions";
 /// `prewarm = true`: before the build, a step runs the same command with
 /// `--prewarm`, filling the caches (and the `.osm.pbf` bake) so the build reads disk.
 pub const PREWARM: &str = "prewarm";
+/// `snap = "fit" | "cover"`: a bbox selection snaps to whole pieces on the
+/// world's lattice, inside the box or covering it (Arnis's Selection Snap).
+pub const SNAP: &str = "snap";
 /// Raw arguments appended last, unchecked: the way to reach a flag Meld does not model.
 const EXTRA_ARGS: &str = "extra_args";
 
@@ -123,7 +138,7 @@ pub const DEFAULT_UNIT_REGIONS: i64 = 4;
 /// Every key a selection may set, with whether it is a switch, for forms.
 pub fn keys() -> Vec<(&'static str, bool)> {
     let mut keys: Vec<_> = OPTS.iter().map(|o| (o.key, o.kind != Val)).collect();
-    keys.extend([(UNIT_REGIONS, false), (PREWARM, true)]);
+    keys.extend([(UNIT_REGIONS, false), (PREWARM, true), (SNAP, false)]);
     keys
 }
 
@@ -141,6 +156,7 @@ pub fn check(settings: &Settings) -> Result<()> {
         let ok = match key.as_str() {
             UNIT_REGIONS => value.as_integer().is_some(),
             PREWARM => value.is_bool(),
+            SNAP => matches!(value.as_str(), Some("fit" | "cover")),
             EXTRA_ARGS => value
                 .as_array()
                 .is_some_and(|a| a.iter().all(Value::is_str)),

@@ -172,6 +172,14 @@ pub enum Step<'a> {
 }
 
 impl Step<'_> {
+    /// The CPU share it runs at: `bake_cpu` for bakes and prewarms when set.
+    pub fn cpu_target(&self, run: &crate::project::Budget) -> u32 {
+        match self {
+            Step::Bake(_) | Step::Prewarm(_) => run.bake_cpu.unwrap_or(run.cpu_target),
+            Step::Build(_) => run.cpu_target,
+        }
+    }
+
     /// Its key in `state.json` and in notes: `bake:<id>`, `prewarm:<id>`, or the selection id.
     pub fn key(&self) -> String {
         match self {
@@ -531,7 +539,7 @@ impl<'p> Runner<'_, 'p> {
             .collect();
         let share = share(
             self.cores,
-            self.project.run.cpu_target,
+            step.cpu_target(&self.project.run),
             self.ram_mb,
             slots(jobs, worlds.iter().map(String::as_str)),
         );
@@ -747,6 +755,18 @@ osm_pbf_url = "https://download.geofabrik.de/europe/liechtenstein-latest.osm.pbf
         assert_eq!(keys(&bakes), ["bake:li"]);
         let sels: Vec<_> = sels.iter().map(|l| keys(l)).collect();
         assert_eq!(sels, [vec!["prewarm:a", "a"], vec!["b"]]);
+        // Bake CPU: bakes and prewarms at their own share, builds at cpu_target.
+        let run = crate::project::Budget {
+            bake_cpu: Some(40),
+            ..Default::default()
+        };
+        let (b2, s2) = lanes(&p);
+        let cpu: Vec<u32> = b2
+            .iter()
+            .chain(&s2[0])
+            .map(|s| s.cpu_target(&run))
+            .collect();
+        assert_eq!(cpu, [40, 40, 90]);
 
         // A prewarm is the build's command with --prewarm, and without --offline.
         let saves = Path::new("saves");
