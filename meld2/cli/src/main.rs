@@ -194,7 +194,7 @@ fn run(path: &Path, arnis: Option<PathBuf>) -> Result<()> {
     )?;
     let _ = std::fs::remove_file(&stop_file);
     println!(
-        "{}: {} built, {} skipped, {} stopped, {} failed (state: {})",
+        "{}: {} done, {} skipped, {} stopped, {} failed (state: {})",
         project.name,
         summary.done,
         summary.skipped,
@@ -203,7 +203,7 @@ fn run(path: &Path, arnis: Option<PathBuf>) -> Result<()> {
         dir.display()
     );
     if summary.failed > 0 {
-        bail!("{} selection(s) failed", summary.failed);
+        bail!("{} step(s) failed", summary.failed);
     }
     Ok(())
 }

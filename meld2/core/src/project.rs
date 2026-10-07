@@ -17,7 +17,11 @@
 //! id = "vaduz"
 //! bbox = [47.139, 9.520, 47.141, 9.523]   # min_lat, min_lng, max_lat, max_lng
 //! world = "Alps"
-//! settings = { caves = true }
+//! settings = { caves = true, prewarm = true }   # prewarm: a cache-filling step first
+//!
+//! [[bake]]                    # a country .osm.pbf cut once, before the builds that read it
+//! id = "li"
+//! osm_pbf = "geofabrik"       # the selections' own `osm_pbf` value
 //! ```
 
 use crate::args;
@@ -47,6 +51,8 @@ pub struct Project {
     pub defaults: Settings,
     #[serde(rename = "selection", default)]
     pub selections: Vec<Selection>,
+    #[serde(rename = "bake", default)]
+    pub bakes: Vec<Bake>,
     /// Where the project was read from.
     #[serde(skip)]
     pub path: PathBuf,
@@ -90,6 +96,44 @@ pub struct Selection {
     pub settings: Settings,
 }
 
+/// A data step: Arnis cuts (bakes) an `.osm.pbf` extract for an area once,
+/// and every selection with the same `osm_pbf` then reads the bake.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Bake {
+    pub id: String,
+    /// What `--osm-pbf` reads: an `.osm.pbf` path or `geofabrik`.
+    pub osm_pbf: String,
+    /// Area to bake. Unset: around every selection with this `osm_pbf`.
+    pub bbox: Option<[f64; 4]>,
+}
+
+fn check_id(id: &str) -> Result<()> {
+    let ok = !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if !ok {
+        bail!("id {id:?}: use letters, digits, - and _");
+    }
+    Ok(())
+}
+
+fn check_bbox(b: &[f64; 4]) -> Result<()> {
+    let [s_lat, w_lng, n_lat, e_lng] = *b;
+    let valid = b.iter().all(|v| v.is_finite())
+        && (-90.0..=90.0).contains(&s_lat)
+        && (-90.0..=90.0).contains(&n_lat)
+        && (-180.0..=180.0).contains(&w_lng)
+        && (-180.0..=180.0).contains(&e_lng)
+        && s_lat < n_lat
+        && w_lng < e_lng;
+    if !valid {
+        bail!("bbox must be [min_lat, min_lng, max_lat, max_lng]");
+    }
+    Ok(())
+}
+
 impl Project {
     pub fn load(path: &Path) -> Result<Self> {
         let text =
@@ -127,36 +171,75 @@ impl Project {
         args::check(&self.defaults).context("in [defaults]")?;
         let mut ids = HashSet::new();
         for s in &self.selections {
-            let ok_id = !s.id.is_empty()
-                && s.id
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
-            if !ok_id {
-                bail!("selection id {:?}: use letters, digits, - and _", s.id);
-            }
+            check_id(&s.id).with_context(|| format!("selection {}", s.id))?;
             if !ids.insert(s.id.as_str()) {
                 bail!("selection id {:?} is used twice", s.id);
             }
             if s.world.trim().is_empty() {
                 bail!("selection {}: empty world", s.id);
             }
-            let [s_lat, w_lng, n_lat, e_lng] = s.bbox;
-            let valid = s.bbox.iter().all(|v| v.is_finite())
-                && (-90.0..=90.0).contains(&s_lat)
-                && (-90.0..=90.0).contains(&n_lat)
-                && (-180.0..=180.0).contains(&w_lng)
-                && (-180.0..=180.0).contains(&e_lng)
-                && s_lat < n_lat
-                && w_lng < e_lng;
-            if !valid {
-                bail!(
-                    "selection {}: bbox must be [min_lat, min_lng, max_lat, max_lng]",
-                    s.id
-                );
-            }
+            check_bbox(&s.bbox).with_context(|| format!("selection {}", s.id))?;
             args::check(&s.settings).with_context(|| format!("in selection {}", s.id))?;
         }
+        let mut bakes = HashSet::new();
+        for b in &self.bakes {
+            check_id(&b.id).with_context(|| format!("bake {}", b.id))?;
+            if !bakes.insert(b.id.as_str()) {
+                bail!("bake id {:?} is used twice", b.id);
+            }
+            match &b.bbox {
+                Some(bbox) => check_bbox(bbox).with_context(|| format!("bake {}", b.id))?,
+                None if self.reading(&b.osm_pbf).next().is_none() => bail!(
+                    "bake {}: no selection has osm_pbf = {:?}; set one or give the bake a bbox",
+                    b.id,
+                    b.osm_pbf
+                ),
+                None => {}
+            }
+        }
         Ok(())
+    }
+
+    /// The selections whose `osm_pbf` is `src`.
+    pub fn reading<'a>(&'a self, src: &'a str) -> impl Iterator<Item = &'a Selection> + 'a {
+        self.selections.iter().filter(move |s| {
+            self.settings_for(s)
+                .get("osm_pbf")
+                .and_then(toml::Value::as_str)
+                == Some(src)
+        })
+    }
+
+    /// The area a bake cuts: its own bbox, or the selections reading it, padded
+    /// by what Arnis keeps past a piece (2 x 64 blocks at the smallest scale),
+    /// so each selection's own bake lookup finds this one.
+    pub fn bake_bbox(&self, bake: &Bake) -> [f64; 4] {
+        if let Some(b) = bake.bbox {
+            return b;
+        }
+        let mut u = [90.0, 180.0, -90.0, -180.0_f64];
+        let mut pad_m: f64 = 0.0;
+        for s in self.reading(&bake.osm_pbf) {
+            u = [
+                u[0].min(s.bbox[0]),
+                u[1].min(s.bbox[1]),
+                u[2].max(s.bbox[2]),
+                u[3].max(s.bbox[3]),
+            ];
+            let scale = self
+                .settings_for(s)
+                .get("scale")
+                .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)));
+            pad_m = pad_m.max(128.0 / scale.unwrap_or(1.0).max(0.01) + 64.0);
+        }
+        let lat = pad_m / 111_320.0;
+        let lon = lat / u[0].abs().max(u[2].abs()).to_radians().cos().max(0.01);
+        [
+            (u[0] - lat).max(-85.0),
+            (u[1] - lon).max(-180.0),
+            (u[2] + lat).min(85.0),
+            (u[3] + lon).min(180.0),
+        ]
     }
 
     /// The saves folder, resolved against the project file.
@@ -225,6 +308,14 @@ settings = { caves = true, snow_mode = "peaks" }
             (GOOD.replace("format = 1", ""), "missing `format"),
             (GOOD.replace("id = \"b\"", "id = \"a\""), "used twice"),
             (GOOD.replace("id = \"b\"", "id = \"b c\""), "letters"),
+            (
+                GOOD.to_string()
+                    + "[[bake]]
+id = \"x\"
+osm_pbf = \"geofabrik\"
+",
+                "no selection",
+            ),
             (
                 GOOD.replace("[47.15, 9.52, 47.16, 9.53]", "[47.16, 9.52, 47.15, 9.53]"),
                 "bbox",

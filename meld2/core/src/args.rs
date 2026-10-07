@@ -98,6 +98,9 @@ const OPTS: &[Opt] = &[
 
 /// Keys handled outside `OPTS`.
 const UNIT_REGIONS: &str = "unit_regions";
+/// `prewarm = true`: before the build, a step runs the same command with
+/// `--prewarm`, filling the caches (and the `.osm.pbf` bake) so the build reads disk.
+pub const PREWARM: &str = "prewarm";
 /// Raw arguments appended last, unchecked: the way to reach a flag Meld does not model.
 const EXTRA_ARGS: &str = "extra_args";
 
@@ -117,6 +120,7 @@ pub fn check(settings: &Settings) -> Result<()> {
     for (key, value) in settings {
         let ok = match key.as_str() {
             UNIT_REGIONS => value.as_integer().is_some(),
+            PREWARM => value.is_bool(),
             EXTRA_ARGS => value
                 .as_array()
                 .is_some_and(|a| a.iter().all(Value::is_str)),
@@ -219,6 +223,52 @@ pub fn build(sel: &Selection, settings: &Settings, saves: &Path, share: Share) -
     }
     if let Some(extra) = settings.get(EXTRA_ARGS).and_then(Value::as_array) {
         args.extend(extra.iter().filter_map(Value::as_str).map(String::from));
+    }
+    Invocation { args, caps }
+}
+
+/// The prewarm of `inv`: the same options plus `--prewarm`, which fills the
+/// caches (and bakes an `--osm-pbf` extract) for every piece and writes no
+/// world. Arnis refuses `--prewarm` with `--offline`, so that one goes.
+pub fn prewarm(mut inv: Invocation) -> Invocation {
+    inv.args
+        .retain(|a| a != "--offline" && a != "--prewarm-first");
+    inv.args.push("--prewarm".into());
+    if !inv.caps.contains(&"prewarm") {
+        inv.caps.push("prewarm");
+    }
+    inv
+}
+
+/// A bake: Arnis cuts `osm_pbf` for `bbox` once, and every later run with
+/// that `--osm-pbf` inside the area reads the cut. It is a `--prewarm` with
+/// the other sources off (flat ground, no Overture, canopy or 3D), so it
+/// fetches OSM and land cover only, and writes no world.
+pub fn bake(bbox: [f64; 4], osm_pbf: &str, share: Share) -> Invocation {
+    let [s, w, n, e] = bbox;
+    let mut args: Vec<String> = [
+        "--bbox",
+        &format!("{s},{w},{n},{e}"),
+        "--osm-pbf",
+        osm_pbf,
+        "--prewarm",
+        "--mode",
+        "geo-only",
+        "--overture",
+        "false",
+        "--canopy-height",
+        "false",
+        "--no-3d",
+        "--progress",
+        "json",
+        "--no-update-check",
+    ]
+    .map(String::from)
+    .to_vec();
+    let mut caps = vec!["progress-json", "osm-pbf", "prewarm"];
+    if let Some(t) = share.threads {
+        args.extend(["--threads".into(), t.to_string()]);
+        caps.push("threads");
     }
     Invocation { args, caps }
 }
