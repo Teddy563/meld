@@ -1,0 +1,35 @@
+
+        ▄████████    ▄████████ ███▄▄▄▄    ▄█     ▄████████
+        ███    ███   ███    ███ ███▀▀▀██▄ ███    ███    ███
+        ███    ███   ███    ███ ███   ███ ███▌   ███    █▀
+        ███    ███  ▄███▄▄▄▄██▀ ███   ███ ███▌   ███
+      ▀███████████ ▀▀███▀▀▀▀▀   ███   ███ ███▌ ▀███████████
+        ███    ███ ▀███████████ ███   ███ ███           ███
+        ███    ███   ███    ███ ███   ███ ███     ▄█    ███
+        ███    █▀    ███    ███  ▀█   █▀  █▀    ▄████████▀
+                     ███    ███
+
+                          version 3.4.0-beta.1
+                https://github.com/louis-e/arnis
+        
+Note: One World uses the extended build height, so any place on Earth fits.
+One World: created off at ./saves3\off
+  area #1: blocks x -64..=63 z -64..=63 (8 x 8 chunks)
+  [+] Fetching Overture Maps data...
+[1/7] Fetching data from the tile archive...
+{"v":1,"type":"phase","name":"Downloading data...","progress":1.0}
+[3/7] Fetching elevation...
+Fetching land cover data (ESA WorldCover 2021)...
+{"v":1,"type":"progress","progress":9.0}
+Fetching canopy height data (Meta/WRI 1m global canopy height)...
+[1/7] Fetching data...
+Using Mapterhorn terrain tiles from z16, as the One World pins
+{"v":1,"type":"progress","progress":10.0}
+Downloading 1 elevation tiles from AWS (up to 8 concurrent)...
+Fetching tile x=17250,y=11506,z=15 from AWS Terrain Tiles
+Bilinear sampling 0 tiles into 456x456 grid...
+{"v":1,"type":"phase","name":"Processing elevation...","progress":12.0}
+{"v":1,"type":"progress","progress":14.0}
+{"v":1,"type":"progress","progress":16.0}
+{"v":1,"type":"progress","progress":18.0}
+{"v":1,"type":"error","message":"generation failed, see stderr"}
