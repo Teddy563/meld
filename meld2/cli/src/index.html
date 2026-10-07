@@ -273,10 +273,10 @@
   .wtop { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
   .wtop .sub { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ovr-n { color: var(--ui-accent); white-space: nowrap; }
-  /* The search stays on top while the rail scrolls; "Settings for" sticks just under it. */
-  #railHead { --head-h: calc(var(--field-h) + 2 * var(--sp-2) + 1px); position: sticky; top: calc(-1 * var(--sp-3)); z-index: 3; margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) 0; padding: var(--sp-2) var(--sp-3); background: var(--ui-sidebar); border-bottom: 1px solid var(--ui-card-border); display: flex; align-items: center; gap: var(--sp-2); min-height: var(--head-h); box-sizing: border-box; }
-  #railHead #railSearch { flex: 1; width: auto; height: var(--field-h); border-radius: var(--r-md); }
-  #targetBar { position: sticky; top: calc(-1 * var(--sp-3) + var(--field-h) + 2 * var(--sp-2) + 1px); z-index: 2; margin: 0 calc(-1 * var(--sp-3)); padding: 10px var(--sp-3); background: var(--ui-sidebar); border-top: 1px solid var(--ui-card-border); border-bottom: 1px solid var(--ui-card-border); display: flex; flex-direction: column; gap: var(--sp-2); }
+  /* The settings search lives in the left rail, under Projects; it filters the right one. */
+  #setSearch #railSearch { flex: 1; width: auto; }
+  /* "Settings for" sticks to the top of the rail while it scrolls. */
+  #targetBar { position: sticky; top: calc(-1 * var(--sp-3)); z-index: 2; margin: 0 calc(-1 * var(--sp-3)); padding: 10px var(--sp-3); background: var(--ui-sidebar); border-top: 1px solid var(--ui-card-border); border-bottom: 1px solid var(--ui-card-border); display: flex; flex-direction: column; gap: var(--sp-2); }
   #targetBar.on-sel { box-shadow: inset 3px 0 0 var(--ui-accent); }
   #targetBar .row > span { flex: none; font-size: 13px; color: var(--ui-muted); }
   #targetBar select { flex: 1; width: auto; }
@@ -285,9 +285,14 @@
   .target-note:empty { display: none; }
   .chk { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 12.5px; color: var(--ui-muted); cursor: pointer; white-space: nowrap; }
   .chk input { accent-color: var(--ui-accent); margin: 0; }
-  #coordbox, #credit { position: fixed; left: calc(var(--left-w) + var(--sp-3)); z-index: 600; background: rgba(46,46,46,.9); border: 1px solid rgba(255,255,255,.14); border-radius: var(--r-sm); font: 11px/1.3 ui-monospace, Consolas, monospace; }
-  #coordbox { bottom: 10px; pointer-events: none; color: #ececec; padding: var(--sp-1) 9px; }
-  #credit { bottom: 40px; color: #b5b5b5; padding: 3px var(--sp-2); }
+  /* Credits, then the live coordinates: two pills on one line, bottom left of the map.
+     Under 1280 the map strip is too narrow to share its bottom with Leaflet's
+     attribution, so the line sits just above it. */
+  #mapfoot { position: fixed; left: calc(var(--left-w) + var(--sp-3)); bottom: 10px; z-index: 600; display: flex; align-items: baseline; gap: 6px; max-width: calc(100vw - var(--left-w) - var(--right-w) - 2 * var(--sp-3)); }
+  @media (max-width: 1279px) { #mapfoot { bottom: 30px; } }
+  #mapfoot > div { flex: none; padding: 3px var(--sp-2); background: var(--map-surface); border: 1px solid var(--map-border); border-radius: var(--r-sm); font: 11px/1.3 Inter, Avenir, Helvetica, Arial, sans-serif; white-space: nowrap; -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+  #credit { color: var(--map-muted); }
+  #mapfoot > #coordbox { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; pointer-events: none; color: var(--map-text); font-variant-numeric: tabular-nums; }
   #projOverlay { display: none; position: fixed; top: var(--sp-3); left: calc(var(--left-w) + var(--sp-3)); width: 460px; max-height: calc(100vh - 2 * var(--sp-3)); height: 860px; max-width: calc(100vw - var(--left-w) - var(--right-w) - 2 * var(--sp-3)); z-index: 6000; background: var(--ui-card); border: 1px solid var(--ui-card-border); border-radius: var(--r-xl); box-shadow: 0 16px 48px rgba(0,0,0,.45); flex-direction: column; overflow: hidden; }
   #projOverlay.on { display: flex; }
   #projOverlay > .row { padding: var(--sp-3); border-bottom: 1px solid var(--ui-card-border); }
@@ -296,6 +301,61 @@
   .pcard:hover { background: var(--ui-tile-hover); }
   .pcard.on { border-color: var(--ui-accent); }
   .foot { text-align: center; font-size: 11.5px; color: var(--ui-faint); padding: var(--sp-1) 0 var(--sp-2); }
+
+  /* ---- map controls: Arnis 3.4's css/map-controls.css (toolbar groups, buttons,
+     icons, drawing actions, search, Big Worlds dimension labels), with Lucide
+     icons for the polygon and edit tools Arnis does not have, and its zoom
+     buttons and edit handles in the same surface ---- */
+  :root { --map-surface: rgba(46,46,46,.9); --map-surface-solid: #2e2e2e; --map-border: rgba(255,255,255,.14); --map-text: #ececec; --map-muted: #b5b5b5; --map-accent: #fecc44; }
+  .leaflet-top.leaflet-left .leaflet-control { margin-top: 10px; margin-left: 10px; }
+  .leaflet-draw .leaflet-draw-toolbar { margin-top: 8px; }
+  .leaflet-draw .leaflet-draw-toolbar-top { margin-top: 0; }
+  .leaflet-draw .leaflet-bar, .leaflet-touch .leaflet-draw .leaflet-bar,
+  .leaflet-bar.leaflet-control-zoom, .leaflet-touch .leaflet-bar.leaflet-control-zoom { display: flex; flex-direction: column; gap: 2px; padding: 3px; border: 1px solid var(--map-border); border-radius: 9px; background: var(--map-surface); background-clip: border-box; -webkit-backdrop-filter: blur(10px) saturate(120%); backdrop-filter: blur(10px) saturate(120%); box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+  .leaflet-draw .leaflet-bar a, .leaflet-touch .leaflet-draw .leaflet-bar a, .leaflet-touch .leaflet-draw .leaflet-draw-toolbar a,
+  .leaflet-control-zoom a, .leaflet-touch .leaflet-control-zoom a { position: relative; width: 32px; height: 32px; line-height: 32px; border: none; border-radius: 6px; background-color: transparent; background-image: none; color: var(--map-text); cursor: pointer; transition: background-color .12s ease, color .12s ease, box-shadow .12s ease; }
+  .leaflet-control-zoom a, .leaflet-touch .leaflet-control-zoom a { font: 600 18px/32px Inter, Arial, sans-serif; }
+  .leaflet-draw .leaflet-bar a::before { content: ""; position: absolute; inset: 0; margin: auto; width: 18px; height: 18px; background-color: currentColor; -webkit-mask: var(--tool-icon) center / contain no-repeat; mask: var(--tool-icon) center / contain no-repeat; }
+  .leaflet-draw .leaflet-bar a:hover, .leaflet-draw .leaflet-bar a:focus, .leaflet-control-zoom a:hover { background-color: rgba(255,255,255,.1); color: #fff; }
+  .leaflet-draw .leaflet-bar a:focus { outline: none; }
+  .leaflet-draw .leaflet-bar a:focus-visible { box-shadow: inset 0 0 0 2px var(--map-accent); }
+  .leaflet-draw .leaflet-bar a.leaflet-draw-toolbar-button-enabled { background-color: var(--map-accent); color: #1c1c1c; }
+  .leaflet-draw .leaflet-bar a.leaflet-disabled, .leaflet-draw .leaflet-bar a.leaflet-disabled:hover,
+  .leaflet-control-zoom a.leaflet-disabled, .leaflet-control-zoom a.leaflet-disabled:hover { background-color: transparent; color: rgba(236,236,236,.32); cursor: default; }
+  .leaflet-draw-toolbar a.leaflet-draw-draw-rectangle { --tool-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='5' y='5' width='14' height='14' stroke-width='1.8'/%3E%3Cg fill='black' stroke='none'%3E%3Crect x='2.5' y='2.5' width='5' height='5' rx='1'/%3E%3Crect x='16.5' y='2.5' width='5' height='5' rx='1'/%3E%3Crect x='2.5' y='16.5' width='5' height='5' rx='1'/%3E%3Crect x='16.5' y='16.5' width='5' height='5' rx='1'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"); }
+  .leaflet-draw-toolbar a.leaflet-draw-draw-polygon { --tool-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M10.83 2.38a2 2 0 0 1 2.34 0l8 5.74a2 2 0 0 1 .73 2.25l-3.04 9.26a2 2 0 0 1-1.9 1.37H7.04a2 2 0 0 1-1.9-1.37L2.1 10.37a2 2 0 0 1 .73-2.25z'/%3E%3C/g%3E%3C/svg%3E"); }
+  .leaflet-draw-toolbar a.leaflet-draw-edit-edit { --tool-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7'/%3E%3Cpath d='M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z'/%3E%3C/g%3E%3C/svg%3E"); }
+  .leaflet-draw-toolbar a.leaflet-draw-edit-remove { --tool-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18'/%3E%3Cpath d='M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6'/%3E%3Cpath d='M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2'/%3E%3Cpath d='M10 11v6'/%3E%3Cpath d='M14 11v6'/%3E%3C/g%3E%3C/svg%3E"); }
+  .leaflet-draw .leaflet-draw-actions { left: 46px; }
+  .leaflet-draw .leaflet-draw-actions a, .leaflet-draw .leaflet-draw-actions-top a, .leaflet-draw .leaflet-draw-actions-bottom a, .leaflet-draw .leaflet-draw-actions-top.leaflet-draw-actions-bottom a { height: 32px; padding: 0 12px; border-left: 1px solid var(--map-border); background-color: var(--map-surface-solid); color: var(--map-text); font: 500 12.5px/32px Inter, Arial, sans-serif; }
+  .leaflet-draw .leaflet-draw-actions a:hover { background-color: #3c3c3c; color: #fff; }
+  .leaflet-draw .leaflet-draw-actions li a { border-radius: 0; }
+  .leaflet-draw .leaflet-draw-actions li:first-child a { border-left: none; border-radius: 6px 0 0 6px; }
+  .leaflet-draw .leaflet-draw-actions li:last-child a { border-radius: 0 6px 6px 0; }
+  .leaflet-draw .leaflet-draw-actions li:only-child a { border-radius: 6px; }
+  .leaflet-draw .leaflet-draw-actions-top, .leaflet-draw .leaflet-draw-actions-bottom { margin-top: 4px; box-shadow: 0 2px 10px rgba(0,0,0,.35); border-radius: 6px; }
+  /* Arnis's always-on bbox handles (css/bbox.css .bbox-handle): white squares, thin dark outline. */
+  .leaflet-div-icon.leaflet-editing-icon { background: #fff; border: 1px solid #333; border-radius: 2px; box-shadow: 0 1px 4px rgba(0,0,0,.45); }
+  .leaflet-div-icon.leaflet-edit-move { cursor: move; }
+  #search-container { font-family: Inter, Arial, sans-serif; }
+  #search-box { display: flex; align-items: center; overflow: hidden; border: 1px solid var(--map-border); border-radius: 9px; background: var(--map-surface); -webkit-backdrop-filter: blur(10px) saturate(120%); backdrop-filter: blur(10px) saturate(120%); box-shadow: 0 2px 10px rgba(0,0,0,.35); transition: border-color .15s ease; }
+  #search-box:focus-within { border-color: rgba(254,204,68,.75); }
+  #city-search { width: 210px; height: auto; padding: 8px 4px 8px 12px; border: none; border-radius: 0; background: transparent; color: var(--map-text); font-size: 13px; }
+  #city-search::placeholder { color: #9c9c9c; }
+  #city-search:focus { border: none; box-shadow: none; }
+  #search-btn { display: grid; place-items: center; align-self: stretch; width: 36px; min-height: 0; padding: 0; border: none; border-radius: 0; background: transparent; color: var(--map-muted); cursor: pointer; }
+  #search-btn:hover, #search-btn:focus-visible { background: rgba(255,255,255,.1); color: #fff; outline: none; }
+  #search-results { position: absolute; left: 0; right: 0; max-height: 200px; overflow-y: auto; margin-top: 6px; border: 1px solid var(--map-border); border-radius: 9px; background: rgba(40,40,40,.97); box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+  .search-result-item { padding: 9px 12px; border-bottom: 1px solid rgba(255,255,255,.06); color: var(--map-text); font-size: 13px; cursor: pointer; overflow-wrap: break-word; }
+  .search-result-item:last-child { border-bottom: none; }
+  .search-result-item:hover, .search-result-item:focus-visible { background-color: rgba(255,255,255,.07); outline: none; }
+  .search-result-name { color: var(--map-accent); font-weight: 600; }
+  .search-result-details { margin-top: 2px; color: #a4a4a4; font-size: 11px; }
+  .search-loading, .search-no-results { padding: 10px 12px; text-align: center; color: var(--map-muted); font-size: 13px; }
+  .search-loading { font-style: italic; }
+  .snap-dim { width: 0; height: 0; }
+  .snap-dim span { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); white-space: nowrap; padding: 1px 6px; border-radius: 4px; background: var(--map-surface-solid); border: 1px solid var(--map-accent); color: var(--map-accent); font: 600 11px/1.4 Inter, Arial, sans-serif; pointer-events: none; }
+  .snap-dim-h span { transform: translate(-50%, -50%) rotate(-90deg); }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -385,6 +445,7 @@
       </a>
     <div class="tagline">From a city block to a whole continent, in Minecraft.</div>
     <button class="wide" id="btnProjects"><svg class="icon"><use href="#i-globe"/></svg>Projects</button>
+    <div class="row" id="setSearch"><input id="railSearch" type="search" placeholder="Search settings…" autocomplete="off" aria-label="Search settings"><label class="chk" title="Show only the values set here"><input type="checkbox" id="onlySet">Changed only</label></div>
     <div class="card">
       <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-hard-drive"/></svg></span><div><h3>Build</h3><p id="projLine">No project open.</p></div><span id="runChip" class="chip"></span></div>
       <div class="report">
@@ -414,11 +475,9 @@
     <div id="projCards" style="flex:1;overflow:auto;padding:var(--sp-3);display:flex;flex-direction:column;gap:var(--sp-2)"></div>
   </div>
 
-  <div id="coordbox">Move the mouse over the map</div>
-  <div id="credit">Arnis by <a href="https://github.com/louis-e/arnis" target="_blank" rel="noopener">louis-e</a> · Meld by <a href="https://github.com/Teddy563/meld" target="_blank" rel="noopener">Teddy563</a></div>
+  <div id="mapfoot"><div id="credit">Arnis by <a href="https://github.com/louis-e/arnis" target="_blank" rel="noopener">louis-e</a> · Meld by <a href="https://github.com/Teddy563/meld" target="_blank" rel="noopener">Teddy563</a></div><div id="coordbox">Move the mouse over the map</div></div>
 
   <div id="side">
-    <div id="railHead"><input id="railSearch" type="search" placeholder="Search settings…" autocomplete="off" aria-label="Search settings"><label class="chk" title="Show only the values set here"><input type="checkbox" id="onlySet">Changed only</label></div>
     <div class="card" id="cardRun">
       <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-play"/></svg></span><div><h3>Generate</h3><p>Five steps to a world</p></div></div>
       <div class="card-body">
@@ -810,8 +869,13 @@ function filter() {
   $("searchEmpty").hidden = !(q || only) || hits > 0 || !cur;
   $("searchEmpty").textContent = only && !q ? "Nothing is changed here yet." : `No setting matches “${q}”${only ? " among the changed ones" : ""}.`;
 }
-$("railSearch").oninput = () => ($("railSearch").value.trim() ? filter() : renderSettings(true));
-$("onlySet").onchange = () => renderSettings(true);
+// The search sits in the left rail; what it finds is brought into view in the right one.
+function toFound() {
+  const first = [...$("settingsCards").children].find((c) => !c.hidden);
+  if (first && ($("railSearch").value.trim() || $("onlySet").checked)) $("side").scrollTop = first.offsetTop - $("targetBar").offsetHeight - 12;
+}
+$("railSearch").oninput = () => { $("railSearch").value.trim() ? filter() : renderSettings(true); toFound(); };
+$("onlySet").onchange = () => { renderSettings(true); toFound(); };
 // Sections and groups remember being open (not while a search opened them).
 document.addEventListener("click", (e) => {
   const h = e.target.closest(".card-head");
@@ -952,9 +1016,15 @@ const fit = (bounds, maxZoom) => {
   const css = (v) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || 0;
   map.fitBounds(bounds, { maxZoom, paddingTopLeft: [css("--left-w") + 40, 40], paddingBottomRight: [css("--right-w") + 40, 40] });
 };
-const partsLayer = L.layerGroup().addTo(map);
-const shape = { color: "#fecc44", weight: 2, fillOpacity: 0.1 };
+// Arnis's selection while it is drawn (bbox.js drawControl): dashed yellow.
+const shape = { color: "#fecc44", opacity: 0.8, weight: 3, fillColor: "#fecc44", fillOpacity: 0.1, dashArray: "10, 10", lineCap: "round", lineJoin: "round" };
 const drawOpts = { rectangle: { shapeOptions: shape, showArea: false }, polygon: { shapeOptions: shape, showArea: false } };
+// Edit handles the size of Arnis's bbox handles: 12 px corners, a 16 px mover.
+{
+  const h = (px, cls) => L.divIcon({ iconSize: [px, px], className: `leaflet-div-icon leaflet-editing-icon ${cls}` });
+  Object.assign(L.Edit.SimpleShape.prototype.options, { moveIcon: h(16, "leaflet-edit-move"), resizeIcon: h(12, "leaflet-edit-resize"), touchMoveIcon: h(20, "leaflet-edit-move leaflet-touch-icon"), touchResizeIcon: h(20, "leaflet-edit-resize leaflet-touch-icon") });
+  for (const C of [L.Edit.PolyVerticesEdit, L.Draw.Polyline]) Object.assign(C.prototype.options, { icon: h(12, ""), touchIcon: h(20, "leaflet-touch-icon") });
+}
 map.addControl(new L.Control.Draw({ draw: { ...drawOpts, polyline: false, circle: false, marker: false, circlemarker: false }, edit: { featureGroup: drawn } }));
 const startDraw = (kind) => (kind === "polygon" ? new L.Draw.Polygon(map, drawOpts.polygon) : new L.Draw.Rectangle(map, drawOpts.rectangle)).enable();
 map.on("mousemove", (e) => ($("coordbox").textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`));
@@ -1003,10 +1073,12 @@ function pctOf(id) {
 }
 const colour = { pending: "#fecc44", running: "#ff9800", done: "#4caf50", skipped: "#4caf50", failed: "#cf6679", stopped: "#b8b8b8" };
 const STATUS = { pending: "not built", running: "building", done: "built", skipped: "built", failed: "failed", stopped: "stopped" };
-const styleOf = (s) => ({ color: colour[selStatus(s)], weight: s.id === target ? 4 : 2.5, opacity: 1, fillOpacity: s.id === target ? 0.25 : 0.1 });
+// Arnis's drawn selection (bbox.js draw:created): weight 3, a light fill, round
+// joins; Meld colours it by its build state and marks the one being edited.
+const styleOf = (s) => ({ color: colour[selStatus(s)], weight: s.id === target ? 4 : 3, opacity: 1, fillOpacity: s.id === target ? 0.2 : 0.08, lineCap: "round", lineJoin: "round" });
 function drawShapes(first) {
   drawn.clearLayers();
-  partsLayer.clearLayers();
+  drawSnapOverlay();
   if (!cur) return;
   for (const s of cur.model.selection || []) {
     const ls = s.polygon ? s.polygon.map((ring, i) => Object.assign(L.polygon(ring, styleOf(s)), { ring: i })) : s.bbox ? [L.rectangle([[s.bbox[0], s.bbox[1]], [s.bbox[2], s.bbox[3]]], styleOf(s))] : [];
@@ -1017,9 +1089,132 @@ function drawShapes(first) {
       drawn.addLayer(l);
     }
   }
-  for (const p of cur.parts) L.rectangle([[p.bbox[0], p.bbox[1]], [p.bbox[2], p.bbox[3]]], { color: "#f2f2f2", weight: 1.2, opacity: 0.7, dashArray: "6 5", fill: false, interactive: false }).addTo(partsLayer);
   if (first && drawn.getLayers().length) fit(drawn.getBounds(), 14);
 }
+
+// ---- Big Worlds cell grid: Arnis 3.4's drawSnapOverlay and drawSnapDimensions
+// (src/gui/js/bbox.js), fed the grid the server gives each snapped selection and
+// each polygon part (serve.rs grid(), the shape of Arnis's gui_snap_selection).
+// Drawn cell lines stay at least this far apart on screen.
+const SNAP_MIN_CELL_PX = 8;
+// How far outside the outline the W and H dimension lines sit.
+const SNAP_DIM_GAP_PX = 16;
+const snapLayer = L.layerGroup().addTo(map);
+// One renderer for good: Leaflet keeps a renderer on the map once a path used it.
+const snapRenderer = L.canvas({ padding: 0.2 });
+map.on("zoomend", drawSnapOverlay);
+// Every grid of the project; a polygon's parts share one W and H, on their union.
+// Redrawn on zoomend and on a new model, never while panning.
+function drawSnapOverlay() {
+  snapLayer.clearLayers();
+  if (!cur) return;
+  const groups = {}, origins = {};
+  for (const p of cur.parts) if (p.grid) (groups[p.part_of || p.id] = groups[p.part_of || p.id] || []).push(p.grid);
+  for (const grids of Object.values(groups)) {
+    grids.forEach(drawSnapCells);
+    const u = grids.reduce((a, g) => ({
+      o: [Math.min(a.o[0], g.outline[0]), Math.min(a.o[1], g.outline[1]), Math.max(a.o[2], g.outline[2]), Math.max(a.o[3], g.outline[3])],
+      b: [Math.min(a.b[0], g.blocks[0]), Math.min(a.b[1], g.blocks[1]), Math.max(a.b[2], g.blocks[2]), Math.max(a.b[3], g.blocks[3])],
+    }), { o: grids[0].outline, b: grids[0].blocks });
+    const { side, scale } = grids[0], span = [u.b[2] - u.b[0], u.b[3] - u.b[1]];
+    // Width (east-west) first, then height (north-south), as Arnis labels them.
+    const dims = [0, 1].map((i) => `${i ? "H" : "W"} ${plural(Math.round(span[i] / side), "cell")} · ${(span[i] / scale / 1000).toFixed(1)} km`);
+    drawSnapDimensions(map.latLngToContainerPoint([u.o[2], u.o[1]]), map.latLngToContainerPoint([u.o[0], u.o[3]]), dims);
+    for (const g of grids) origins[g.origin.join()] = g.origin;
+  }
+  // Block (0, 0), the world's origin, which a new world's run is pinned to.
+  for (const o of Object.values(origins)) {
+    L.circleMarker(o, { renderer: snapRenderer, radius: 5, color: "#1c1c1c", weight: 2, fillColor: "#fecc44", fillOpacity: 1, interactive: false }).addTo(snapLayer);
+  }
+}
+// One part's cell lines and outline. Zoomed out, every 2nd, 4th, ... line is
+// drawn so lines stay SNAP_MIN_CELL_PX apart, counted on the world's lattice
+// (`at`) so a polygon's parts thin alike; past the cell count the server sends
+// lines for, only the outline.
+function drawSnapCells(snap) {
+  const [s, w, n, e] = snap.outline;
+  const nw = map.latLngToContainerPoint([n, w]), se = map.latLngToContainerPoint([s, e]);
+  const cellPx = Math.min((se.x - nw.x) / snap.cells[0], (se.y - nw.y) / snap.cells[1]);
+  let stride = 1;
+  while (cellPx * stride < SNAP_MIN_CELL_PX) stride *= 2;
+  const kept = (at) => (_, i) => (at + i + 1) % stride === 0;
+  const segments = snap.lon_lines.filter(kept(snap.at[0])).map((lon) => [[s, lon], [n, lon]])
+    .concat(snap.lat_lines.filter(kept(snap.at[1])).map((lat) => [[lat, w], [lat, e]]));
+  // Yellow dashes on a dark halo, readable on light tiles and dark ones.
+  if (segments.length > 0) {
+    L.polyline(segments, { renderer: snapRenderer, color: "#000000", weight: 3.5, opacity: 0.6, interactive: false }).addTo(snapLayer);
+    L.polyline(segments, { renderer: snapRenderer, color: "#fecc44", weight: 2, opacity: 1, dashArray: "4 4", interactive: false }).addTo(snapLayer);
+  }
+  L.rectangle([[s, w], [n, e]], { renderer: snapRenderer, color: "#000000", weight: 4.5, opacity: 0.5, fill: false, interactive: false }).addTo(snapLayer);
+  L.rectangle([[s, w], [n, e]], { renderer: snapRenderer, color: "#fecc44", weight: 2.5, fill: false, interactive: false }).addTo(snapLayer);
+}
+// Dimension lines with end ticks above the outline (W) and right of it (H),
+// each labelled in the middle. Placed in screen pixels at this zoom.
+function drawSnapDimensions(nw, se, dims) {
+  const at = (x, y) => map.containerPointToLatLng([x, y]);
+  const g = SNAP_DIM_GAP_PX, t = 5;
+  const top = nw.y - g, right = se.x + g;
+  const lines = [
+    [at(nw.x, top), at(se.x, top)],
+    [at(nw.x, top - t), at(nw.x, top + t)], [at(se.x, top - t), at(se.x, top + t)],
+    [at(right, nw.y), at(right, se.y)],
+    [at(right - t, nw.y), at(right + t, nw.y)], [at(right - t, se.y), at(right + t, se.y)],
+  ];
+  L.polyline(lines, { renderer: snapRenderer, color: "#000000", weight: 3, opacity: 0.5, interactive: false }).addTo(snapLayer);
+  L.polyline(lines, { renderer: snapRenderer, color: "#fecc44", weight: 1.5, interactive: false }).addTo(snapLayer);
+  for (const [ll, text, cls] of [[at((nw.x + se.x) / 2, top), dims[0], "snap-dim"], [at(right, (nw.y + se.y) / 2), dims[1], "snap-dim snap-dim-h"]]) {
+    const label = document.createElement("span");
+    label.textContent = text;
+    L.marker(ll, { icon: L.divIcon({ className: cls, html: label, iconSize: null }), interactive: false, keyboard: false }).addTo(snapLayer);
+  }
+}
+
+// ---- place search, top right of the map: Arnis 3.4's city search (maps.html,
+// js/search.js, css/map-controls.css) over Meld's /api/search ----
+const PlaceSearch = L.Control.extend({
+  onAdd() {
+    const d = L.DomUtil.create("div", "leaflet-control");
+    d.id = "search-container";
+    d.innerHTML = `<div id="search-box"><input type="text" id="city-search" placeholder="Search for a place..." autocomplete="off" aria-label="Search for a place"><button id="search-btn" type="button" aria-label="Search"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></button></div><div id="search-results" hidden></div>`;
+    L.DomEvent.disableClickPropagation(d);
+    L.DomEvent.disableScrollPropagation(d);
+    return d;
+  },
+});
+new PlaceSearch({ position: "topright" }).addTo(map);
+{
+  let timer = null, asked = 0, places = [];
+  const box = $("search-results"), q = $("city-search");
+  const show = (html) => { box.innerHTML = html; box.hidden = false; };
+  const hide = () => { asked++; box.hidden = true; };
+  async function find() {
+    clearTimeout(timer);
+    const text = q.value.trim();
+    if (text.length < 2) return;
+    const n = ++asked;
+    show(`<div class="search-loading">Searching...</div>`);
+    try { places = await api(`/api/search?q=${encodeURIComponent(text)}`); } catch (e) { if (n === asked) show(`<div class="search-no-results">${esc(e.message)}</div>`); return; }
+    if (n !== asked) return; // a newer search, or the box was closed
+    show(places.map((p, i) => {
+      const [main, ...rest] = p.name.split(",");
+      return `<div class="search-result-item" tabindex="0" data-i="${i}"><div class="search-result-name">${esc(main)}</div><div class="search-result-details">${esc(rest.slice(0, 2).join(",").trim())}</div></div>`;
+    }).join("") || `<div class="search-no-results">No places found</div>`);
+  }
+  function go(el) {
+    const p = el && places[el.dataset.i];
+    if (!p) return;
+    if (p.bbox) fit([[p.bbox[0], p.bbox[1]], [p.bbox[2], p.bbox[3]]], 14); else map.flyTo([p.lat, p.lon], 13);
+    hide();
+  }
+  $("search-btn").onclick = find;
+  q.addEventListener("keydown", (e) => { if (e.key === "Enter") find(); else if (e.key === "Escape") hide(); });
+  // Search as the user types, like Arnis: from 3 letters, after a pause.
+  q.addEventListener("input", () => { clearTimeout(timer); if (q.value.trim().length >= 3) timer = setTimeout(find, 500); else hide(); });
+  box.addEventListener("click", (e) => go(e.target.closest(".search-result-item")));
+  box.addEventListener("keydown", (e) => { if (e.key === "Enter") go(e.target.closest(".search-result-item")); });
+  document.addEventListener("click", (e) => { if (!e.target.closest("#search-container")) hide(); });
+}
+
 function restyle() {
   if (cur) drawn.eachLayer((l) => { const s = (cur.model.selection || []).find((x) => x.id === l.selId); if (s) l.setStyle(styleOf(s)); });
 }
@@ -1367,18 +1562,14 @@ window.addEventListener("hashchange", route);
 arnisCard();
 route();
 </script>
-<!-- meld2-extras: the System, Benchmarks and Presets cards and the map's place search.
-     One block, appended; it adds its cards to #sideL / #side and a Leaflet control,
+<!-- meld2-extras: the System, Benchmarks and Presets cards.
+     One block, appended; it adds its cards to #sideL / #side,
      and uses the page's api(), esc(), $, map, cur and openProject(). -->
 <style id="meld2-extras-css">
   .x-sys { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; }
   .x-sysl { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ui-muted); }
   .x-sysl span:last-child { color: var(--ui-text); font-variant-numeric: tabular-nums; }
   .x-spark { width: 100%; height: 14px; display: block; }
-  .x-search { background: var(--ui-card, #2a2a2a); padding: 4px; border-radius: 6px; width: 260px; }
-  .x-search input { width: 100%; box-sizing: border-box; }
-  .x-search div { cursor: pointer; font-size: 12px; padding: 3px 4px; color: var(--ui-text, #ddd); }
-  .x-search div:hover { background: rgba(255,255,255,.08); }
   .x-table { font-size: 11.5px; border-collapse: collapse; width: 100%; }
   .x-table td, .x-table th { padding: 2px 4px; text-align: right; border-bottom: 1px solid rgba(255,255,255,.06); }
   .x-table td:first-child, .x-table th:first-child { text-align: left; }
@@ -1426,30 +1617,6 @@ route();
   api("/api/update").then((u) => {
     if (u.newer) $("x-update").innerHTML = `Meld ${esc(u.newer)} is out: <a href="${esc(u.url)}" target="_blank" rel="noopener">release notes</a>`;
   }, () => {});
-
-  // ---- place search on the map (Nominatim through the server) ----
-  const Search = L.Control.extend({
-    onAdd() {
-      const d = L.DomUtil.create("div", "x-search");
-      d.innerHTML = `<input id="x-q" placeholder="Search a place…" autocomplete="off"><div id="x-res"></div>`;
-      L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d);
-      return d;
-    },
-  });
-  new Search({ position: "topleft" }).addTo(map);
-  let places = [];
-  $("x-q").addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter" || e.target.value.trim().length < 2) return;
-    $("x-res").textContent = "Searching…";
-    try { places = await api(`/api/search?q=${encodeURIComponent(e.target.value.trim())}`); }
-    catch (err) { $("x-res").textContent = err.message; return; }
-    $("x-res").innerHTML = places.map((p, i) => `<div data-i="${i}">${esc(p.name)}</div>`).join("") || "No place found.";
-  });
-  $("x-res").addEventListener("click", (e) => {
-    const p = places[e.target.dataset.i]; if (!p) return;
-    if (p.bbox) map.fitBounds([[p.bbox[0], p.bbox[1]], [p.bbox[2], p.bbox[3]]]); else map.setView([p.lat, p.lon], 14);
-    $("x-res").innerHTML = "";
-  });
 
   // ---- Presets: the project's [defaults] under a name ----
   $("side").appendChild(card("cardPresets", "sliders", "Presets", "Save or apply [defaults]",

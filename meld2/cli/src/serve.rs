@@ -419,7 +419,7 @@ fn read(ctx: &Ctx, name: &str) -> Result<Reply> {
                 .iter()
                 // Polygon parts, and bbox selections snapped to whole pieces.
                 .filter(|s| s.part_of.is_some() || p.settings_for(s).contains_key("snap"))
-                .map(|s| json!({"id": s.id, "bbox": s.bbox, "part_of": s.part_of}))
+                .map(|s| json!({"id": s.id, "bbox": s.bbox, "part_of": s.part_of, "grid": grid(&p, s)}))
                 .collect();
             (state_of(&p), json!(parts), Value::Null)
         }
@@ -430,6 +430,44 @@ fn read(ctx: &Ctx, name: &str) -> Result<Reply> {
         json!({"name": name, "path": file, "toml": toml, "model": model, "parts": parts,
                "state": state, "error": error, "running": lock(&ctx.running).contains(name)}),
     ))
+}
+
+/// Past this many lines a part's grid is drawn as its outline only.
+const GRID_MAX_LINES: f64 = 4096.0;
+
+/// The cell grid the page draws over a part, the shape of Arnis's snap
+/// preview (`gui_snap_selection`): the outline, cells across and down, the
+/// interior cell lines, block (0, 0), and for the W and H labels the part's
+/// blocks, cell side and scale. `at` is the outline's cell index on the world's
+/// lattice, so thinned lines line up across a polygon's parts.
+fn grid(p: &Project, s: &meld_core::project::Selection) -> Value {
+    let Ok(Some(f)) = p.frame(&s.world) else {
+        return Value::Null;
+    };
+    let side = meld_core::args::unit_regions(&p.settings_for(s)) as f64 * 512.0;
+    let [south, west, north, east] = s.bbox;
+    let (x0, x1) = (f.x(west).round(), f.x(east).round());
+    let (z0, z1) = (f.z(north).round(), f.z(south).round());
+    let (nx, nz) = (((x1 - x0) / side).round(), ((z1 - z0) / side).round());
+    let few = nx + nz <= GRID_MAX_LINES;
+    let lines = |n: f64, at: &dyn Fn(f64) -> f64| -> Vec<f64> {
+        if few {
+            (1..n as i64).map(|i| at(i as f64 * side)).collect()
+        } else {
+            vec![]
+        }
+    };
+    json!({
+        "outline": s.bbox,
+        "cells": [nx, nz],
+        "lon_lines": lines(nx, &|d| f.lon(x0 + d)),
+        "lat_lines": lines(nz, &|d| f.lat(z0 + d)),
+        "at": [(x0 / side).round(), (z0 / side).round()],
+        "blocks": [x0, z0, x1, z1],
+        "side": side,
+        "scale": f.scale,
+        "origin": [f.origin_lat, f.origin_lon],
+    })
 }
 
 /// Saves a project from its TOML, or from its `model` as JSON (the forms;
@@ -985,6 +1023,30 @@ mod tests {
         assert!(!authorized(&[], "token=", t));
         assert_eq!(new_token().unwrap().len(), 32);
         assert_ne!(new_token().unwrap(), new_token().unwrap());
+    }
+
+    #[test]
+    fn grid_lines_split_the_snapped_box_into_its_cells() {
+        let p = Project::parse(
+            "format = 1\nname = \"G\"\noutput = \"saves\"\n[[selection]]\nid = \"a\"\n\
+             bbox = [47.15, 9.50, 47.18, 9.55]\nworld = \"One\"\n\
+             settings = { unit_regions = 1, snap = \"cover\" }\n",
+        )
+        .unwrap();
+        let s = &p.selections[0];
+        let g = grid(&p, s);
+        let f = |k: &str| -> Vec<f64> { serde_json::from_value(g[k].clone()).unwrap() };
+        let (cells, blocks, [south, west, north, east]) = (f("cells"), f("blocks"), s.bbox);
+        assert!(cells[0] >= 2.0 && cells[1] >= 2.0, "{cells:?}");
+        assert_eq!(blocks[2] - blocks[0], cells[0] * 512.0);
+        assert_eq!(blocks[3] - blocks[1], cells[1] * 512.0);
+        let (lon, lat) = (f("lon_lines"), f("lat_lines"));
+        assert_eq!(
+            (lon.len() + 1, lat.len() + 1),
+            (cells[0] as usize, cells[1] as usize)
+        );
+        assert!(lon.windows(2).all(|p| p[0] < p[1]) && lon.iter().all(|&x| west < x && x < east));
+        assert!(lat.windows(2).all(|p| p[0] > p[1]) && lat.iter().all(|&y| south < y && y < north));
     }
 
     /// Sends one request and returns the status code and body.

@@ -827,8 +827,9 @@ A/B of the local `arnis-3.4.0-beta.1.exe` (A) against the pinned CI download (B)
 
 All in `cli/src/index.html`.
 1. The Leaflet `<link>`/`<script>` tags in `<head>` point at `assets/leaflet/…` (built in).
-2. One appended block before `</body>`: `<style id="meld2-extras-css">` and `<script id="meld2-extras">`. It appends `#cardSystem` to `#sideL`, `#cardPresets` and `#cardBench` to `#side`, and a Leaflet control (`.x-search`, `#x-q`, `#x-res`) at the map's top left. It uses the page's `api`, `post`, `say`, `esc`, `$`, `map`, `cur`, `openProject`, `renderSettings` and `es`.
-3. After the merge with `meld-2.0` (the user's feedback): `#railHead` (search and Changed only) is the first child of `#side` and sticky; `#targetBar` sticks under it. The `.bar` component (Arnis's progress bar) with `.barrow`/`.pct` serves the Build card, the job rows (`#workersState .wjob`; the `.pieces` strips are gone) and the Selections rows.
+2. One appended block before `</body>`: `<style id="meld2-extras-css">` and `<script id="meld2-extras">`. It appends `#cardSystem` to `#sideL`, `#cardPresets` and `#cardBench` to `#side`. It uses the page's `api`, `post`, `say`, `esc`, `$`, `map`, `cur`, `openProject`, `renderSettings` and `es`.
+3. After the merge with `meld-2.0` (the user's feedback): the settings search and Changed only (`#setSearch`: `#railSearch`, `#onlySet`) sit in `#sideL` under Projects and filter `#side`, which starts with `#cardRun`; `#targetBar` is sticky at the rail's top. The `.bar` component (Arnis's progress bar) with `.barrow`/`.pct` serves the Build card, the job rows (`#workersState .wjob`; the `.pieces` strips are gone) and the Selections rows.
+4. The map, after Arnis 3.4 (`src/gui/maps.html`, `js/search.js`, `js/bbox.js`, `css/map-controls.css`): the place search is a Leaflet control at the top right (`#search-container`, `#city-search`, `#search-btn`, `#search-results`) over `/api/search`; the draw toolbar and zoom buttons wear Arnis's toolbar groups; `drawSnapOverlay`/`drawSnapCells`/`drawSnapDimensions` draw each part's `grid` (`GET /api/projects/<name>` parts, `serve.rs` `grid()`) on `snapLayer`; `#mapfoot` holds `#credit` then `#coordbox` on one line.
 
 ### Gates and e2e
 
