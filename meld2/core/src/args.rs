@@ -149,11 +149,14 @@ fn scalar(v: &Value) -> Option<String> {
 }
 
 /// What the scheduler hands one job of a shared budget. A selection's own
-/// `threads`, `cpu_target` or `ram_budget_mb` wins over it.
-#[derive(Clone, Copy, Debug, Default)]
+/// `threads`, `cpu_target`, `ram_budget_mb` or `workers` wins over it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Share {
     pub threads: Option<u32>,
     pub ram_budget_mb: Option<u64>,
+    /// `--one-world-workers auto`: Arnis sizes its pieces-at-once from the
+    /// piece count and these threads and memory.
+    pub workers_auto: bool,
 }
 
 /// One Arnis run: its arguments and the capabilities they need.
@@ -199,6 +202,10 @@ pub fn build(sel: &Selection, settings: &Settings, saves: &Path, share: Share) -
             Val => add(o.flag, scalar(v), o.cap),
             _ => {}
         }
+    }
+    if share.workers_auto && !settings.contains_key("workers") {
+        let auto = Some("auto".to_string());
+        add("--one-world-workers", auto, Some("one-world-workers"));
     }
     let own_threads = settings.contains_key("threads") || settings.contains_key("cpu_target");
     if let Some(t) = share.threads.filter(|_| !own_threads) {
@@ -273,6 +280,7 @@ settings = { threads = 3 }
         let share = Share {
             threads: Some(10),
             ram_budget_mb: Some(4096),
+            workers_auto: true,
         };
         let got: Vec<String> = p
             .selections

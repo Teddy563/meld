@@ -21,7 +21,11 @@ use std::time::Duration;
 pub enum Note<'a> {
     Skipped(&'a str),
     Refused(&'a str),
-    Started { pid: u32, resumed: bool },
+    Started {
+        pid: u32,
+        resumed: bool,
+        share: Share,
+    },
     Event(&'a Event),
     Finished(&'a SelState),
     Stopping,
@@ -65,6 +69,47 @@ pub fn decide(prev: Option<&SelState>, command: &[String]) -> Decision {
     }
 }
 
+/// One job's part of the run's budget when `slots` jobs share it: threads
+/// from `cpu_target` % of the cores, and MB of `ram_mb`.
+pub fn share(cores: usize, cpu_target: u32, ram_mb: Option<u64>, slots: usize) -> Share {
+    let slots = slots.max(1);
+    Share {
+        threads: Some((cores * cpu_target as usize / 100 / slots).max(1) as u32),
+        ram_budget_mb: ram_mb.map(|mb| mb / slots as u64),
+        workers_auto: true,
+    }
+}
+
+/// Jobs that can run at once: one per world (a One World has one writer),
+/// at most `jobs`.
+pub fn slots<'a>(jobs: usize, worlds: impl Iterator<Item = &'a str>) -> usize {
+    let distinct: std::collections::HashSet<_> = worlds.collect();
+    distinct.len().min(jobs)
+}
+
+/// 80 % of the memory free now, for the jobs to split. `None` where Meld
+/// cannot read it (macOS): each Arnis then reads free memory itself.
+// ponytail: read once per run; next to other heavy programs, set run.ram_budget_mb.
+fn available_ram_mb() -> Option<u64> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        // SAFETY: a zeroed struct with its length set, as the call requires.
+        unsafe {
+            let mut m: MEMORYSTATUSEX = std::mem::zeroed();
+            m.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+            (GlobalMemoryStatusEx(&mut m) != 0).then(|| m.ullAvailPhys / (1024 * 1024) * 4 / 5)
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let info = std::fs::read_to_string("/proc/meminfo").ok()?;
+        let line = info.lines().find(|l| l.starts_with("MemAvailable:"))?;
+        let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+        Some(kb / 1024 * 4 / 5)
+    }
+}
+
 enum Msg {
     Event(Event),
     Exit(std::io::Result<std::process::ExitStatus>),
@@ -96,10 +141,7 @@ pub fn run(
 
     let jobs = project.run.jobs as usize;
     let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
-    let share = Share {
-        threads: Some((cores * project.run.cpu_target as usize / 100 / jobs).max(1) as u32),
-        ram_budget_mb: project.run.ram_budget_mb.map(|mb| mb / jobs as u64),
-    };
+    let ram_mb = project.run.ram_budget_mb.or_else(available_ram_mb);
 
     let mut summary = Summary::default();
     let mut queue: VecDeque<&Selection> = VecDeque::new();
@@ -131,6 +173,14 @@ pub fn run(
                 break;
             };
             let sel = queue.remove(i).expect("position is in range");
+            // Rebalanced at every start: the budget is split by the jobs that
+            // can run together from now on, so the last ones get all of it.
+            let worlds = running
+                .values()
+                .map(|j| j.world.as_str())
+                .chain(queue.iter().map(|s| s.world.as_str()))
+                .chain([sel.world.as_str()]);
+            let share = share(cores, project.run.cpu_target, ram_mb, slots(jobs, worlds));
             let settings = project.settings_for(sel);
             let command = args::build(sel, &settings, &saves, Share::default()).args;
             let inv = args::build(sel, &settings, &saves, share);
@@ -161,6 +211,7 @@ pub fn run(
                 Note::Started {
                     pid: process.id(),
                     resumed,
+                    share,
                 },
             );
             state.save(dir)?;
@@ -285,6 +336,27 @@ mod tests {
     }
 
     #[test]
+    fn budget_split_follows_the_jobs_that_can_run() {
+        // 3 selections, 2 in one world, jobs = 4: only 2 run together.
+        let worlds = ["A", "A", "B"];
+        assert_eq!(slots(4, worlds.into_iter()), 2);
+        assert_eq!(slots(1, worlds.into_iter()), 1);
+        let two = share(24, 90, Some(32_000), 2);
+        assert_eq!(
+            two,
+            Share {
+                threads: Some(10),
+                ram_budget_mb: Some(16_000),
+                workers_auto: true
+            }
+        );
+        // Once one has ended, the last job gets the whole budget.
+        let last = share(24, 90, Some(32_000), slots(4, ["B"].into_iter()));
+        assert_eq!((last.threads, last.ram_budget_mb), (Some(21), Some(32_000)));
+        assert_eq!(share(2, 10, None, 8).threads, Some(1));
+    }
+
+    #[test]
     fn resume_decisions() {
         let now: Vec<String> = vec!["--bbox".into(), "1,2,3,4".into()];
         let same = ["--bbox", "1,2,3,4"];
@@ -353,9 +425,15 @@ world = "W2"
         .unwrap();
         project.path = dir.join("fake.toml");
         let arnis = Arnis::new(&fake);
-        let caps: Vec<String> = ["progress-json", "unit-regions", "threads"]
-            .map(String::from)
-            .to_vec();
+        let caps: Vec<String> = [
+            "progress-json",
+            "unit-regions",
+            "threads",
+            "ram-budget",
+            "one-world-workers",
+        ]
+        .map(String::from)
+        .to_vec();
         let state_dir = dir.join("state");
         let go = |notes: &mut Vec<String>| {
             run(

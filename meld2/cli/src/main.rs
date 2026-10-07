@@ -250,9 +250,17 @@ fn show(id: &str, note: Note, tenths: &mut HashMap<String, i64>) {
     match note {
         Note::Skipped(why) => println!("[{id}] skipped: {why}"),
         Note::Refused(why) => println!("[{id}] refused: {why}"),
-        Note::Started { pid, resumed } => println!(
-            "[{id}] {} (pid {pid})",
-            if resumed { "resuming" } else { "starting" }
+        Note::Started {
+            pid,
+            resumed,
+            share,
+        } => println!(
+            "[{id}] {} (pid {pid}); share: {} threads, {}, workers auto",
+            if resumed { "resuming" } else { "starting" },
+            share.threads.unwrap_or(0),
+            share
+                .ram_budget_mb
+                .map_or("RAM read by Arnis".into(), |mb| format!("{mb} MB RAM")),
         ),
         Note::Stopping => println!("stopping: killing running jobs"),
         Note::Finished(st) => match &st.error {
