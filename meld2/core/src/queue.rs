@@ -191,7 +191,12 @@ impl Step<'_> {
 
     pub fn invocation(&self, project: &Project, saves: &Path, share: Share) -> Invocation {
         match self {
-            Step::Bake(b) => args::bake(project.bake_bbox(b), &b.osm_pbf, share),
+            Step::Bake(b) => args::bake(
+                project.bake_bbox(b),
+                &b.osm_pbf,
+                b.osm_pbf_url.as_deref(),
+                share,
+            ),
             Step::Prewarm(s) => {
                 args::prewarm(args::build(s, &project.settings_for(s), saves, share))
             }
@@ -338,12 +343,10 @@ impl<'p> Runner<'_, 'p> {
         out
     }
 
-    /// Why `sel` cannot build: a bake of its `osm_pbf` did not finish.
+    /// Why `sel` cannot build: a bake of its extract did not finish.
     fn failed_bake(&self, sel: &Selection) -> Option<&'static str> {
-        let settings = self.project.settings_for(sel);
-        let src = settings.get("osm_pbf").and_then(toml::Value::as_str)?;
         let failed = self.project.bakes.iter().any(|b| {
-            b.osm_pbf == src
+            self.project.reads(sel, b)
                 && self
                     .state
                     .selections
@@ -638,6 +641,7 @@ name = "Data"
 output = "saves"
 [defaults]
 osm_pbf = "geofabrik"
+osm_pbf_url = "https://download.geofabrik.de/europe/liechtenstein-latest.osm.pbf"
 [[selection]]
 id = "a"
 bbox = [47.10, 9.50, 47.12, 9.52]
@@ -650,6 +654,7 @@ world = "W"
 [[bake]]
 id = "li"
 osm_pbf = "geofabrik"
+osm_pbf_url = "https://download.geofabrik.de/europe/liechtenstein-latest.osm.pbf"
 "#,
         )
         .unwrap();
@@ -677,6 +682,9 @@ osm_pbf = "geofabrik"
         assert!(s < 47.10 - 0.002 && w < 9.50 - 0.003 && n > 47.22 + 0.002 && e > 9.58 + 0.003);
         let bake = inv(Step::Bake(&p.bakes[0])).args;
         assert!(bake.windows(2).any(|w| w == ["--osm-pbf", "geofabrik"]));
+        assert!(bake
+            .iter()
+            .any(|a| a.ends_with("liechtenstein-latest.osm.pbf")));
         assert!(bake.iter().any(|a| a == "--prewarm"));
     }
 

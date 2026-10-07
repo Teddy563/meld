@@ -108,14 +108,19 @@ pub struct Selection {
 }
 
 /// A data step: Arnis cuts (bakes) an `.osm.pbf` extract for an area once,
-/// and every selection with the same `osm_pbf` then reads the bake.
+/// and every selection with the same `osm_pbf` (and `osm_pbf_url`) then
+/// reads the bake. Arnis keeps bakes per extract, so all of them must read
+/// one extract: a file, or for `geofabrik` the one `osm_pbf_url` names.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Bake {
     pub id: String,
     /// What `--osm-pbf` reads: an `.osm.pbf` path or `geofabrik`.
     pub osm_pbf: String,
-    /// Area to bake. Unset: around every selection with this `osm_pbf`.
+    /// With `geofabrik`: the extract to download (`--osm-pbf-url`). Required,
+    /// since the smallest region around the whole area may not be each selection's.
+    pub osm_pbf_url: Option<String>,
+    /// Area to bake. Unset: around every selection that reads this extract.
     pub bbox: Option<[f64; 4]>,
 }
 
@@ -199,12 +204,19 @@ impl Project {
             if !bakes.insert(b.id.as_str()) {
                 bail!("bake id {:?} is used twice", b.id);
             }
+            if b.osm_pbf == "geofabrik" && b.osm_pbf_url.is_none() {
+                bail!(
+                    "bake {}: with osm_pbf = \"geofabrik\", set osm_pbf_url to the extract, here and in the selections' settings: Arnis keeps a bake per extract, and the smallest Geofabrik region around all the selections can differ from each one's",
+                    b.id
+                );
+            }
             match &b.bbox {
                 Some(bbox) => check_bbox(bbox).with_context(|| format!("bake {}", b.id))?,
-                None if self.reading(&b.osm_pbf).next().is_none() => bail!(
-                    "bake {}: no selection has osm_pbf = {:?}; set one or give the bake a bbox",
+                None if self.reading(b).next().is_none() => bail!(
+                    "bake {}: no selection reads osm_pbf = {:?} with osm_pbf_url = {:?}; set them or give the bake a bbox",
                     b.id,
-                    b.osm_pbf
+                    b.osm_pbf,
+                    b.osm_pbf_url
                 ),
                 None => {}
             }
@@ -261,14 +273,17 @@ impl Project {
         Ok(())
     }
 
-    /// The selections whose `osm_pbf` is `src`.
-    pub fn reading<'a>(&'a self, src: &'a str) -> impl Iterator<Item = &'a Selection> + 'a {
-        self.selections.iter().filter(move |s| {
-            self.settings_for(s)
-                .get("osm_pbf")
-                .and_then(toml::Value::as_str)
-                == Some(src)
-        })
+    /// Whether `sel` reads the extract `bake` cuts.
+    pub fn reads(&self, sel: &Selection, bake: &Bake) -> bool {
+        let settings = self.settings_for(sel);
+        let get = |k| settings.get(k).and_then(toml::Value::as_str);
+        get("osm_pbf") == Some(bake.osm_pbf.as_str())
+            && get("osm_pbf_url") == bake.osm_pbf_url.as_deref()
+    }
+
+    /// The selections that read the extract `bake` cuts.
+    pub fn reading<'a>(&'a self, bake: &'a Bake) -> impl Iterator<Item = &'a Selection> + 'a {
+        self.selections.iter().filter(|s| self.reads(s, bake))
     }
 
     /// The area a bake cuts: its own bbox, or the selections reading it, padded
@@ -280,7 +295,7 @@ impl Project {
         }
         let mut u = [90.0, 180.0, -90.0, -180.0_f64];
         let mut pad_m: f64 = 0.0;
-        for s in self.reading(&bake.osm_pbf) {
+        for s in self.reading(bake) {
             u = [
                 u[0].min(s.bbox[0]),
                 u[1].min(s.bbox[1]),
@@ -464,7 +479,7 @@ settings = { caves = true, snow_mode = "peaks" }
                 GOOD.to_string()
                     + "[[bake]]
 id = \"x\"
-osm_pbf = \"geofabrik\"
+osm_pbf = \"x.osm.pbf\"
 ",
                 "no selection",
             ),

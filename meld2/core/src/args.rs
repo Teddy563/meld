@@ -86,6 +86,7 @@ const OPTS: &[Opt] = &[
     opt("offline", "--offline", Some("offline"), Switch),
     opt("prewarm_first", "--prewarm-first", Some("prewarm"), Switch),
     opt("osm_pbf", "--osm-pbf", Some("osm-pbf"), Val),
+    opt("osm_pbf_url", "--osm-pbf-url", Some("osm-pbf"), Val),
     opt("osm_tiles_url", "--osm-tiles-url", Some("local-tile-archive"), Val),
     opt("overpass_url", "--overpass-url", Some("overpass-url"), Val),
     // process
@@ -244,7 +245,7 @@ pub fn prewarm(mut inv: Invocation) -> Invocation {
 /// that `--osm-pbf` inside the area reads the cut. It is a `--prewarm` with
 /// the other sources off (flat ground, no Overture, canopy or 3D), so it
 /// fetches OSM and land cover only, and writes no world.
-pub fn bake(bbox: [f64; 4], osm_pbf: &str, share: Share) -> Invocation {
+pub fn bake(bbox: [f64; 4], osm_pbf: &str, url: Option<&str>, share: Share) -> Invocation {
     let [s, w, n, e] = bbox;
     let mut args: Vec<String> = [
         "--bbox",
@@ -265,6 +266,9 @@ pub fn bake(bbox: [f64; 4], osm_pbf: &str, share: Share) -> Invocation {
     ]
     .map(String::from)
     .to_vec();
+    if let Some(url) = url {
+        args.extend(["--osm-pbf-url".into(), url.into()]);
+    }
     let mut caps = vec!["progress-json", "osm-pbf", "prewarm"];
     if let Some(t) = share.threads {
         args.extend(["--threads".into(), t.to_string()]);
