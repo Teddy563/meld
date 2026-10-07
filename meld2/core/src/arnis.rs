@@ -5,8 +5,11 @@
 //! terminates the job, and if Meld itself dies the kernel closes the handle and
 //! kills the run. Arnis's piece processes sit in Arnis's own nested job, so
 //! they go with it.
-//! Unix: killing the Arnis coordinator closes its pieces' stdin, which they
-//! watch and exit on.
+//! Unix: Arnis starts in its own process group, watched by a `sh` that
+//! holds the read end of a pipe from Meld. When Meld ends, however it ends,
+//! the pipe closes and the watchdog kills the group. The coordinator's death
+//! closes its pieces' stdin, which they watch and exit on (each piece has a
+//! group of its own). Stopping a run closes the pipe on purpose.
 
 use anyhow::{bail, Context, Result};
 use std::fs::File;
@@ -70,11 +73,14 @@ impl Arnis {
             .append(true)
             .open(log)
             .with_context(|| format!("opening {}", log.display()))?;
-        let mut child = Command::new(&self.path)
-            .args(args)
+        let mut cmd = Command::new(&self.path);
+        cmd.args(args)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(log)
+            .stderr(log);
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut cmd, 0);
+        let mut child = cmd
             .spawn()
             .with_context(|| format!("starting {}", self.path.display()))?;
         let stdout = child.stdout.take().expect("piped");
@@ -88,6 +94,9 @@ pub struct Process {
     child: Mutex<Child>,
     #[cfg(windows)]
     job: job::Job,
+    /// `sh` that kills the run's process group once its stdin closes.
+    #[cfg(unix)]
+    watchdog: Mutex<Child>,
 }
 
 impl Process {
@@ -108,11 +117,30 @@ impl Process {
         }
     }
 
-    #[cfg(not(windows))]
-    fn adopt(child: Child) -> Result<Self> {
-        Ok(Self {
-            child: Mutex::new(child),
-        })
+    #[cfg(unix)]
+    fn adopt(mut child: Child) -> Result<Self> {
+        use std::os::unix::process::CommandExt;
+        // $0 is the group id, the run's pid (process_group(0) above). The
+        // watchdog has a group of its own, so a Ctrl+C meant for Meld leaves
+        // it alive to do its job.
+        let watchdog = Command::new("sh")
+            .args(["-c", "cat >/dev/null; kill -KILL -- -\"$0\""])
+            .arg(child.id().to_string())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn();
+        match watchdog {
+            Ok(w) => Ok(Self {
+                child: Mutex::new(child),
+                watchdog: Mutex::new(w),
+            }),
+            Err(e) => {
+                let _ = child.kill();
+                Err(e).context("starting the sh watchdog")
+            }
+        }
     }
 
     pub fn id(&self) -> u32 {
@@ -123,17 +151,32 @@ impl Process {
     pub fn kill(&self) {
         #[cfg(windows)]
         self.job.terminate();
+        #[cfg(unix)]
+        drop(lock(&self.watchdog).stdin.take());
         let _ = self.lock().kill();
     }
 
     /// Waits for the run to end. Call it once its stdout is closed.
     pub fn wait(&self) -> std::io::Result<ExitStatus> {
-        self.lock().wait()
+        let status = self.lock().wait();
+        // The group is gone and its id may be reused: retire the watchdog
+        // before it could act.
+        #[cfg(unix)]
+        {
+            let mut w = lock(&self.watchdog);
+            let _ = w.kill();
+            let _ = w.wait();
+        }
+        status
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Child> {
-        self.child.lock().unwrap_or_else(|e| e.into_inner())
+        lock(&self.child)
     }
+}
+
+fn lock(m: &Mutex<Child>) -> std::sync::MutexGuard<'_, Child> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 #[cfg(windows)]
@@ -252,5 +295,49 @@ mod tests {
             assert!(ok != 0);
             info.ActiveProcesses
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod unix_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    fn alive(pid: &str) -> bool {
+        Command::new("kill")
+            .args(["-0", pid])
+            .status()
+            .is_ok_and(|s| s.success())
+    }
+
+    /// What Meld's death does: the run is dropped without a stop or a wait,
+    /// the watchdog's pipe closes, and the whole group dies with it.
+    #[test]
+    fn dropping_the_run_kills_its_group() {
+        let dir = std::env::temp_dir().join(format!("meld2-wd-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pidfile = dir.join("pid");
+        let script = format!("sleep 30 & echo $! > {}; wait", pidfile.display());
+        let arnis = Arnis::new("sh");
+        let (p, _stdout) = arnis
+            .spawn(&["-c".into(), script], &dir.join("log"))
+            .unwrap();
+        let t = Instant::now();
+        while !pidfile.exists() && t.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        let sleeper = std::fs::read_to_string(&pidfile)
+            .unwrap()
+            .trim()
+            .to_string();
+        assert!(alive(&sleeper));
+        drop(p);
+        let t = Instant::now();
+        while alive(&sleeper) && t.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        assert!(!alive(&sleeper), "the run's group outlived Meld");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
