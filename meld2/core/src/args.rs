@@ -46,6 +46,7 @@ const OPTS: &[Opt] = &[
     opt("height_multiplier", "--height-multiplier", None, Val),
     opt("origin", "--origin", Some("origin"), Val),
     opt("disable_height_limit", "--disable-height-limit", None, Switch),
+    opt("aws_only_elevation", "--aws-only-elevation", None, Switch),
     opt("seed", "--seed", Some("seed"), Val),
     opt("climate_mode", "--climate-mode", Some("climate-mode"), Val),
     // objects
@@ -61,6 +62,15 @@ const OPTS: &[Opt] = &[
     opt("bushes", "--bushes", Some("bushes"), Switch),
     opt("bush_density", "--bush-density", Some("bushes"), Val),
     opt("props", "--props", Some("props"), Val),
+    opt("use_3d", "--no-3d", None, Not),
+    opt("overture_source", "--overture-source", None, Val),
+    opt("signage", "--signage", None, Val),
+    opt("building_facades", "--building-facades", None, Switch),
+    opt("facade_detail", "--facade-detail", None, Val),
+    opt("facade_px", "--facade-px", None, Val),
+    // The token is a credential: Arnis reads MAPILLARY_TOKEN from Meld's environment.
+    opt("mapillary_facades", "--mapillary-facades", None, Val),
+    opt("mapillary_facade_mode", "--mapillary-facade-mode", None, Val),
     // ground
     opt("fillground", "--fillground", None, Switch),
     opt("caves", "--caves", None, Switch),
@@ -79,9 +89,11 @@ const OPTS: &[Opt] = &[
     opt("land_texture", "--land-texture", Some("land-texture"), Switch),
     // output
     opt("bake_lighting", "--bake-lighting", None, Switch),
+    opt("voxy_lod", "--voxy-lod", None, Switch),
     opt("map_item", "--map-item", None, Val),
     opt("world_border", "--world-border", Some("world-border"), Switch),
     opt("gamemode", "--gamemode", None, Val),
+    opt("world_time", "--world-time", None, Val),
     // data
     opt("offline", "--offline", Some("offline"), Switch),
     opt("prewarm_first", "--prewarm-first", Some("prewarm"), Switch),
@@ -126,8 +138,10 @@ pub fn check(settings: &Settings) -> Result<()> {
                 .as_array()
                 .is_some_and(|a| a.iter().all(Value::is_str)),
             // Every Meld 2 selection builds a One World, which fixes its own
-            // height and region format (Arnis y_bounds.rs, --region-format help).
-            "min_y" | "max_y" | "region_format" => {
+            // height and region format (Arnis y_bounds.rs, --region-format help)
+            // and is Earth at rotation 0 (validate_args). B_Linear comes from a
+            // conversion after the build (`[server] format = "blinear"`).
+            "min_y" | "max_y" | "region_format" | "rotation" | "body" => {
                 bail!("{key}: Arnis 3.4 refuses it with --one-world, which Meld 2 builds")
             }
             _ => match OPTS.iter().find(|o| o.key == key) {

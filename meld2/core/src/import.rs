@@ -369,11 +369,134 @@ fn convert(s: &Map<String, Json>, out: &mut Imported) -> (Table, Table) {
                 }
                 true
             }
+            "voxy_lod" | "building_facades" | "disable_height_limit" | "aws_only_elevation" => {
+                if v.as_bool() == Some(true) {
+                    d.insert(k.into(), Value::Boolean(true));
+                }
+                v.is_boolean()
+            }
+            // Meld 1 sent --no-3d unless 3D models were ticked (arnis_cmd.py:491).
+            "generate_3d_models" => {
+                if v.as_bool() != Some(true) {
+                    d.insert("use_3d".into(), Value::Boolean(false));
+                }
+                true
+            }
+            "props" => {
+                // An allow-list, sent only when a family is off (arnis_cmd.py:495-507).
+                const FAMILIES: [&str; 12] = [
+                    "boat",
+                    "car",
+                    "crane",
+                    "excavator",
+                    "fountain",
+                    "helicopter",
+                    "lighthouse",
+                    "playground",
+                    "starship",
+                    "tombstone",
+                    "tractor",
+                    "windturbine",
+                ];
+                let on: Vec<&str> = FAMILIES
+                    .into_iter()
+                    .filter(|f| v.get(f).and_then(Json::as_bool).unwrap_or(true))
+                    .collect();
+                if on.is_empty() {
+                    d.insert(k.into(), "none".into());
+                } else if on.len() < FAMILIES.len() {
+                    d.insert(k.into(), Value::String(on.join(",")));
+                }
+                v.is_object() || v.is_null()
+            }
+            "world_time" => {
+                // Arnis's default is Meld 1's, 6000 (noon).
+                let t = num(k).map(|t| t.clamp(0.0, 23_999.0) as i64);
+                if let Some(t) = t.filter(|t| *t != 6000) {
+                    d.insert(k.into(), Value::Integer(t));
+                }
+                t.is_some()
+            }
+            "tree_realm"
+            | "overture_source"
+            | "facade_detail"
+            | "facade_px"
+            | "mapillary_facade_mode"
+            | "signage" => {
+                // Written when it is a value Arnis takes and not Arnis's default.
+                let (default, allowed): (&str, &[&str]) = match k {
+                    "tree_realm" => (
+                        "auto",
+                        &[
+                            "auto",
+                            "afr",
+                            "asn",
+                            "aus",
+                            "ena",
+                            "eur",
+                            "fl",
+                            "ind",
+                            "sam",
+                            "wna",
+                            "vanilla-plus",
+                        ],
+                    ),
+                    "overture_source" => ("auto", &["auto", "tiles", "parquet"]),
+                    "facade_detail" => ("standard", &["standard", "high"]),
+                    "facade_px" => ("16", &["4", "8", "16", "32"]),
+                    "mapillary_facade_mode" => ("photos", &["blocks", "photos"]),
+                    _ => ("basic", &["none", "basic", "full"]),
+                };
+                let val = match v {
+                    Json::Number(n) => n.to_string(),
+                    _ => v.as_str().unwrap_or("").trim().to_lowercase(),
+                };
+                if allowed.contains(&val.as_str()) && val != default {
+                    d.insert(
+                        k.into(),
+                        match val.parse::<i64>() {
+                            Ok(n) => Value::Integer(n),
+                            Err(_) => Value::String(val.clone()),
+                        },
+                    );
+                }
+                allowed.contains(&val.as_str())
+            }
+            // Tri-state: only an explicit `false` says anything (arnis_cmd.py:647-653).
+            "mapillary_facades" => {
+                if v.as_bool() == Some(false) {
+                    d.insert(k.into(), Value::Boolean(false));
+                }
+                true
+            }
+            "mapillary_token" => {
+                if v.as_str().is_some_and(|t| !t.is_empty()) {
+                    out.notes.push("mapillary_token: a credential, so it stays out of the project file and the command line; set MAPILLARY_TOKEN in Meld's environment, which Arnis reads".into());
+                }
+                out.dropped.push(k.into());
+                continue;
+            }
+            // One World is Earth at rotation 0 (Arnis validate_args).
+            "rotation" | "body" => {
+                let other = match k {
+                    "rotation" => num(k).is_some_and(|r| r != 0.0),
+                    _ => v.as_str().is_some_and(|b| !b.eq_ignore_ascii_case("earth")),
+                };
+                if !other {
+                    out.mapped.push(k.into());
+                } else {
+                    out.notes.push(format!(
+                        "{k} = {v}: One World builds Earth at rotation 0 only, so it is dropped"
+                    ));
+                    out.dropped.push(k.into());
+                }
+                continue;
+            }
             "native_region_format" => {
                 if v.as_str()
                     .is_some_and(|f| f.eq_ignore_ascii_case("blinear"))
                 {
-                    out.notes.push("native_region_format = blinear: One World writes Anvil; convert to B_Linear after the build (Phase 4)".into());
+                    out.notes.push("native_region_format = blinear: One World writes Anvil; add `[server] format = \"blinear\"` and Meld converts each world after its build".into());
                 }
                 out.dropped.push(k.into());
                 continue;
@@ -510,7 +633,32 @@ mod tests {
         assert_eq!(counted, settings);
         assert!(out.dropped.contains(&"governor_mode".into()));
         assert!(out.dropped.contains(&"server_ram_gb".into()));
-        assert!(out.unmapped.contains(&"signage".into()));
+        // The Arnis flags mapped in Phase 4.
+        assert_eq!(get("voxy_lod").as_deref(), Some("true"));
+        assert_eq!(get("signage").as_deref(), Some("\"none\""));
+        assert_eq!(get("use_3d").as_deref(), Some("false"));
+        for unset in [
+            "props",
+            "world_time",
+            "tree_realm",
+            "overture_source",
+            "facade_px",
+        ] {
+            assert_eq!(get(unset), None, "{unset}: Arnis's default");
+        }
+        assert!(out.mapped.contains(&"rotation".into()));
+        assert!(out.dropped.contains(&"body".into())); // moon: One World is Earth only
+        assert!(out.dropped.contains(&"mapillary_token".into()));
+        for gone in [
+            "voxy_lod",
+            "props",
+            "world_time",
+            "facade_detail",
+            "signage",
+        ] {
+            assert!(!out.unmapped.contains(&gone.into()), "{gone}");
+        }
+        assert!(out.unmapped.contains(&"roof".into()));
         assert!(out.toml.contains("# Not carried (no Meld 2 setting yet): "));
     }
 
@@ -519,6 +667,8 @@ mod tests {
         let preset_json = serde_json::json!({
             "meld_preset": 1, "name": "P",
             "settings": {"scale": 1.0, "terrain": false, "offline_elevation": true,
+                "props": {"car": false, "crane": false}, "world_time": 18000, "tree_realm": "EUR",
+                "facade_px": 32, "mapillary_facades": false, "overture_source": "parquet",
                 "road_detail_level": "auto", "river_bed_v1": true,
                 "tree_size_weights": {"big": 70, "giant": 0},
                 "field_mix": {"farm": 100, "moss": 10}, "farm_crops": {"wheat": 50}}
@@ -533,6 +683,12 @@ mod tests {
             "tree_size_weights = \"big=70\"",
             "field_mix = \"farm=100,moss=10\"",
             "farm_crops = \"wheat=50,potato=15,carrot=15,beetroot=8,sunflower=12,pumpkin=5,fallow=5\"",
+            "props = \"boat,excavator,fountain,helicopter,lighthouse,playground,starship,tombstone,tractor,windturbine\"",
+            "world_time = 18000",
+            "tree_realm = \"eur\"",
+            "facade_px = 32",
+            "mapillary_facades = false",
+            "overture_source = \"parquet\"",
         ] {
             assert!(out.toml.contains(want), "{want} not in\n{}", out.toml);
         }
