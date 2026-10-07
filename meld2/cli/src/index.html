@@ -11,7 +11,8 @@
 <style>
   /* The frame is Meld 1.9.9's (web/index.html): status rail left, full-bleed map,
      settings rail right. The components and colours are Arnis at Scale's
-     (src/gui/css on arnis-scale-phase-6, docs/09-ARNIS-UI-BRAND-GUIDE.md). */
+     (src/gui/css on arnis-scale-phase-6). Arnis writes its sizes as literals;
+     the scales below are those literals: gaps 4/8/12/16, radii 6/8/10/12. */
   :root {
     --primary-accent: #fecc44; --ui-accent: #fecc44; --accent-dark: #e6b73d; --ui-on-accent: #1c1c1c;
     --ui-bg: #333333; --ui-sidebar: #2a2a2a; --ui-card: #3a3a3a; --ui-card-border: #444444;
@@ -19,34 +20,35 @@
     --ui-field: #2c2c2c; --ui-field-border: #5a5a5a;
     --ui-text: #f2f2f2; --ui-muted: #b8b8b8; --ui-faint: #8f8f8f; --ui-link: #ffd970;
     --ui-danger: #cf6679; --ok: #4caf50; --err: #fa7878; --run: #fecc44; --plan: #6b6b6b;
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+    --r-sm: 6px; --r-md: 8px; --r-lg: 10px; --r-xl: 12px;
+    --left-w: 300px; --right-w: 384px; --field-h: 34px;
     color-scheme: dark;
   }
-  * { box-sizing: border-box; }
+  @media (max-width: 1279px) { :root { --left-w: 264px; --right-w: 360px; } }
+  @media (min-width: 1800px) { :root { --left-w: 320px; --right-w: 440px; } }
+  * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #555 transparent; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; height: 100%; overflow: hidden; font: 14px/1.45 Inter, Avenir, Helvetica, Arial, sans-serif; background: var(--ui-bg); color: var(--ui-text); }
   #app { position: relative; height: 100vh; width: 100vw; overflow: hidden; }
   #map { position: absolute; inset: 0; z-index: 1; background: var(--ui-bg); }
-  .leaflet-container { background: var(--ui-bg); }
-  .leaflet-top.leaflet-left, .leaflet-bottom.leaflet-left { margin-left: 312px; }
-  .leaflet-top.leaflet-right, .leaflet-bottom.leaflet-right { margin-right: 392px; }
+  .leaflet-container { background: var(--ui-bg); font: inherit; }
+  .leaflet-top.leaflet-left, .leaflet-bottom.leaflet-left { margin-left: var(--left-w); }
+  .leaflet-top.leaflet-right, .leaflet-bottom.leaflet-right { margin-right: var(--right-w); }
   .leaflet-tile { filter: brightness(0.78) saturate(0.9) contrast(1.04); }
-  #sideL, #side { position: absolute; top: 0; bottom: 0; z-index: 15; background: var(--ui-sidebar); overflow-y: auto; overflow-x: hidden; padding: 14px; }
-  #sideL { left: 0; width: 300px; border-right: 1px solid var(--ui-card-border); }
-  #side { right: 0; width: 380px; border-left: 1px solid var(--ui-card-border); display: flex; flex-direction: column; gap: 10px; }
-  * { scrollbar-width: thin; scrollbar-color: #555 transparent; }
+  #sideL, #side { position: absolute; top: 0; bottom: 0; z-index: 15; background: var(--ui-sidebar); overflow-y: auto; overflow-x: hidden; padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); overscroll-behavior: contain; }
+  #sideL { left: 0; width: var(--left-w); border-right: 1px solid var(--ui-card-border); }
+  #side { right: 0; width: var(--right-w); border-left: 1px solid var(--ui-card-border); }
   ::-webkit-scrollbar { width: 10px; } ::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 5px; border: 2px solid var(--ui-sidebar); }
   ::-webkit-scrollbar-thumb:hover { background: rgba(254,204,68,.6); }
-  .icon { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; vertical-align: -3px; }
+  .icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; display: inline-block; vertical-align: middle; }
   .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
   a { color: var(--ui-link); }
   :focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
 
   /* ---- Meld 1's animated wordmark, as it was (web/index.html) ---- */
-  /* ---- animated wordmark (mirrors the site hero's build-in) ---- */
-  .meld-mark { display:block; cursor:pointer; text-decoration:none !important; }
-  .mm-stage {
-    position:relative; display:block; width:100%; max-width:268px;
-    aspect-ratio:1022 / 400;      /* the art's own canvas */
-  }
+  .meld-mark { display:block; cursor:pointer; text-decoration:none !important; line-height: 0; margin: 2px auto 0; width: 100%; max-width: 236px; }
+  .mm-stage { position:relative; display:block; width:100%; aspect-ratio:1022 / 400; }
   .mm-stage img { position:absolute; display:block; image-rendering:pixelated; }
   /* Measured placements as percentages of the 1022x400 canvas, same as the site:
      M (3,0) 349x360 · E (332,0) 239x360 · L (565,0) 216x360 · D (752,0) 266x360 ·
@@ -57,32 +59,22 @@
   .mm-d   { left:73.5812%; top:0; width:26.0274%; height:90%; }
   .mm-sub { left:0; top:75.5%; width:100%; height:24.5%; }
   .mm-full{ inset:0; width:100%; height:100%; opacity:1; }
-
   /* Choreography, in the site's timings. The letters and subtitle start hidden ONLY
      once we know the animation will run, so a browser without animation support still
      shows every layer stacked on the finished art rather than an empty box. */
   @media (prefers-reduced-motion: no-preference) {
-    /* The clearing pass MUST fill forwards only. With `both` it back-fills its own
-       from-state (opacity 1) throughout its 2.2s delay, and because it is last in the
-       list it wins over the placement animation -- which made every letter simply
-       appear at full opacity instead of animating in. */
+    /* The clearing pass MUST fill forwards only: with `both` it back-fills its own
+       from-state during its delay and wins over the placement animation. */
     .mm-letter { opacity:0; animation:mm-place .42s cubic-bezier(.22,.9,.28,1) both, mm-clear .5s linear 2.2s forwards; }
     .mm-m { animation-delay:.05s, 2.2s; }
     .mm-e { animation-delay:.26s, 2.2s; }
     .mm-l { animation-delay:.47s, 2.2s; }
     .mm-d { animation-delay:.68s, 2.2s; }
     .mm-sub  { opacity:0; animation:mm-rise .6s cubic-bezier(.16,1,.3,1) 1.02s both, mm-clear .5s linear 2.2s forwards; }
-    /* The finished art fades in UNDER the still-opaque build-up, then the layers
-       clear. Sequenced, not crossed, so nothing shows through mid-swap.
-       `backwards` (not `both`) is deliberate: the art's RESTING state is visible, and
-       the fill only hides it during the delay. So if the timeline never advances -- the
-       page was loaded in a background tab, animations are off -- the mark is the
-       finished composition rather than an empty box. */
+    /* The finished art fades in under the build-up, then the layers clear.
+       `backwards`: if the timeline never advances, the mark is the finished art. */
     .mm-full { animation:mm-settle .45s ease-in-out 1.7s backwards; }
   }
-  /* Fades up while dropping in small, overshoots with a brightness flash on landing,
-     then settles. The fade carries the whole way in so the letter reads as arriving
-     rather than switching on. */
   @keyframes mm-place {
     0%   { opacity:0;   transform:translateY(-32%) scale(.35); filter:brightness(1); }
     55%  { opacity:.85; transform:translateY(4%)   scale(1.12); filter:brightness(1.75); }
@@ -92,144 +84,212 @@
   @keyframes mm-rise   { from { opacity:0; transform:translateY(42%); } to { opacity:1; transform:translateY(0); } }
   @keyframes mm-settle { from { opacity:0; } to { opacity:1; } }
   @keyframes mm-clear  { from { opacity:1; } to { opacity:0; } }
-  #sideL .logo { display: block; line-height: 0; margin-bottom: 4px; }
+  .tagline { text-align: center; font-size: 11px; line-height: 1.3; color: var(--ui-muted); margin-bottom: var(--sp-1); }
 
-  /* ---- section cards (settings.css .settings-section), collapsible like Meld 1's ---- */
-  .card { border: 1px solid var(--ui-card-border); border-radius: 12px; background: var(--ui-card); padding: 12px 14px; flex: none; }
-  #sideL .card { margin-top: 10px; }
-  .card-head { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+  /* ---- cards (settings.css .settings-section), collapsible like Meld 1's ---- */
+  .card { width: 100%; border: 1px solid var(--ui-card-border); border-radius: var(--r-xl); background: var(--ui-card); padding: var(--sp-3); flex: none; min-width: 0; }
+  .card-head { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+  .card-head:has(.chev) { cursor: pointer; user-select: none; }
+  .card-head > div { flex: 1; min-width: 0; }
   .card-head h3 { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.25; }
-  .card-head p { margin: 1px 0 0; font-size: 12px; line-height: 1.35; color: var(--ui-muted); }
-  .card-icon { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; background: rgba(255,255,255,.06); color: var(--ui-text); }
-  .card-head .chev { margin-left: auto; color: var(--ui-muted); transition: transform .15s ease; }
+  .card-head p { margin: 1px 0 0; font-size: 12px; line-height: 1.35; color: var(--ui-muted); overflow-wrap: anywhere; }
+  .card-icon { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: var(--r-md); background: rgba(255,255,255,.06); color: var(--ui-text); }
+  .card-icon .icon { width: 18px; height: 18px; }
+  .card-head .chev { color: var(--ui-muted); transition: transform .15s ease; }
   .card.collapsed .chev { transform: rotate(-90deg); }
   .card.collapsed > :not(.card-head) { display: none; }
-  .card > .card-head + * { margin-top: 12px; }
-  .card-body { display: flex; flex-direction: column; gap: 8px; }
-  .group-head { font-size: 12.5px; font-weight: 700; color: var(--ui-muted); text-transform: none; margin: 6px 0 0; }
-  details.group { border-top: 1px solid rgba(255,255,255,.07); padding-top: 8px; }
-  details.group > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; padding: 2px 0 6px; }
+  .card > .card-head + * { margin-top: var(--sp-3); }
+  .card-body { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+  details.group { border-top: 1px solid rgba(255,255,255,.07); padding-top: var(--sp-2); }
+  details.group > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: var(--sp-2); font-size: 14px; font-weight: 600; padding: 2px 0 var(--sp-1); }
   details.group > summary::-webkit-details-marker { display: none; }
-  details.group > summary::after { content: ""; margin-left: auto; width: 7px; height: 7px; border-right: 2px solid var(--ui-muted); border-bottom: 2px solid var(--ui-muted); transform: rotate(-45deg); transition: transform .15s ease; }
+  details.group > summary::after { content: ""; margin-left: auto; flex: none; width: 7px; height: 7px; border-right: 2px solid var(--ui-muted); border-bottom: 2px solid var(--ui-muted); transform: rotate(-45deg); transition: transform .15s ease; }
   details.group[open] > summary::after { transform: rotate(45deg); }
   details.group > summary .sdesc { font-size: 12px; font-weight: 400; color: var(--ui-muted); }
-  details.group > .card-body { padding-bottom: 6px; }
+  details.group > .card-body { padding-bottom: var(--sp-1); }
+  details.group details.group > summary { font-size: 13px; color: var(--ui-muted); }
 
   /* ---- setting tiles (settings.css .setting-tile) ---- */
-  .setting-tile { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-height: 56px; padding: 9px 12px; border: 1px solid var(--ui-tile-border); border-radius: 10px; background: var(--ui-tile); transition: background-color .15s ease, border-color .15s ease; }
+  .setting-tile { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); min-height: 52px; padding: 9px var(--sp-3); border: 1px solid var(--ui-tile-border); border-radius: var(--r-lg); background: var(--ui-tile); transition: background-color .15s ease, border-color .15s ease; min-width: 0; }
   .setting-tile:hover { background: var(--ui-tile-hover); }
-  .setting-tile.is-set { border-color: rgba(254,204,68,.45); }
-  .setting-label { display: flex; align-items: center; gap: 12px; flex: 1 1 150px; min-width: 0; }
+  .setting-tile.is-set { border-color: rgba(254,204,68,.5); box-shadow: inset 3px 0 0 var(--ui-accent); }
+  .setting-tile.unavailable .settings-control { opacity: .4; pointer-events: none; }
+  .setting-tile.unavailable .setting-heading, .setting-tile.unavailable .setting-desc, .setting-tile.unavailable .setting-icon { opacity: .55; }
+  .setting-label { display: flex; align-items: flex-start; gap: var(--sp-3); flex: 1 1 150px; min-width: 0; }
+  .setting-icon { width: 20px; height: 20px; margin-top: 1px; color: var(--ui-muted); }
   .setting-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .setting-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 14px; font-weight: 600; line-height: 1.3; }
   .setting-desc { font-size: 12px; line-height: 1.35; color: var(--ui-muted); }
-  .settings-control { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-shrink: 0; margin-left: auto; }
-  .setting-tile.stack .settings-control { flex: 1 1 100%; justify-content: flex-start; }
-  .tooltip-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; border-radius: 50%; background-color: rgba(255,255,255,.1); color: var(--ui-muted); font-size: 10.5px; font-weight: 700; cursor: help; }
+  .settings-control { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); flex: none; margin-left: auto; max-width: 100%; }
+  .setting-tile.stack .settings-control { flex: 1 1 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .setting-tile.stack .settings-control > input[type=text], .setting-tile.stack .settings-control > select { flex: 1; width: auto; min-width: 0; }
+  .tooltip-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex: none; border-radius: 50%; background-color: rgba(255,255,255,.1); color: var(--ui-muted); font-size: 10.5px; font-weight: 700; cursor: help; }
   .tooltip-icon:hover { background-color: rgba(254,204,68,.3); color: var(--primary-accent); }
-  .settings-notice { padding: 9px 12px; border: 1px solid rgba(254,204,68,.25); border-radius: 10px; background: rgba(254,204,68,.06); color: var(--ui-muted); font-size: 12.5px; line-height: 1.4; }
+  .badge { padding: 0 var(--sp-1); border-radius: var(--r-sm); font-size: 10px; font-weight: 700; line-height: 16px; letter-spacing: .03em; background: rgba(255,255,255,.08); color: var(--ui-muted); cursor: help; }
+  .why, .ovr { display: block; margin-top: 2px; font-size: 11.5px; line-height: 1.4; }
+  .why { color: var(--ui-faint); } .why .icon { width: 12px; height: 12px; margin: -2px 4px 0 0; }
+  .ovr { color: var(--ui-accent); }
+  .settings-notice { padding: var(--sp-2) var(--sp-3); border-left: 3px solid var(--ui-accent); border-radius: var(--r-md); background: rgba(254,204,68,.06); color: var(--ui-muted); font-size: 12.5px; line-height: 1.4; }
+  .empty { padding: var(--sp-3); border: 1px dashed var(--ui-tile-border); border-radius: var(--r-lg); color: var(--ui-muted); font-size: 12.5px; line-height: 1.5; }
 
-  /* ---- fields (settings.css Fields), switch (styles.css input.switch), segmented control ---- */
-  input[type=text], input[type=number], select, textarea { box-sizing: border-box; height: 34px; padding: 0 10px; border: 1px solid var(--ui-field-border); border-radius: 8px; background-color: var(--ui-field); color: var(--ui-text); font-family: inherit; font-size: 13px; width: 150px; }
-  input[type=number] { width: 104px; }
+  /* ---- fields, switch, segmented control, choice cards, sliders ---- */
+  input[type=text], input[type=search], input[type=number], select, textarea { height: var(--field-h); padding: 0 10px; border: 1px solid var(--ui-field-border); border-radius: var(--r-md); background-color: var(--ui-field); color: var(--ui-text); font-family: inherit; font-size: 13px; width: 150px; min-width: 0; }
+  input[type=number] { width: 96px; }
   input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ui-accent); box-shadow: 0 0 0 3px rgba(254,204,68,.18); }
   input::placeholder { color: var(--ui-faint); }
-  select { padding-right: 30px; -webkit-appearance: none; appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23b8b8b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 9px center; }
+  select { padding-right: 30px; -webkit-appearance: none; appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23b8b8b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 9px center; text-overflow: ellipsis; }
   select option { background: #2c2c2c; color: #f2f2f2; }
-  .stack input[type=text] { width: 100%; }
-  textarea { height: auto; width: 100%; min-height: 300px; padding: 8px 10px; resize: vertical; font: 12px/1.45 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; }
-  input.switch { -webkit-appearance: none; appearance: none; position: relative; flex-shrink: 0; width: 42px; height: 24px; margin: 0; padding: 0; border: none; border-radius: 12px; background: #5e5e5e; cursor: pointer; transition: background-color .18s ease; }
+  textarea { height: auto; width: 100%; min-height: 300px; padding: var(--sp-2) 10px; resize: vertical; font: 12px/1.45 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; }
+  input.switch { -webkit-appearance: none; appearance: none; position: relative; flex: none; width: 42px; height: 24px; margin: 0; padding: 0; border: none; border-radius: 12px; background: #5e5e5e; cursor: pointer; transition: background-color .18s ease; }
   input.switch::before { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #d6d6d6; box-shadow: 0 1px 2px rgba(0,0,0,.35); transition: transform .18s ease, background-color .18s ease; }
   input.switch:checked { background: var(--ui-accent); }
   input.switch:checked::before { transform: translateX(18px); background: #fff; }
-  .segmented-control { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--ui-field-border); border-radius: 9px; background: var(--ui-field); }
-  .segmented-control .segment { all: unset; box-sizing: border-box; padding: 5px 10px; border-radius: 6px; color: var(--ui-text); font-size: 12.5px; line-height: 1.2; white-space: nowrap; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
+  input[type=range] { flex: 1; min-width: 0; margin: 0; accent-color: var(--ui-accent); cursor: pointer; }
+  .setting-value, .unit { font-size: 13px; font-weight: 700; color: var(--ui-text); font-variant-numeric: tabular-nums; }
+  .setting-value { min-width: 48px; text-align: right; }
+  .unit { color: var(--ui-muted); }
+  .segmented-control { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--ui-field-border); border-radius: 9px; background: var(--ui-field); max-width: 100%; }
+  .segmented-control .segment { all: unset; box-sizing: border-box; padding: 5px 10px; border-radius: var(--r-sm); color: var(--ui-text); font-size: 12.5px; line-height: 1.2; white-space: nowrap; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
   .segmented-control .segment:hover { background: rgba(255,255,255,.08); }
   .segmented-control .segment.active { background: var(--ui-accent); color: var(--ui-on-accent); font-weight: 600; }
+  .choice-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; width: 100%; }
+  .choice-cards .segment { all: unset; box-sizing: border-box; position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 10px 10px; border: 1px solid var(--ui-tile-border); border-radius: var(--r-lg); background: var(--ui-field); cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
+  .choice-cards .segment:hover { background: var(--ui-tile-hover); }
+  .choice-cards .segment .icon { width: 20px; height: 20px; margin-bottom: var(--sp-1); color: var(--ui-muted); }
+  .choice-cards .segment::after { content: ""; position: absolute; top: 10px; right: 10px; width: 14px; height: 14px; box-sizing: border-box; border: 2px solid #6b6b6b; border-radius: 50%; }
+  .choice-title { font-size: 13px; font-weight: 600; line-height: 1.25; overflow-wrap: anywhere; }
+  .choice-desc { font-size: 11px; line-height: 1.3; color: var(--ui-muted); }
+  .choice-cards .segment.active { border-color: var(--ui-accent); background: rgba(254,204,68,.07); box-shadow: inset 0 0 0 1px var(--ui-accent); }
+  .choice-cards .segment.active .icon, .choice-cards .segment.active .choice-title { color: var(--ui-accent); }
+  .choice-cards .segment.active::after { border-color: var(--ui-accent); background: radial-gradient(circle, var(--ui-accent) 0 3px, transparent 3.5px); }
+  [disabled] { cursor: default !important; }
 
-  /* ---- preview cards (settings.css .preview-block): rows left, square picture right ---- */
-  .preview-block { --preview-size: 118px; display: grid; grid-template-columns: minmax(0, 1fr) var(--preview-size); gap: 12px; align-items: start; padding: 2px 12px; border: 1px solid var(--ui-tile-border); border-radius: 10px; background: var(--ui-tile); }
-  .preview-controls { display: flex; flex-direction: column; min-width: 0; }
+  /* ---- preview cards (settings.css .preview-block): rows left, picture right ---- */
+  /* The picture floats right: the first rows sit beside it, the rest (mix
+     lists) get the full width the rail has. */
+  .preview-block { --preview-size: 112px; display: flow-root; padding: 2px var(--sp-3); border: 1px solid var(--ui-tile-border); border-radius: var(--r-lg); background: var(--ui-tile); }
+  .preview-controls { display: block; min-width: 0; }
+  .preview-controls > .setting-tile { overflow: hidden; }
   .preview-controls > .setting-tile { padding: 10px 0; border: none; border-radius: 0; background: none; min-height: 0; }
+  .preview-controls > .setting-tile.is-set { box-shadow: inset 3px 0 0 var(--ui-accent); padding-left: 10px; }
   .preview-controls > .setting-tile + .setting-tile { border-top: 1px solid rgba(255,255,255,.07); }
-  .preview-frame { position: relative; width: var(--preview-size); margin: 12px 0; overflow: hidden; border: 1px solid var(--ui-tile-border); border-radius: 12px; background: var(--ui-field); aspect-ratio: 1 / 1; }
-  .preview-frame img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity .2s ease; }
-  .preview-options { display: flex; flex-direction: column; gap: 2px; flex: 1 0 100%; }
-  .preview-options .segment { all: unset; position: relative; padding: 5px 10px 5px 30px; border-radius: 8px; color: var(--ui-text); font-size: 13px; cursor: pointer; transition: background-color .15s ease; }
+  .preview-frame { float: right; position: relative; width: var(--preview-size); margin: var(--sp-3) 0 var(--sp-2) var(--sp-3); overflow: hidden; border: 1px solid var(--ui-tile-border); border-radius: var(--r-xl); background: var(--ui-field); aspect-ratio: 1 / 1; }
+  .preview-frame img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .preview-frame figcaption { position: absolute; left: var(--sp-1); right: var(--sp-1); bottom: var(--sp-1); padding: 2px 6px; border-radius: var(--r-sm); background: rgba(28,28,28,.82); font-size: 10.5px; font-weight: 600; line-height: 1.3; }
+  .preview-frame figcaption:empty { display: none; }
+  .preview-options { display: flex; flex-direction: column; gap: 2px; width: 100%; }
+  .preview-options .segment { all: unset; position: relative; padding: 5px 10px 5px 30px; border-radius: var(--r-md); color: var(--ui-text); font-size: 13px; cursor: pointer; transition: background-color .15s ease; }
   .preview-options .segment:hover { background: rgba(255,255,255,.06); }
   .preview-options .segment::before { content: ""; position: absolute; top: 50%; left: 8px; width: 14px; height: 14px; box-sizing: border-box; margin-top: -7px; border: 2px solid #6b6b6b; border-radius: 50%; }
   .preview-options .segment.active { background: rgba(254,204,68,.07); color: var(--ui-accent); font-weight: 600; }
   .preview-options .segment.active::before { border-color: var(--ui-accent); background: radial-gradient(circle, var(--ui-accent) 0 3px, transparent 3.5px); }
-  .realm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
-  .realm-grid .segment { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid transparent; font-size: 12.5px; }
+  .realm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-1); }
+  .realm-grid .segment { display: flex; align-items: center; gap: var(--sp-2); padding: 5px var(--sp-2); border: 1px solid transparent; font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .realm-grid .segment::before { content: none; }
   .realm-grid .segment.active { border-color: var(--ui-accent); }
-  .realm-grid .realm-auto { grid-column: 1 / -1; }
+  .realm-grid .segment:first-child { grid-column: 1 / -1; }
   .realm-swatch { flex: none; width: 18px; height: 18px; border-radius: 5px; background-position: center; background-size: 400%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); image-rendering: pixelated; }
-  .mix-list { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; flex: 1 0 100%; }
-  .mix-list label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ui-muted); }
-  .mix-list input { width: 100%; padding: 0 6px; }
-  .mix-list.rows { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
-  .mix-list.rows label { flex-direction: row; align-items: center; justify-content: space-between; color: var(--ui-text); font-size: 13px; }
-  .mix-list.rows input { width: 70px; }
+  .mix-list { display: flex; flex-direction: column; gap: 2px; width: 100%; }
+  .mix-row { display: grid; grid-template-columns: 34px minmax(0, 1fr) 64px 16px; align-items: center; gap: var(--sp-2); min-height: 30px; }
+  .mix-row .switch { transform: scale(.8); transform-origin: left center; }
+  .mix-name { display: flex; justify-content: space-between; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; }
+  .mix-hint { font-size: 11.5px; font-weight: 400; color: var(--ui-faint); white-space: nowrap; }
+  .mix-row input[type=number] { width: 64px; height: 28px; padding: 2px 6px; text-align: right; }
+  .mix-unit { font-size: 12px; color: var(--ui-muted); }
+  .mix-row.is-off input[type=number], .mix-row.is-off .mix-name, .mix-row.is-off .mix-unit { opacity: .4; }
+  .mix-list > .link { align-self: flex-start; margin-top: var(--sp-1); font-size: 12px; }
+  .props-families { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-1) var(--sp-2); width: 100%; font-size: 12.5px; }
+  .props-families label { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .props-families input { accent-color: var(--ui-accent); margin: 0; }
+  .bake { display: grid; gap: 6px; padding: var(--sp-2); border: 1px solid var(--ui-tile-border); border-radius: var(--r-md); }
+  .bake input { width: 100%; }
 
-  /* ---- buttons (dialogs.css / the main window) ---- */
-  button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font: inherit; font-size: 13px; font-weight: 600; color: var(--ui-text); background: var(--ui-field); border: 1px solid var(--ui-field-border); border-radius: 8px; padding: 8px 12px; cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
-  button:hover { border-color: var(--ui-accent); background: rgba(254,204,68,.10); }
+  /* ---- buttons ---- */
+  button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--field-h); font: inherit; font-size: 13px; font-weight: 600; line-height: 1.2; color: var(--ui-text); background: var(--ui-field); border: 1px solid var(--ui-field-border); border-radius: var(--r-md); padding: 0 var(--sp-3); cursor: pointer; white-space: nowrap; transition: background-color .15s ease, border-color .15s ease; }
+  button:hover:not(:disabled) { border-color: var(--ui-accent); background: rgba(254,204,68,.10); }
   button.primary { background: var(--ui-accent); border-color: var(--ui-accent); color: var(--ui-on-accent); }
-  button.primary:hover { background: var(--accent-dark); }
-  button.danger:hover { border-color: var(--ui-danger); background: rgba(207,102,121,.12); }
-  button.small { padding: 4px 8px; font-size: 12px; }
-  button.icon-only { padding: 6px; }
-  button:disabled { opacity: .45; cursor: default; }
+  button.primary:hover:not(:disabled) { background: var(--accent-dark); }
+  button.danger:hover:not(:disabled) { border-color: var(--ui-danger); background: rgba(207,102,121,.12); }
+  button.small { min-height: 28px; padding: 0 var(--sp-2); font-size: 12px; }
+  button.icon-only { width: var(--field-h); padding: 0; flex: none; }
+  button:disabled { opacity: .45; }
   button.wide { width: 100%; }
-  .row { display: flex; gap: 8px; align-items: center; }
-  .row > button { flex: 1; }
+  button > span { overflow: hidden; text-overflow: ellipsis; }
+  button.link { all: unset; display: inline; color: var(--ui-link); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+  button.link:hover { color: #fff; }
+  .row { display: flex; gap: var(--sp-2); align-items: center; min-width: 0; }
+  .row > button:not(.icon-only) { flex: 1 1 0; min-width: 0; }
 
-  /* ---- left rail: Meld 1's build, workers and log, on Arnis surfaces ---- */
+  /* ---- left rail: build, workers, log ---- */
   .sub { color: var(--ui-muted); font-size: 12px; }
-  .stat { font-size: 12.5px; color: var(--ui-muted); margin: 2px 0; overflow-wrap: anywhere; }
+  .stat { font-size: 12.5px; color: var(--ui-muted); overflow-wrap: anywhere; }
   .stat b { color: var(--ui-text); font-weight: 600; }
-  .report { background: var(--ui-tile); border: 1px solid var(--ui-tile-border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
-  .report .big { font-size: 20px; font-weight: 700; color: var(--ui-accent); font-variant-numeric: tabular-nums; }
-  .report .lbl { color: var(--ui-muted); font-size: 12px; }
-  .bar { height: 8px; background: var(--ui-field); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .report { display: flex; flex-direction: column; gap: var(--sp-1); background: var(--ui-tile); border: 1px solid var(--ui-tile-border); border-radius: var(--r-lg); padding: 10px var(--sp-3); }
+  .report .big { font-size: 22px; font-weight: 700; color: var(--ui-accent); font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .bar { height: 8px; background: var(--ui-field); border-radius: 4px; overflow: hidden; }
   .bar > i { display: block; height: 100%; background: var(--run); width: 0; transition: width .3s ease; }
   .bar > i.ok { background: var(--ok); } .bar > i.bad { background: var(--ui-danger); }
-  .chip { display: inline-block; padding: 1px 8px; font-size: 11.5px; border-radius: 9px; background: rgba(255,255,255,.08); color: var(--ui-muted); margin-left: auto; }
-  .chip.on { background: rgba(254,204,68,.14); color: var(--ui-accent); }
-  .wjob { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid rgba(255,255,255,.07); }
-  .wnum { flex: none; min-width: 38px; text-align: center; font-size: 12px; font-weight: 700; padding: 4px 6px; border-radius: 6px; color: var(--ui-on-accent); background: var(--ui-muted); font-variant-numeric: tabular-nums; }
+  .chip { flex: none; padding: 1px var(--sp-2); font-size: 11.5px; line-height: 18px; border-radius: 9px; background: rgba(255,255,255,.08); color: var(--ui-muted); white-space: nowrap; }
+  .chip:empty { display: none; }
+  .chip.st-running { background: rgba(254,204,68,.16); color: var(--ui-accent); }
+  .chip.st-done { background: rgba(76,175,80,.16); color: #7fd283; }
+  .chip.st-failed { background: rgba(207,102,121,.18); color: var(--err); }
+  .wjob { display: flex; gap: 10px; align-items: flex-start; padding: var(--sp-2) 0; border-top: 1px solid rgba(255,255,255,.07); }
+  .wnum { flex: none; min-width: 40px; text-align: center; font-size: 12px; font-weight: 700; padding: var(--sp-1) 6px; border-radius: var(--r-sm); color: var(--ui-on-accent); background: var(--ui-muted); font-variant-numeric: tabular-nums; }
   .wnum.running { background: var(--ui-accent); } .wnum.done, .wnum.skipped { background: var(--ok); } .wnum.failed { background: var(--ui-danger); color: #fff; }
-  .wjbody { flex: 1; min-width: 0; }
+  .wjbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
   .wjtop { display: flex; justify-content: space-between; gap: 6px; font-size: 13px; }
   .wjpct { font-weight: 700; color: var(--ui-accent); font-variant-numeric: tabular-nums; }
-  .wjmsg { font-size: 11.5px; color: var(--ui-muted); overflow-wrap: anywhere; margin-top: 2px; }
-  .pieces { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 5px; }
+  .wjmsg { font-size: 11.5px; color: var(--ui-muted); overflow-wrap: anywhere; }
+  .pieces { display: flex; flex-wrap: wrap; gap: 2px; }
   .pieces i { width: 8px; height: 8px; border-radius: 2px; background: var(--plan); }
   .pieces i.start, .pieces i.retry { background: var(--run); } .pieces i.done, .pieces i.skipped { background: var(--ok); } .pieces i.failed { background: var(--ui-danger); }
-  #log { font: 11px/1.45 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; color: var(--ui-muted); white-space: pre-wrap; max-height: 230px; overflow-y: auto; overflow-wrap: anywhere; }
+  #log { font: 11px/1.45 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; color: var(--ui-muted); white-space: pre-wrap; max-height: 260px; overflow-y: auto; overflow-wrap: anywhere; }
   #log:empty::before { content: "What a run says appears here."; color: var(--ui-faint); }
-  .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--ui-muted); }
-  .dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 4px; }
-  .wrow { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 10px; border: 1px solid var(--ui-tile-border); border-radius: 10px; background: var(--ui-tile); cursor: pointer; }
-  .wrow:hover { background: var(--ui-tile-hover); }
-  .wrow.on { border-color: var(--ui-accent); }
-  .wrow > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-  .msg { font-size: 12px; color: var(--ui-muted); min-height: 16px; overflow-wrap: anywhere; }
+  .legend { display: flex; flex-wrap: wrap; gap: var(--sp-1) 10px; font-size: 11.5px; color: var(--ui-muted); }
+  .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
+  .legend .dot { margin-right: 5px; vertical-align: -1px; }
+  .msg { font-size: 12px; color: var(--ui-muted); overflow-wrap: anywhere; }
+  .msg:empty { display: none; }
   .msg.bad, .bad { color: var(--err); } .good { color: var(--ok); }
-  pre.console { margin: 0; font: 11px/1.45 ui-monospace, Consolas, monospace; color: var(--ui-muted); white-space: pre-wrap; overflow-wrap: anywhere; height: 220px; overflow-y: auto; background: var(--ui-field); border: 1px solid var(--ui-field-border); border-radius: 8px; padding: 8px; }
-  #targetBar { position: sticky; top: -14px; z-index: 2; margin: 0 -14px; padding: 8px 14px; background: var(--ui-sidebar); border-bottom: 1px solid var(--ui-card-border); display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ui-muted); }
-  #targetBar select { flex: 1; width: auto; }
-  .search-hit { box-shadow: 0 0 0 2px var(--ui-accent) inset; }
-  #coordbox, #credit { position: fixed; left: 312px; z-index: 600; background: rgba(46,46,46,.9); border: 1px solid rgba(255,255,255,.14); border-radius: 6px; font: 11px/1.3 ui-monospace, Consolas, monospace; }
-  #coordbox { bottom: 10px; pointer-events: none; color: #ececec; padding: 4px 9px; }
-  #credit { bottom: 40px; color: #b5b5b5; padding: 3px 8px; }
-  #projOverlay { display: none; position: fixed; top: 12px; left: 312px; width: 460px; height: min(86vh, 860px); max-width: calc(100vw - 704px); min-width: 300px; z-index: 6000; background: var(--ui-card); border: 1px solid var(--ui-card-border); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,.45); flex-direction: column; overflow: hidden; }
+  pre.console { margin: 0; font: 11px/1.45 ui-monospace, Consolas, monospace; color: var(--ui-muted); white-space: pre-wrap; overflow-wrap: anywhere; height: 200px; overflow-y: auto; background: var(--ui-field); border: 1px solid var(--ui-field-border); border-radius: var(--r-md); padding: var(--sp-2); }
+
+  /* ---- right rail: the flow, selections, settings target ---- */
+  .steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-1); margin: 0; padding: 0; list-style: none; counter-reset: s; }
+  .steps li { counter-increment: s; display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; font-size: 11px; color: var(--ui-faint); text-align: center; }
+  .steps li::before { content: counter(s); display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; border: 2px solid #5e5e5e; font-size: 11px; font-weight: 700; }
+  .steps li.done { color: var(--ui-muted); } .steps li.done::before { content: "✓"; border-color: var(--ok); background: var(--ok); color: #fff; }
+  .steps li.now { color: var(--ui-text); font-weight: 600; } .steps li.now::before { border-color: var(--ui-accent); color: var(--ui-accent); box-shadow: 0 0 0 3px rgba(254,204,68,.18); }
+  .next { font-size: 12.5px; line-height: 1.45; color: var(--ui-muted); }
+  .wrow { display: flex; align-items: flex-start; gap: 10px; padding: var(--sp-2) 10px; border: 1px solid var(--ui-tile-border); border-radius: var(--r-lg); background: var(--ui-tile); cursor: pointer; min-width: 0; }
+  .wrow:hover { background: var(--ui-tile-hover); }
+  .wrow.on { border-color: var(--ui-accent); box-shadow: inset 0 0 0 1px var(--ui-accent); }
+  .wrow > .dot { margin-top: 5px; }
+  .wrow > button { align-self: center; }
+  .wmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .wtop { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
+  .wtop .sub { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ovr-n { color: var(--ui-accent); white-space: nowrap; }
+  #targetBar { position: sticky; top: calc(-1 * var(--sp-3)); z-index: 2; margin: 0 calc(-1 * var(--sp-3)); padding: 10px var(--sp-3); background: var(--ui-sidebar); border-top: 1px solid var(--ui-card-border); border-bottom: 1px solid var(--ui-card-border); display: flex; flex-direction: column; gap: var(--sp-2); }
+  #targetBar.on-sel { box-shadow: inset 3px 0 0 var(--ui-accent); }
+  #targetBar .row > span { flex: none; font-size: 13px; color: var(--ui-muted); }
+  #targetBar select, #railSearch { flex: 1; width: auto; }
+  #targetBar.on-sel select { border-color: var(--ui-accent); }
+  .target-note { font-size: 12px; line-height: 1.45; color: var(--ui-muted); }
+  .target-note:empty { display: none; }
+  .chk { display: inline-flex; align-items: center; gap: 6px; flex: none; font-size: 12.5px; color: var(--ui-muted); cursor: pointer; white-space: nowrap; }
+  .chk input { accent-color: var(--ui-accent); margin: 0; }
+  #coordbox, #credit { position: fixed; left: calc(var(--left-w) + var(--sp-3)); z-index: 600; background: rgba(46,46,46,.9); border: 1px solid rgba(255,255,255,.14); border-radius: var(--r-sm); font: 11px/1.3 ui-monospace, Consolas, monospace; }
+  #coordbox { bottom: 10px; pointer-events: none; color: #ececec; padding: var(--sp-1) 9px; }
+  #credit { bottom: 40px; color: #b5b5b5; padding: 3px var(--sp-2); }
+  #projOverlay { display: none; position: fixed; top: var(--sp-3); left: calc(var(--left-w) + var(--sp-3)); width: 460px; max-height: calc(100vh - 2 * var(--sp-3)); height: 860px; max-width: calc(100vw - var(--left-w) - var(--right-w) - 2 * var(--sp-3)); z-index: 6000; background: var(--ui-card); border: 1px solid var(--ui-card-border); border-radius: var(--r-xl); box-shadow: 0 16px 48px rgba(0,0,0,.45); flex-direction: column; overflow: hidden; }
   #projOverlay.on { display: flex; }
-  .pcard { border: 1px solid var(--ui-tile-border); border-radius: 10px; background: var(--ui-tile); padding: 10px 12px; cursor: pointer; }
+  #projOverlay > .row { padding: var(--sp-3); border-bottom: 1px solid var(--ui-card-border); }
+  #projOverlay input { flex: 1; width: auto; }
+  .pcard { border: 1px solid var(--ui-tile-border); border-radius: var(--r-lg); background: var(--ui-tile); padding: 10px var(--sp-3); cursor: pointer; }
   .pcard:hover { background: var(--ui-tile-hover); }
   .pcard.on { border-color: var(--ui-accent); }
+  .foot { text-align: center; font-size: 11.5px; color: var(--ui-faint); padding: var(--sp-1) 0 var(--sp-2); }
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -237,6 +297,18 @@
   <!-- Arnis at Scale's Lucide sprite (src/gui/index.html), plus the few Meld needs. -->
   <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
     <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-map-plus" viewBox="0 0 24 24"><path d="m11 19-1.106-.552a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0l4.212 2.106a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619V12"/><path d="M15 5.764V12"/><path d="M18 15v6"/><path d="M21 18h-6"/><path d="M9 3.236v15"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+    <symbol id="i-languages" viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></symbol>
+    <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+    <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></symbol>
+    <symbol id="i-minimize" viewBox="0 0 24 24"><path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/></symbol>
+    <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/></symbol>
+    <symbol id="i-flask" viewBox="0 0 24 24"><path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
     <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
     <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></symbol>
@@ -249,7 +321,6 @@
     <symbol id="i-pickaxe" viewBox="0 0 24 24"><path d="M9 4.5Q18.5 4 19.5 15"/><path d="M15.5 8.5 4 20"/></symbol>
     <symbol id="i-brick-wall" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 9v6"/><path d="M16 15v6"/><path d="M16 3v6"/><path d="M3 15h18"/><path d="M3 9h18"/><path d="M8 15v6"/><path d="M8 3v6"/></symbol>
     <symbol id="i-map" viewBox="0 0 24 24"><path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/></symbol>
-    <symbol id="i-map-plus" viewBox="0 0 24 24"><path d="m11 19-1.106-.552a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0l4.212 2.106a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619V12"/><path d="M15 5.764V12"/><path d="M18 15v6"/><path d="M21 18h-6"/><path d="M9 3.236v15"/></symbol>
     <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
@@ -271,26 +342,15 @@
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
     <symbol id="i-frame" viewBox="0 0 24 24"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/></symbol>
     <symbol id="i-scale" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/></symbol>
-    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></symbol>
-    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
-    <symbol id="i-languages" viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></symbol>
     <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
-    <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></symbol>
-    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
     <symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01"/><path d="M10 16h.01"/></symbol>
-    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
-    <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></symbol>
-    <symbol id="i-minimize" viewBox="0 0 24 24"><path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/></symbol>
-    <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/></symbol>
     <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/></symbol>
     <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
     <symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></symbol>
     <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></symbol>
-    <symbol id="i-flask" viewBox="0 0 24 24"><path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></symbol>
     <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
     <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
-    <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
     <symbol id="i-zap" viewBox="0 0 24 24"><path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"/></symbol>
     <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
     <symbol id="i-cpu" viewBox="0 0 24 24"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></symbol>
@@ -311,7 +371,6 @@
     <symbol id="i-grid-2x2" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M3 12h18"/><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
     <symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
     <symbol id="i-fence" viewBox="0 0 24 24"><path d="M4 3 2 5v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/><path d="M6 8h4"/><path d="M6 18h4"/><path d="m12 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/><path d="M14 8h4"/><path d="M14 18h4"/><path d="m20 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/></symbol>
-  
     <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
@@ -331,97 +390,92 @@
           <img class="mm-full" src="assets/hero-title-full.webp" alt="" width="1022" height="400" decoding="async"/>
         </span>
       </a>
-    <div class="sub" style="font-size:10.5px;line-height:1.3;margin:2px 0 10px">From a city block to a whole continent, in Minecraft.</div>
+    <div class="tagline">From a city block to a whole continent, in Minecraft.</div>
     <button class="wide" id="btnProjects"><svg class="icon"><use href="#i-globe"/></svg>Projects</button>
     <div class="card">
-      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-hard-drive"/></svg></span><div><h3>Build</h3><p id="projLine">No project open.</p></div><span id="conn" class="chip">connecting…</span></div>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-hard-drive"/></svg></span><div><h3>Build</h3><p id="projLine">No project open.</p></div><span id="runChip" class="chip"></span></div>
       <div class="report">
-        <div><span id="estSize" class="big">–</span> <span class="lbl">estimated size</span></div>
-        <div class="stat" id="estSub">Plan to see the pieces and size.</div>
-        <div class="stat" id="diskLine"></div>
-        <div class="stat" id="runLine" style="margin-top:6px"></div>
+        <div><span id="runPct" class="big">–</span> <span class="sub">built</span></div>
         <div class="bar"><i id="runBar"></i></div>
+        <div class="stat" id="runLine">Open a project to see its progress.</div>
         <div class="stat" id="etaLine"></div>
+        <div class="stat" id="estLine"></div>
       </div>
     </div>
     <div class="card">
-      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-cpu"/></svg></span><div><h3>Workers</h3><p>One row per piece job</p></div><span id="workersCount" class="chip">idle</span></div>
-      <div id="workersState"><div class="stat">Idle. Generate to see live workers here.</div></div>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-cpu"/></svg></span><div><h3>Workers</h3><p>One row per Arnis job</p></div><span id="workersCount" class="chip">idle</span></div>
+      <div id="workersState"><div class="stat">Idle. Generate shows each Arnis job here.</div></div>
     </div>
     <div class="card">
-      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-file-text"/></svg></span><div><h3>Log</h3></div></div>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-file-text"/></svg></span><div><h3>Log</h3><p>What the run says</p></div><span id="conn" class="chip">connecting…</span></div>
       <div id="log"></div>
     </div>
   </div>
 
   <div id="map"></div>
 
-  <div id="projOverlay">
-    <div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--ui-card-border)">
-      <h3 style="margin:0;font-size:17px">Projects</h3>
-      <input id="projSearch" placeholder="Filter…" style="flex:1;min-width:0;width:auto">
-      <button class="icon-only" id="projClose" title="Close"><svg class="icon"><use href="#i-x"/></svg></button>
-    </div>
-    <div style="display:flex;gap:8px;padding:10px 14px;border-bottom:1px solid var(--ui-card-border)">
-      <input id="newName" placeholder="New project: letters, digits, - and _" maxlength="64" style="flex:1;min-width:0;width:auto">
-      <button class="primary" id="newBtn"><svg class="icon"><use href="#i-plus"/></svg>New</button>
-    </div>
-    <div class="msg" id="newMsg" style="padding:4px 14px 0"></div>
-    <div id="projCards" style="flex:1;overflow:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px"></div>
+  <div id="projOverlay" role="dialog" aria-label="Projects">
+    <div class="row"><h3 style="margin:0;font-size:17px;flex:none">Projects</h3><input id="projSearch" type="search" placeholder="Filter…"><button class="icon-only" id="projClose" title="Close"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <div class="row"><input id="newName" placeholder="New project: letters, digits, - and _" maxlength="64"><button class="primary" id="newBtn" style="flex:none"><svg class="icon"><use href="#i-plus"/></svg>New</button></div>
+    <div class="msg" id="newMsg" style="padding:var(--sp-1) var(--sp-3) 0"></div>
+    <div id="projCards" style="flex:1;overflow:auto;padding:var(--sp-3);display:flex;flex-direction:column;gap:var(--sp-2)"></div>
   </div>
 
   <div id="coordbox">Move the mouse over the map</div>
   <div id="credit">Arnis by <a href="https://github.com/louis-e/arnis" target="_blank" rel="noopener">louis-e</a> · Meld by <a href="https://github.com/Teddy563/meld" target="_blank" rel="noopener">Teddy563</a></div>
 
   <div id="side">
-    <input id="railSearch" type="text" placeholder="Search settings…" autocomplete="off" style="width:100%;flex:none">
-
-    <div class="card" id="cardGen">
-      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-play"/></svg></span><div><h3>Generate</h3><p>Build, stop, resume</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div>
+    <div class="card" id="cardRun">
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-play"/></svg></span><div><h3>Generate</h3><p>Five steps to a world</p></div></div>
       <div class="card-body">
-        <div class="legend"><span><i class="dot" style="background:var(--ui-accent)"></i>planned</span><span><i class="dot" style="background:var(--run)"></i>running</span><span><i class="dot" style="background:var(--ok)"></i>built</span><span><i class="dot" style="background:var(--ui-danger)"></i>failed</span><span><i class="dot" style="background:var(--ui-muted)"></i>stopped</span></div>
-        <button class="primary wide" id="btnRun"><svg class="icon"><use href="#i-play"/></svg>Generate World</button>
+        <ol class="steps" id="steps"><li>Project</li><li>Draw</li><li>Settings</li><li>Plan</li><li>Generate</li></ol>
+        <div class="next" id="nextHint"></div>
         <div class="row">
-          <button id="btnPlan" title="Arnis's dry run: pieces, chunks and size per selection, against free disk."><svg class="icon"><use href="#i-ruler"/></svg>Plan</button>
-          <button id="btnStop"><svg class="icon"><use href="#i-square"/></svg>Stop</button>
-          <button id="btnRebuild" class="icon-only danger" title="Build every selection again from scratch." style="flex:none"><svg class="icon"><use href="#i-reset"/></svg></button>
+          <button id="btnPlan" data-title="Arnis's dry run: pieces, chunks and size per selection, against free disk"><svg class="icon"><use href="#i-ruler"/></svg>Plan</button>
+          <button id="btnRun"><svg class="icon"><use href="#i-play"/></svg><span>Generate</span></button>
+          <button id="btnStop" class="icon-only" data-title="Stop: what is built stays" aria-label="Stop"><svg class="icon"><use href="#i-square"/></svg></button>
+          <button id="btnRebuild" class="icon-only danger" data-title="Rebuild every selection from scratch" aria-label="Rebuild"><svg class="icon"><use href="#i-reset"/></svg></button>
         </div>
-        <div class="stat">Stop keeps what is built; Generate resumes.</div>
-        <div id="planOut" class="stat" style="white-space:pre-wrap"></div>
       </div>
     </div>
 
     <div class="card" id="cardSel">
-      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-map"/></svg></span><div><h3>Selections</h3><p>Areas on the map and their worlds</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-map"/></svg></span><div><h3>Selections</h3><p>Click one to select it on the map and give it its own settings</p></div><span class="chip" id="selCount"></span><svg class="icon chev"><use href="#i-chevron"/></svg></div>
       <div class="card-body">
-        <div class="stat">Draw a rectangle or polygon on the map to add one; edit or delete it with the map tools. Click one to give it its own settings.</div>
         <div id="selList" class="card-body"></div>
+        <div class="legend"><span><i class="dot" style="background:#fecc44"></i>not built</span><span><i class="dot" style="background:#ff9800"></i>building</span><span><i class="dot" style="background:#4caf50"></i>built</span><span><i class="dot" style="background:#cf6679"></i>failed</span><span><i class="dot" style="background:#b8b8b8"></i>stopped</span></div>
       </div>
-    </div>
-
-    <div id="targetBar"><span>Settings for</span><select id="target"></select><span class="tooltip-icon" title="Project defaults apply to every selection; a selection's own value wins. A setting left at its default inherits.">?</span></div>
-    <div id="settingsCards" style="display:contents"></div>
-    <div class="msg" id="saveMsg"></div>
-
-    <div class="card collapsed" id="cardServer">
-      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-server"/></svg></span><div><h3>Server</h3><p>Leaf or Paper for the worlds</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div>
-      <div class="card-body" id="serverBody"></div>
     </div>
 
     <div class="card collapsed" id="cardArnis">
-      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-box"/></svg></span><div><h3>Arnis</h3><p>The generator Meld drives</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div>
-      <div class="card-body" id="arnisBody">…</div>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-box"/></svg></span><div><h3>Arnis</h3><p id="arnisHead">Checking…</p></div><span class="chip" id="arnisChip"></span><svg class="icon chev"><use href="#i-chevron"/></svg></div>
+      <div class="card-body" id="arnisBody"></div>
     </div>
 
+    <div class="card collapsed" id="cardServer">
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-server"/></svg></span><div><h3>Server</h3><p id="srvHead">Leaf or Paper for the worlds</p></div><span class="chip" id="srvChip"></span><svg class="icon chev"><use href="#i-chevron"/></svg></div>
+      <div class="card-body" id="serverBody"></div>
+    </div>
+
+    <div id="targetBar">
+      <div class="row"><span>Settings for</span><select id="target" aria-label="Settings for"></select></div>
+      <div id="targetNote" class="target-note"></div>
+      <div class="row"><input id="railSearch" type="search" placeholder="Search settings…" autocomplete="off" aria-label="Search settings"><label class="chk" title="Show only the values set here"><input type="checkbox" id="onlySet">Changed only</label></div>
+    </div>
+    <div id="settingsCards" style="display:contents"></div>
+    <div class="empty" id="searchEmpty" hidden></div>
+    <div class="msg" id="saveMsg"></div>
+
     <div class="card collapsed" id="cardToml">
-      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-file-text"/></svg></span><div><h3>Project File</h3><p>The TOML, with comments</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-file-text"/></svg></span><div><h3>Advanced: Project File</h3><p>The raw TOML, for what the form does not show</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div>
       <div class="card-body">
-        <textarea id="toml" spellcheck="false"></textarea>
-        <button class="wide" id="tomlSave">Save</button>
+        <div class="setting-desc">The form above writes this file too. Saving here replaces what the form shows; comments survive only edits made here.</div>
+        <textarea id="toml" spellcheck="false" aria-label="Project file"></textarea>
+        <button class="wide" id="tomlSave">Save the File</button>
         <div class="msg" id="tomlMsg"></div>
       </div>
     </div>
-    <div class="sub" style="text-align:center;padding:4px 0 8px">Meld 2 · not affiliated with Mojang AB or Minecraft. Built on the open source Arnis generator.</div>
+    <div class="foot">Meld 2 · not affiliated with Mojang AB or Minecraft. Built on the open source Arnis generator.</div>
   </div>
 </div>
 
@@ -430,8 +484,9 @@
 const token = new URLSearchParams(location.search).get("token") || "";
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const icon = (n) => `<svg class="icon"><use href="#i-${n}"/></svg>`;
+const icon = (n, cls = "icon") => `<svg class="${cls}"><use href="#i-${n}"/></svg>`;
 const r6 = (x) => Math.round(x * 1e6) / 1e6;
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 async function api(path, opt = {}) {
   const r = await fetch(path, { ...opt, headers: { "X-Meld-Token": token, ...(opt.headers || {}) } });
@@ -442,166 +497,425 @@ async function api(path, opt = {}) {
 }
 const post = (path, body) => api(path, { method: "POST", body });
 const say = (el, text, bad) => { const e = $(el); if (e) { e.textContent = text; e.className = "msg" + (bad ? " bad" : ""); } };
-
-// ---- the settings: Arnis at Scale's sections, groups and labels, over Meld's keys ----
-// Row: { k: key, l: label, d: description, t: type, o: options, def: Arnis's default, tip }
-// Types: switch (on = true), off (on = false, e.g. No Buildings), num, text, select, seg
-// (segmented), radio (preview options), realm, sizes (tree sizes), props.
-// `run: key` writes to [run] when the target is the project; `project: true` rows only show there.
-const o = (s) => s.split(";").map((p) => p.split("="));
-const SECTIONS = [
-  { id: "world", title: "World", desc: "Game mode, time and map item", icon: "globe", rows: [
-    { k: "gamemode", l: "Game Mode", t: "seg", o: o("survival=Survival;creative=Creative;spectator=Spectator"), def: "creative" },
-    { k: "world_time", l: "World Time", d: "Time of day the world starts at.", t: "num", def: 6000 },
-    { k: "world_type", l: "World Type", d: "What lies past the edge of the area. Java only.", t: "seg", o: o("void=Void;flat=Flat"), def: "void" },
-    { k: "map_item", l: "World Map Item", d: "Start with a map of the whole area in your inventory. Java only.", t: "switch", def: true },
-    { note: "Every Meld selection builds into a One World, named per selection under Selections." },
-  ] },
-  { id: "generation", title: "Generation", desc: "What gets built", icon: "box", rows: [
-    { k: "mode", l: "Generation Mode", t: "select", o: o("geo-terrain=Objects + Terrain;geo-only=Objects only;terrain-only=Terrain only"), def: "geo-terrain" },
-    { k: "overture", l: "Additional Buildings", d: "Fills gaps in OpenStreetMap with satellite-detected footprints.", t: "switch", def: true },
-    { k: "use_3d", l: "3D Models & Props", d: "Famous landmarks plus cars, boats, cranes and wind turbines.", t: "switch", def: true },
-    { k: "interior", l: "Interior Generation", d: "Rooms, furniture and loot chests. Experimental and slower.", t: "switch", def: false },
-    { k: "overture_source", l: "Overture Source", d: "Which Overture transport to read. Both carry the same buildings.", t: "select", o: o("auto=Auto;tiles=Vector Tiles;parquet=GeoParquet"), def: "auto" },
-    { k: "signage", l: "Signage", d: "Readable street names, traffic signs and shop plates. Java only.", t: "seg", o: o("none=None;basic=Basic;full=Full"), def: "basic" },
-  ] },
-  { id: "nature", title: "Terrain & Nature", desc: "Height, ground, caves and trees", icon: "mountain", rows: [
-    { k: "height_multiplier", l: "Terrain Height", d: "1.00 is real height. Higher values make hills and mountains taller.", t: "num", def: 1 },
-    { k: "fillground", l: "Fill Ground", d: "Stone and ores below the surface for survival mining.", t: "switch", def: false },
-    { k: "caves", l: "Caves", d: "Caves, underground rivers and cave biomes under hills.", t: "switch", def: false },
-    { k: "canopy_height", l: "Real Tree Cover", d: "Trees stand where real ones do, at roughly their height.", t: "switch", def: true },
-    { k: "legacy_trees", l: "Legacy trees", d: "Simple procedural trees instead of detailed models.", t: "switch", def: false },
-    { preview: (g) => `tree-size-${g("max_tree_size")}`, rows: [
-      { k: "max_tree_size", l: "Max Tree Size", d: "Taller trees are swapped for a smaller species.", t: "radio", o: o("small=Small;medium=Medium;big=Big;tall=Tall;giant=Giant"), def: "giant" },
-    ] },
-  ] },
-  { id: "facades", title: "Building Facades", desc: "Walls from street-level photos", icon: "building", rows: [
-    { k: "building_facades", l: "Building Facades", d: "Facade panels on buildings.", t: "switch", def: false },
-    { k: "mapillary_facades", l: "Mapillary Facades", d: "Wall colours, windows and doors from Mapillary photos. Needs MAPILLARY_TOKEN in Meld's environment.", t: "seg", o: o("true=On;false=Off"), def: true },
-    { k: "mapillary_facade_mode", l: "Facade Mode", d: "Hang the photos themselves, or match wall blocks to them.", t: "seg", o: o("blocks=Blocks;photos=Photos"), def: "photos" },
-    { k: "facade_detail", l: "Facade Detail", d: "Higher detail is sharper but needs a modern graphics card.", t: "seg", o: o("standard=Standard;high=High"), def: "standard" },
-    { k: "facade_px", l: "Facade Resolution", d: "Pixels per block of a facade panel.", t: "num", def: 16 },
-  ] },
-  { id: "map", title: "Map & Input", desc: "Scale and frame", icon: "map", rows: [
-    { k: "scale", l: "World Scale", d: "1.00 is real-world size. Smaller worlds generate faster.", t: "num", def: 1 },
-    { k: "origin", l: "Origin", d: "Pins the One World frame (lat,lon). Empty: the centre of the world's first selection.", t: "text" },
-    { k: "ground_level", l: "Ground Level", d: "Y of the ground.", t: "num", def: -62 },
-  ] },
-  { id: "advanced", title: "Advanced", desc: "Build height, lighting, mods", icon: "sliders", rows: [
-    { k: "disable_height_limit", l: "Extend build height", d: "Raises the height limit for 1:1 mountains. Not for Realms.", t: "switch", def: false },
-    { k: "aws_only_elevation", l: "Legacy Terrain", d: "Older, coarser elevation source for when the default fails.", t: "switch", def: false },
-    { k: "bake_lighting", l: "Bake lighting", d: "Precomputed light for LOD mods like Voxy. Slower.", t: "switch", def: false },
-    { k: "voxy_lod", l: "Pre-generate Voxy LOD", d: "Distant terrain renders on first join. Java only.", t: "switch", def: false },
-  ] },
-  { id: "features", title: "Extra Features", desc: "Pieces, Meld generation, experiments", icon: "sparkles", groups: [
-    { title: "Performance & Large Worlds", rows: [
-      { k: "jobs", run: "jobs", project: true, l: "Jobs at Once", d: "Selections built at the same time; never two on one world.", t: "num", def: 1 },
-      { k: "cpu_target", run: "cpu_target", l: "CPU Usage", d: "Share of the cores generation may use, in percent.", t: "num", def: 90 },
-      { k: "threads", l: "Threads", d: "Exact number of worker threads. Empty: Meld's share of CPU Usage.", t: "num" },
-      { k: "ram_budget_mb", run: "ram_budget_mb", l: "Memory Budget", d: "Memory a run may assume, in MB. Empty is automatic.", t: "num" },
-      { k: "max_downloads", l: "Parallel Downloads", d: "Downloads kept in flight at once.", t: "num", def: 16 },
-      { k: "workers", l: "Parallel Workers", d: "Pieces of a large area built at once.", t: "select", o: o("auto=Auto;1=1;2=2;3=3;4=4;5=5;6=6"), def: "auto" },
-      { k: "unit_regions", l: "Cell Size", d: "Regions in each piece; pieces are what resumes.", t: "seg", o: o("1=1x1;2=2x2;4=4x4;8=8x8"), def: 4 },
-      { k: "snap", l: "Selection Snap", d: "Whole cells inside the selection, or covering it. Off keeps the box as drawn.", t: "seg", o: o("=Off;fit=Fit Inside;cover=Cover"), def: "" },
-      { k: "min_free_mb", run: "min_free_mb", project: true, l: "Keep Free on Disk", d: "MB a run must leave free; one that would not is refused.", t: "num", def: 1024 },
-    ] },
-    { title: "Meld Generation (Experimental)", desc: "Changes what gets built: snow, roads, fields, trees, caves and water.", sub: [
-      { title: "Terrain", rows: [
-        { preview: (g) => `snow-mode-${g("snow_mode")}`, rows: [
-          { k: "snow_mode", l: "Snow", d: "Where snow lies on the terrain.", t: "radio", o: o("realistic=Realistic;peaks=Peaks;manual=Manual;off=Off"), def: "realistic" },
-          { k: "snow_percent", l: "Snow Cap Share", d: "Share of the height range under snow. Not for One World.", t: "num", def: 6 },
-          { k: "snow_y", l: "Snow Line Y", d: "Snow lies from this height up.", t: "num", def: 120 },
-        ] },
-        { preview: (g) => `scatter-${g("rocks") && g("bushes") ? "both" : g("rocks") ? "rocks" : g("bushes") ? "bushes" : "off"}`, rows: [
-          { k: "rocks", l: "Rocks", d: "Small rocks on open grass and cropland.", t: "switch", def: false },
-          { k: "bushes", l: "Bushes", d: "Small bushes on open grass and cropland.", t: "switch", def: false },
-          { k: "rock_density", l: "Rock Density", d: "Share of chunks that get a rock. Requires Rocks.", t: "num", def: 0.02 },
-          { k: "bush_density", l: "Bush Density", d: "Share of chunks that get a bush. Requires Bushes.", t: "num", def: 0.05 },
-        ] },
-      ] },
-      { title: "Roads & Buildings", rows: [
-        { preview: (g) => `road-detail-${g("road_detail")}`, rows: [
-          { k: "road_detail", l: "Road Detail", d: "How much road marking and minor ways to build.", t: "radio", o: o("max=Max;clean=Clean;compact=Compact"), def: "max" },
-        ] },
-        { k: "buildings", l: "No Buildings", d: "Roads, rail, water and land cover only.", t: "off", def: true },
-        { k: "loot_table", l: "Chest Loot Table", d: "Loot file for interior chests. Requires Interior Generation.", t: "text" },
-      ] },
-      { title: "Fields & Trees", rows: [
-        { preview: (g) => `field-mix-${["smallholding", "patchwork", "prairie", "pasture"].includes(g("field_mix")) ? g("field_mix") : "classic"}`, rows: [
-          { k: "field_mix", l: "Field Layout", d: "How farmland is split into parcels.", t: "radio", o: o("classic=Classic;smallholding=Smallholding;patchwork=Patchwork;prairie=Prairie;pasture=Pasture"), def: "classic" },
-          { k: "farm_crops", l: "Farm Crops", d: "Crop shares for farm plots, e.g. wheat=60,sunflower=20,fallow=20.", t: "text" },
-          { k: "field_scale", l: "Parcel Size", d: "Parcel size against the layout's own, in percent.", t: "num", def: 100 },
-        ] },
-        { preview: (g) => `tree-realm-${g("tree_realm")}`, rows: [
-          { k: "tree_realm", l: "Tree Realm", d: "Which region's trees to plant.", t: "realm", o: o("auto=Auto;afr=Africa;asn=Asia;aus=Oceania;ena=E. North America;eur=Europe;fl=Caribbean;ind=Tropical Asia;sam=South America;wna=W. North America;vanilla-plus=Vanilla Plus"), def: "auto" },
-          { k: "tree_size_weights", l: "Tree Sizes", d: "Which sizes to plant, and how often (percent of the usual).", t: "mix", names: o("small=Small;medium=Medium;big=Big;tall=Tall;giant=Giant") },
-        ] },
-      ] },
-      { title: "Caves & Water", rows: [
-        { preview: (g) => `cave-style-${g("cave_style")}${g("cave_ores") === "more" ? "-more-ores" : ""}`, rows: [
-          { k: "cave_style", l: "Cave Style", d: "How much of the underground the cave biomes take. Requires Caves.", t: "radio", o: o("vanilla=Vanilla;more-vanilla=More Vanilla;all-mix=All Mix;more-mix=More Mix"), def: "all-mix" },
-          { k: "cave_ores", l: "Ores", d: "How many ore veins the rock holds. Requires Caves.", t: "radio", o: o("normal=Normal;more=More"), def: "normal" },
-        ] },
-        { k: "cave_biomes", l: "Cave Biomes", d: "Each cave biome's amount, from the style's own (percent; 0 turns it off).", t: "mix", names: o("lush=Lush;dripstone=Dripstone;deepdark=Deep Dark;mushroom=Mushroom;ice=Ice;amethyst=Amethyst;volcanic=Volcanic;coral=Coral") },
-        { k: "cave_seed", l: "Cave Seed", d: "A different cave layout per seed. Requires Caves.", t: "num" },
-        { k: "cave_datum_y", l: "Cave Datum Y", d: "Lines caves up between areas. Requires Caves.", t: "num" },
-        { preview: (g) => `climate-mode-${g("climate_mode")}`, rows: [
-          { k: "climate_mode", l: "Climate Sampling", d: "Where the climate behind ground and biomes is read.", t: "radio", o: o("origin=Origin;per-position=Per Position"), def: "origin" },
-        ] },
-        { preview: (g) => `river-bed-${g("river_bed")}`, rows: [
-          { k: "river_bed", l: "River Bed", d: "Shape of river, canal and stream beds.", t: "radio", o: o("off=Off;v1=U-Shaped"), def: "off" },
-        ] },
-        { preview: (g) => `water-detail-${g("water_detail")}`, rows: [
-          { k: "water_detail", l: "Water Detail", d: "Finer water for small scales.", t: "radio", o: o("default=Default;scaled=Scaled"), def: "default" },
-        ] },
-      ] },
-    ] },
-    { title: "Experimental", rows: [
-      { preview: (g) => `grass-texture-${g("grass_texture") ? "on" : "off"}`, rows: [
-        { k: "grass_texture", l: "Grass Texture", d: "Mapped meadows as loose parcels of grass and flowers.", t: "switch", def: false },
-        { k: "grass_mix", l: "Grass Mix", d: "Parcel mix for grassland: a preset or a share list.", t: "text" },
-      ] },
-      { preview: (g) => `land-texture-${g("land_texture") ? "on" : "off"}`, rows: [
-        { k: "land_texture", l: "Land Texture", d: "Untagged land textured from satellite land cover.", t: "switch", def: false },
-        { k: "land_mix", l: "Land Mix", d: "Parcel mix for textured cropland, from a preset.", t: "text" },
-      ] },
-      { k: "seed", l: "World Seed", d: "A different but repeatable look per seed.", t: "num" },
-      { k: "props", l: "Props", d: "Which bundled props to place: cars, boats, cranes and more.", t: "props" },
-      { k: "props_min_scale", l: "Props Minimum Scale", d: "No props below this world scale. Empty places them at any.", t: "num" },
-      { k: "tree_pack_dir", l: "Tree Pack Folder", d: "Your own tree schematics.", t: "text" },
-      { k: "tree_pack_mode", l: "Tree Pack Mode", d: "Whether your trees join the built-in ones or replace them.", t: "select", o: o("add=Add to Built-in;replace=Replace Built-in"), def: "add" },
-      { k: "world_border", l: "World Border", d: "Keeps players inside the generated area. Java only.", t: "switch", def: false },
-      { k: "extra_args", l: "Extra Arnis Flags", d: "Flags Meld does not model, separated by spaces; passed unchecked.", t: "list" },
-    ] },
-  ] },
-  { id: "osm", title: "OSM Data Source", desc: "Where map data comes from", icon: "database", rows: [
-    { k: "osm_tiles_url", l: "Archive URL", d: "Address of a tile archive. Empty uses Arnis's own.", t: "text" },
-    { k: "overpass_url", l: "Overpass Servers", d: "Servers to ask, comma separated. Empty uses Arnis's own.", t: "text" },
-    { k: "osm_pbf", l: "PBF File", d: "An .osm.pbf extract covering the area, or geofabrik to download one.", t: "text" },
-    { k: "osm_pbf_url", l: "Geofabrik Extract", d: "With geofabrik: the extract to download. A bake and its selections need the same.", t: "text" },
-    { k: "bake_cpu", run: "bake_cpu", project: true, l: "Bake CPU Usage", d: "Share of the cores downloads and bakes may use. Empty: CPU Usage.", t: "num" },
-    { k: "offline", l: "Offline Mode", d: "Uses only data downloaded before. Fails and lists what is missing.", t: "switch", def: false },
-    { k: "prewarm", l: "Download Area For Offline Use", d: "A step before the build fetches what the selection needs.", t: "switch", def: false },
-    { k: "prewarm_first", l: "Warm Caches Before Building Pieces", d: "Downloads each piece's data first, one at a time.", t: "switch", def: false },
-    { bakes: true },
-  ] },
-];
+// Per-viewer conveniences only (open sections); the page works without them.
+const store = {
+  get: (k, d) => { try { return JSON.parse(localStorage.getItem(`meld2.${k}`)) ?? d; } catch (_) { return d; } },
+  set: (k, v) => { try { localStorage.setItem(`meld2.${k}`, JSON.stringify(v)); } catch (_) { /* storage off */ } },
+};
 
 // ---- state ----
-let options = [];
+let SCHEMA = null;        // /api/options: Arnis's settings page over Meld's keys (core/src/settings.json)
+const ROWS = {};          // key -> row
 let cur = null;           // {name, model, parts, state, running}
-let target = "";          // "" = project defaults, else a selection id
-const live = {};          // project -> id -> {status, pct, of, pieces, msg}
+let target = "";          // "" = every selection (the project's [defaults]), else a selection id
+const live = {};          // project -> step id -> {status, pct, of, pieces, msg}
 const logs = {};
 let runStart = null;
-let lastPlan = null;
+let lastPlan = null;      // the last Plan of this project, {.., stale}
 
-// ---- cards: click a head to fold it (Meld 1) ----
+// ---- the settings table ----
+const opts = (o) => (typeof o === "string" ? o.split(";").map((p) => p.split("=")) : o || []);
+const name = (r) => r.key || r.k;
+function index(rows, sec) {
+  for (const r of rows) {
+    if (r.rows) { index(r.rows, sec); continue; }
+    Object.assign(r, { sec });
+    ROWS[r.k] = r;
+    for (const [k, def] of Object.entries(r.keys || {})) ROWS[k] = { k, def, sec, l: r.l };
+  }
+}
+api("/api/options").then((s) => {
+  SCHEMA = s;
+  for (const sec of s.sections) for (const g of sec.groups || [sec]) for (const x of g.sub || [g]) index(x.rows, sec.title);
+  for (const r of s.server) ROWS[`srv:${r.k}`] = { ...r, key: r.k, k: `srv:${r.k}`, srv: true };
+  renderSettings();
+  if (cur) serverBody();
+}, (e) => say("saveMsg", `Reading the settings: ${e.message}`, true));
+
+const selOf = () => (cur && target ? (cur.model.selection || []).find((s) => s.id === target) : null);
+// Where a row's value lives for the current target, and what it falls back to.
+function where(r) {
+  const m = cur.model, s = selOf();
+  if (r.srv) return { t: m.server || {}, base: r.def };
+  const run = (m.run = m.run || {}), defs = (m.defaults = m.defaults || {});
+  if (s) return { t: (s.settings = s.settings || {}), base: (r.run ? run : defs)[name(r)] ?? r.def };
+  return { t: r.run ? run : defs, base: r.def };
+}
+// Rows that are not one key: a project or selection field, or one Arnis
+// control over two Meld keys.
+const FIELD = {
+  "@id": { get: () => selOf().id, set(v) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(v || "")) throw new Error("A selection name uses letters, digits, - and _.");
+    if (cur.model.selection.some((s) => s.id === v)) throw new Error(`${v} exists already.`);
+    selOf().id = v; target = v;
+  } },
+  "@world": { get: () => selOf().world, set(v) { if (!v) throw new Error("A selection needs a world name."); selOf().world = v; } },
+  "@bbox": { get: () => (selOf().polygon ? `${selOf().polygon.length} ring(s)` : (selOf().bbox || []).join(",")),
+    off: () => selOf().polygon && "A polygon: change its shape with the edit tool on the map.",
+    set(v) { const b = String(v || "").split(",").map(Number); if (b.length !== 4 || b.some(Number.isNaN)) throw new Error("Bounding Box: lat,lng,lat,lng."); selOf().bbox = b; } },
+  "@name": { get: () => cur.model.name, set(v) { if (!v) throw new Error("A project needs a name."); cur.model.name = v; } },
+  "@output": { get: () => cur.model.output, set(v) { cur.model.output = v || "saves"; } },
+  "@token": { get: () => "" },
+  "@bakes": { get: () => "" },
+};
+const VIRTUAL = {
+  facade_source: {
+    get: () => (eff("building_facades") ? "preset" : eff("mapillary_facades") === true ? "mapillary" : "off"),
+    set(v) { put("building_facades", v === "preset"); put("mapillary_facades", v === "mapillary"); },
+  },
+  osm_source: {
+    get: () => (eff("osm_pbf") ? "pbf" : eff("no_tile_archive") ? "overpass" : "archive"),
+    set(v) { put("osm_pbf", v === "pbf" ? eff("osm_pbf") || "geofabrik" : undefined); put("no_tile_archive", v === "overpass"); },
+  },
+};
+function eff(k) {
+  if (VIRTUAL[k]) return VIRTUAL[k].get();
+  if (FIELD[k]) return FIELD[k].get();
+  const r = ROWS[k], w = where(r);
+  return w.t[name(r)] ?? w.base;
+}
+// A value equal to what the row falls back to is not written.
+function put(k, v) {
+  const r = ROWS[k], w = where(r), key = name(r);
+  if (v === undefined || v === null || v === "" || Number.isNaN(v) || String(v) === String(w.base ?? "")) delete w.t[key];
+  else w.t[key] = v;
+}
+const keysOf = (r) => (r.keys ? Object.keys(r.keys) : [name(r)]);
+const owns = (r) => !FIELD[r.k] && keysOf(r).some((k) => where(ROWS[k] || r).t[k] !== undefined);
+function withTarget(t, f) { const was = target; target = t; try { return f(); } finally { target = was; } }
+const overriders = (r) => (cur.model.selection || []).filter((s) => s.settings && keysOf(r).some((k) => k in s.settings)).map((s) => s.id);
+
+// Conditions: "caves", "!threads", "snow_mode=manual", "props!=none", "a|b" (or).
+function test(cond) {
+  return !cond || cond.split("|").some((t) => {
+    const [, not, k, op, v] = t.match(/^(!?)(@?\w+)(?:(!?=)(.*))?$/);
+    const x = eff(k);
+    return op ? (String(x ?? "") === v) === (op === "=") : !x !== !not;
+  });
+}
+function why(r) {
+  if (r.why) return r.why;
+  const [, not, k] = r.on.match(/^(!?)(\w+)/), p = ROWS[k] || {};
+  const at = p.sec && p.sec !== r.sec ? ` (${p.sec})` : "";
+  return not ? `Unavailable while ${p.l || k} is set.` : `Requires ${p.l || k}${at}.`;
+}
+
+// Values as text, for "inherits X" and "Arnis's default X".
+const toMin = (t) => Math.round((t * 1440) / 24000 + 360) % 1440;
+const toTicks = (m) => Math.round(((m + 1080) % 1440) * (24000 / 1440));
+const clock = (t) => { const m = toMin(t); return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; };
+const fmt = (r, v) => (r.fmt === "x" ? `${(+v).toFixed(2)}×` : r.fmt === "%" ? `${Math.round(v)}%` : r.fmt === "auto%" ? (v > 0 ? `${v}%` : "Auto") : (+v).toFixed(2));
+function text(r, v) {
+  if (v === undefined || v === null || v === "") return r.ph || "empty";
+  if (r.t === "time") return clock(v);
+  if (r.t === "switch") return v ? "On" : "Off";
+  if (r.t === "off") return v === false ? "On" : "Off";
+  if (r.t === "slider") return fmt(r, v);
+  const o = opts(r.o).find(([x]) => String(x) === String(v));
+  if (o) return o[1];
+  if (Array.isArray(v)) return v.join(" ");
+  if (r.t === "mix" || r.t === "props") return String(v).includes("=") || String(v).includes(",") ? "custom" : String(v);
+  return `${v}${r.unit ? " " + r.unit : ""}`;
+}
+
+// ---- controls ----
+function control(r, v, dis) {
+  const k = esc(r.k), d = dis ? " disabled" : "", O = opts(r.o), on = (x) => String(x) === String(v ?? "");
+  const segs = (cls, inner) => `<div class="${cls}" data-k="${k}">${O.map((o) => `<button type="button" class="segment${on(o[0]) ? " active" : ""}" data-v="${esc(o[0])}"${d}>${inner(o)}</button>`).join("")}</div>`;
+  switch (r.t) {
+    case "switch": return `<input type="checkbox" class="switch" data-k="${k}"${v ? " checked" : ""}${d}>`;
+    case "off": return `<input type="checkbox" class="switch" data-k="${k}"${v === false ? " checked" : ""}${d}>`;
+    case "num": return `<input type="number" data-k="${k}" value="${esc(v ?? "")}" placeholder="${esc(r.ph ?? "")}"${r.min != null ? ` min="${r.min}"` : ""}${r.max != null ? ` max="${r.max}"` : ""} step="${r.step ?? "any"}"${d}>${r.unit ? `<span class="unit">${r.unit}</span>` : ""}`;
+    case "text": return `<input type="text" data-k="${k}" value="${esc(v === r.empty ? "" : v ?? "")}" placeholder="${esc(r.ph ?? "")}" spellcheck="false"${d}>`;
+    case "list": return `<input type="text" data-k="${k}" value="${esc((v || []).join(r.sep ? `${r.sep} ` : " "))}" placeholder="${esc(r.ph ?? "")}" spellcheck="false"${d}>`;
+    case "slider": return `<input type="range" data-k="${k}" min="${r.min}" max="${r.max}" step="${r.step}" value="${esc(v)}"${d}><span class="setting-value">${fmt(r, v)}</span>`;
+    case "time": return `<input type="range" data-k="${k}" min="0" max="1440" step="10" value="${toMin(v)}"${d}><span class="setting-value">${clock(v)}</span>`;
+    case "select": {
+      const list = v == null || O.some(([x]) => on(x)) ? O : [...O, [v, `${v} (from the file)`]];
+      return `<select data-k="${k}"${d}>${list.map(([x, l]) => `<option value="${esc(x)}"${on(x) ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+    }
+    case "seg": return segs("segmented-control", ([, l]) => esc(l));
+    case "cards": return segs("choice-cards", ([, l, desc, ic]) => `${icon(ic)}<span class="choice-title">${esc(l)}</span><span class="choice-desc">${esc(desc)}</span>`);
+    case "radio": return segs("preview-options", ([, l]) => esc(l));
+    case "realm": return segs("preview-options realm-grid", ([x, l]) => `<span class="realm-swatch" style="background-image:url(assets/tree-realm-${esc(x)}.webp)"></span>${esc(l)}`);
+    case "mix": return mixHtml(r, d);
+    case "props": {
+      const mode = v == null ? "auto" : ["all", "none"].includes(v) ? v : "custom", fam = String(v).split(",");
+      return `<select data-k="${k}"${d}>${O.map(([x, l]) => `<option value="${x}"${x === mode ? " selected" : ""}>${l}</option>`).join("")}</select>
+        ${mode === "custom" ? `<div class="props-families">${opts(r.names).map(([n, l]) => `<label><input type="checkbox" data-prop="${n}"${fam.includes(n) ? " checked" : ""}${d}>${esc(l)}</label>`).join("")}</div>` : ""}`;
+    }
+    case "bakes": return bakesHtml();
+  }
+  return "";
+}
+
+// Farm Crops, the grass and land mixes, Tree Sizes and Cave Biomes: a row per
+// part with a switch and its share, starting from the preset's own; the value
+// is the preset (or nothing) until a share changes (Arnis main.js MIXES).
+const presetOf = (r, t) => (r.pick ? (t && !t.includes("=") ? t : opts(r.pick)[0][0]) : r.from ? eff(r.from) : null);
+function original(r, p) {
+  const x = r.base ?? r.presets[p] ?? Object.values(r.presets)[0];
+  return opts(r.names).map(([n]) => (typeof x === "number" ? x : x[n] ?? 0));
+}
+function mixVals(r) {
+  const t = String(eff(r.k) ?? "").trim().toLowerCase(), names = opts(r.names).map(([n]) => n);
+  let vals = original(r, presetOf(r, t));
+  if (t.includes("=")) {
+    if (!r.all) vals = vals.map(() => 0);
+    for (const pair of t.split(",")) {
+      const [a, b] = pair.split("=").map((x) => x.trim()), i = names.indexOf(a);
+      if (i >= 0) vals[i] = Math.min(r.max, Math.max(0, parseInt(b, 10) || 0));
+    }
+  }
+  return vals;
+}
+function mixValue(r, vals) {
+  const p = presetOf(r, String(eff(r.k) ?? "").trim().toLowerCase()), orig = original(r, p);
+  if (vals.every((v, i) => v === orig[i])) return r.pick && p !== opts(r.pick)[0][0] ? p : undefined;
+  return opts(r.names).map(([n], i) => (vals[i] > 0 || r.all ? `${n}=${vals[i]}` : null)).filter(Boolean).join(",");
+}
+function mixHtml(r, d) {
+  const t = String(eff(r.k) ?? ""), vals = mixVals(r), hints = Object.fromEntries(opts(r.hints)), p = presetOf(r, t.trim().toLowerCase());
+  const pick = r.pick ? `<select data-mixpick="${esc(r.k)}"${d}>${opts(r.pick).map(([x, l]) => `<option value="${x}"${x === p ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>` : "";
+  return `${pick}<div class="mix-list" data-mix="${esc(r.k)}">${opts(r.names).map(([n, l], i) => `<div class="mix-row${vals[i] ? "" : " is-off"}">
+      <input type="checkbox" class="switch" data-mi="${i}" aria-label="${esc(l)}"${vals[i] ? " checked" : ""}${d}><span class="mix-name">${esc(l)}<span class="mix-hint">${esc(hints[n] || "")}</span></span>
+      <input type="number" data-mi="${i}" aria-label="${esc(l)}" min="0" max="${r.max}" step="${r.step || 1}" value="${vals[i]}"${d}><span class="mix-unit">${r.unit || ""}</span></div>`).join("")}
+    ${t.includes("=") && !d ? `<button type="button" class="link" data-mixreset="${esc(r.k)}">Reset to preset</button>` : ""}</div>`;
+}
+function bakesHtml() {
+  const bakes = cur.model.bake || [];
+  return `<div class="card-body" style="flex:1 0 100%">${bakes.map((b, i) => `<div class="bake">
+      <input type="text" data-bake="${i}" data-bk="id" value="${esc(b.id)}" placeholder="id">
+      <input type="text" data-bake="${i}" data-bk="osm_pbf" value="${esc(b.osm_pbf)}" placeholder="osm_pbf: geofabrik or a path">
+      <input type="text" data-bake="${i}" data-bk="osm_pbf_url" value="${esc(b.osm_pbf_url)}" placeholder="osm_pbf_url">
+      <input type="text" data-bake="${i}" data-bk="bbox" value="${esc((b.bbox || []).join(","))}" placeholder="bbox (empty: around the selections)">
+      <button class="small danger" data-unbake="${i}">${icon("trash")}Remove</button></div>`).join("")}
+    <button class="small" id="bakeAdd">${icon("plus")}Add a Bake</button></div>`;
+}
+
+// One row. A selection's own value shows what it overrides, with a reset;
+// a disabled row says why.
+function tile(r) {
+  if (r.preview) return previewBlock(r);
+  const s = selOf();
+  if (!r.srv && ((r.scope === "project" && s) || (r.scope === "selection" && !s))) return "";
+  if (r.show && !test(r.show)) return "";
+  const off = (FIELD[r.k] && FIELD[r.k].off && FIELD[r.k].off()) || (!test(r.on) && why(r));
+  const own = !r.srv && owns(r), k = esc(r.k);
+  // Arnis's own help often says it already ("Requires Caves."); then the row only greys.
+  const said = off && r.d && r.d.includes(off.split(" (")[0].replace(/\.$/, ""));
+  let note = off && !said ? `<span class="why">${icon("info")}${esc(off)}</span>` : "";
+  if (own && !off) {
+    note = s
+      ? `<span class="ovr">Overrides All selections: ${esc(text(r, withTarget("", () => eff(r.k))))} <button type="button" class="link" data-reset="${k}">Reset</button></span>`
+      : `<span class="ovr">Arnis's default: ${esc(text(r, r.def))} <button type="button" class="link" data-reset="${k}">Reset</button></span>`;
+  }
+  const by = !s && !r.srv && !FIELD[r.k] ? overriders(r) : [];
+  if (by.length) note += `<span class="sub">Overridden in ${esc(by.join(", "))}</span>`;
+  const stack = ["cards", "radio", "realm", "mix", "props", "list", "text", "bakes", "slider", "time"].includes(r.t) || (r.t === "seg" && opts(r.o).length > 3);
+  const badge = r.badge ? `<span class="badge" title="${r.badge === "CLI" ? "An Arnis command-line flag its GUI does not show." : "Meld's own setting; Arnis's GUI has no such row."}">${r.badge}</span>` : "";
+  const q = `${r.l} ${r.d || ""} ${r.tip || ""} ${name(r)} ${r.sec || ""}`.toLowerCase();
+  return `<div class="setting-tile${stack ? " stack" : ""}${own ? " is-set" : ""}${off ? " unavailable" : ""}" data-row="${k}" data-q="${esc(q)}"${off ? ` title="${esc(off)}"` : ""}>
+    <div class="setting-label">${r.icon ? icon(r.icon, "icon setting-icon") : ""}<div class="setting-text">
+      <span class="setting-heading">${esc(r.l)}${badge}${r.tip ? `<span class="tooltip-icon" title="${esc(r.tip)}">?</span>` : ""}</span>
+      ${r.d ? `<span class="setting-desc">${esc(r.d)}</span>` : ""}${note}</div></div>
+    <div class="settings-control">${control(r, eff(r.k), !!off)}</div></div>`;
+}
+// The pictures Arnis ships for each block (main.js blockPictureKey).
+const mixPicture = (kind, fb) => {
+  if (!eff(`${kind}_texture`)) return `${kind}-texture-off`;
+  const t = eff(`${kind}_mix`) || fb;
+  return t === "classic" ? `${kind}-texture-off` : t === fb || t.includes("=") ? `${kind}-texture-on` : `${kind}-mix-${t}`;
+};
+const PICTURE = {
+  snow: () => `snow-mode-${eff("snow_mode")}`,
+  scatter: () => `scatter-${eff("rocks") ? (eff("bushes") ? "both" : "rocks") : eff("bushes") ? "bushes" : "off"}`,
+  roads: () => `road-detail-${eff("road_detail")}`,
+  fields: () => `field-mix-${eff("field_mix")}`,
+  trees: () => {
+    const w = mixVals(ROWS.tree_size_weights), one = w.filter((x) => x === 100).length === 1 && w.every((x) => x === 0 || x === 100);
+    return eff("tree_realm") === "auto" && one ? `tree-size-${opts(ROWS.tree_size_weights.names)[w.indexOf(100)][0]}` : `tree-realm-${eff("tree_realm")}`;
+  },
+  caves: () => `cave-style-${eff("cave_style")}${eff("cave_ores") === "more" ? "-more-ores" : ""}`,
+  climate: () => `climate-mode-${eff("climate_mode")}`,
+  river: () => `river-bed-${eff("river_bed")}`,
+  water: () => `water-detail-${eff("water_detail")}`,
+  grass: () => mixPicture("grass", "default"),
+  land: () => mixPicture("land", "patchwork"),
+};
+function previewBlock(b) {
+  const inner = b.rows.map(tile).join("");
+  if (!inner) return "";
+  const picked = b.rows.filter((r) => ["radio", "realm"].includes(r.t)).map((r) => text(r, eff(r.k)));
+  const sw = b.rows.filter((r) => r.t === "switch");
+  if (sw.length) picked.push(sw.filter((r) => eff(r.k)).map((r) => r.l).join(" + ") || "Off");
+  if (b.rows.some((r) => r.t === "mix" && String(eff(r.k) ?? "").includes("="))) picked.push("Custom: picture of the preset");
+  return `<div class="preview-block"><figure class="preview-frame"><img alt="" src="assets/${PICTURE[b.preview]()}.webp"><figcaption>${esc(picked.join(" · "))}</figcaption></figure>
+    <div class="preview-controls">${inner}</div></div>`;
+}
+
+// ---- the settings rail ----
+const opened = () => store.get("open", { world: true });
+let open = {};
+function group(id, title, desc, body) {
+  if (!body) return "";
+  return `<details class="group" data-g="${id}"${open[id] ? " open" : ""}><summary><span>${esc(title)}${desc ? `<br><span class="sdesc">${esc(desc)}</span>` : ""}</span></summary><div class="card-body">${body}</div></details>`;
+}
+// What is open stays open across a re-render; `stored` goes back to what the
+// user opened by hand (after a search).
+function renderSettings(stored) {
+  const box = $("settingsCards");
+  renderTargets();
+  if (!cur || !SCHEMA) { box.innerHTML = cur ? `<div class="empty">Reading the settings…</div>` : ""; return; }
+  const f = document.activeElement, focus = f && box.contains(f) ? `[data-k="${f.dataset.k}"]` : null;
+  open = stored || !box.querySelector("[data-sec]") ? opened() : Object.fromEntries([...box.querySelectorAll("[data-sec]:not(.collapsed), details[open]")].map((el) => [el.dataset.sec || el.dataset.g, true]));
+  box.innerHTML = SCHEMA.sections.map((s) => {
+    const body = s.groups
+      ? s.groups.map((g, gi) => group(`${s.id}.${gi}`, g.title, g.desc, g.sub ? g.sub.map((x, xi) => group(`${s.id}.${gi}.${xi}`, x.title, "", x.rows.map(tile).join(""))).join("") : g.rows.map(tile).join(""))).join("")
+      : s.rows.map(tile).join("");
+    if (!body) return "";
+    return `<div class="card${open[s.id] ? "" : " collapsed"}" data-sec="${s.id}"><div class="card-head"><span class="card-icon">${icon(s.icon)}</span><div><h3>${esc(s.title)}</h3><p>${esc(s.desc)}</p></div>${icon("chevron", "icon chev")}</div>
+      <div class="card-body">${s.note ? `<div class="settings-notice">${esc(s.note)}</div>` : ""}${body}</div></div>`;
+  }).join("");
+  if (focus && box.querySelector(focus)) box.querySelector(focus).focus();
+  filter();
+}
+function renderTargets() {
+  const sels = (cur && cur.model.selection) || [];
+  const n = (s) => Object.keys(s.settings || {}).length;
+  $("target").innerHTML = `<option value="">All selections (project defaults)</option>` + sels.map((s) => `<option value="${esc(s.id)}">${esc(s.id)} · ${esc(s.world)}${n(s) ? ` (${plural(n(s), "override")})` : ""}</option>`).join("");
+  $("target").value = target;
+  $("target").disabled = !cur;
+  $("targetBar").classList.toggle("on-sel", !!target);
+  const s = selOf();
+  $("targetNote").innerHTML = !cur ? "" : s
+    ? `Editing <b>${esc(s.id)}</b> only. ${n(s) ? `${plural(n(s), "value")} ${n(s) === 1 ? "overrides" : "override"} the project, marked in yellow. <button type="button" class="link" id="resetAll">Reset all</button>` : "It follows the project defaults; a change here overrides them."}`
+    : `Every selection uses these unless it overrides them.${Object.keys(cur.model.defaults || {}).length ? ` Changed from Arnis's defaults: marked in yellow.` : ""}`;
+}
+$("target").onchange = () => pickTarget($("target").value);
+function pickTarget(id) {
+  target = id;
+  renderSettings();
+  renderSelections();
+  restyle();
+}
+// Search and "Changed only": rows that do not match hide, and so do groups
+// and sections left empty; matches open their sections without saving that.
+function filter() {
+  const q = $("railSearch").value.trim().toLowerCase(), only = $("onlySet").checked, box = $("settingsCards");
+  let hits = 0;
+  box.querySelectorAll(".setting-tile[data-row]").forEach((t) => {
+    t.hidden = !((!q || t.dataset.q.includes(q)) && (!only || t.classList.contains("is-set")));
+    if (!t.hidden) hits++;
+  });
+  const any = (el) => [...el.querySelectorAll(".setting-tile[data-row]")].some((t) => !t.hidden);
+  box.querySelectorAll(".preview-block, details.group, .card[data-sec]").forEach((el) => {
+    el.hidden = !any(el);
+    if ((q || only) && !el.hidden) { if (el.tagName === "DETAILS") el.open = true; else el.classList.remove("collapsed"); }
+  });
+  box.querySelectorAll(".settings-notice").forEach((n) => (n.hidden = !!(q || only)));
+  $("searchEmpty").hidden = !(q || only) || hits > 0 || !cur;
+  $("searchEmpty").textContent = only && !q ? "Nothing is changed here yet." : `No setting matches “${q}”${only ? " among the changed ones" : ""}.`;
+}
+$("railSearch").oninput = () => ($("railSearch").value.trim() ? filter() : renderSettings(true));
+$("onlySet").onchange = () => renderSettings(true);
+// Sections and groups remember being open (not while a search opened them).
 document.addEventListener("click", (e) => {
   const h = e.target.closest(".card-head");
-  if (h && h.parentElement.id !== "" && h.querySelector(".chev")) h.parentElement.classList.toggle("collapsed");
+  if (!h || !h.querySelector(".chev")) return;
+  const c = h.parentElement;
+  c.classList.toggle("collapsed");
+  if (c.dataset.sec && !$("railSearch").value && !$("onlySet").checked) store.set("open", { ...opened(), [c.dataset.sec]: !c.classList.contains("collapsed") });
 });
-const sectionCard = (s, body) => `<div class="card collapsed" id="card-${s.id}"><div class="card-head"><span class="card-icon">${icon(s.icon)}</span><div><h3>${esc(s.title)}</h3><p>${esc(s.desc)}</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div><div class="card-body">${body}</div></div>`;
+$("settingsCards").addEventListener("toggle", (e) => {
+  if (e.target.dataset.g && !$("railSearch").value && !$("onlySet").checked) store.set("open", { ...opened(), [e.target.dataset.g]: e.target.open });
+}, true);
+
+// ---- editing ----
+function setVal(k, v) {
+  const r = ROWS[k];
+  try {
+    if (VIRTUAL[k]) VIRTUAL[k].set(v);
+    else if (FIELD[k]) FIELD[k].set(v);
+    else put(k, v);
+  } catch (e) { return say("saveMsg", e.message, true); }
+  if (r.link && v === r.link[0]) put(r.link[1], r.link[2]);
+  // A new layout or style starts its mix again from its own shares.
+  for (const m of Object.values(ROWS)) if (m.from === k) put(m.k, undefined);
+  if (r.srv) return serverFields(), saveSoon(`saved server ${r.l}`);
+  renderSettings();
+  renderSelections();
+  saveSoon(`saved ${r.l}`);
+}
+function resetRow(k) {
+  const r = ROWS[k];
+  for (const x of keysOf(r)) delete where(ROWS[x] || r).t[x];
+  renderSettings();
+  saveSoon(`reset ${r.l}`);
+}
+const typed = (r, raw) => (typeof r.def === "number" ? Number(raw) : raw);
+function onChange(e) {
+  const el = e.target;
+  if (el.dataset.mi !== undefined) return mixChanged(el);
+  if (el.dataset.mixpick) { const r = ROWS[el.dataset.mixpick]; return setVal(r.k, el.value === opts(r.pick)[0][0] ? undefined : el.value); }
+  if (el.dataset.prop) return setVal("props", [...el.closest(".props-families").querySelectorAll("input:checked")].map((x) => x.dataset.prop).join(",") || "none");
+  if (el.dataset.bake !== undefined) return bakeChanged(el);
+  const r = ROWS[el.dataset.k];
+  if (!r) return;
+  let v;
+  if (r.t === "switch") v = el.checked;
+  else if (r.t === "off") v = !el.checked;
+  else if (r.t === "time") v = toTicks(+el.value);
+  else if (r.t === "slider" || r.t === "num") v = el.value === "" ? undefined : +el.value;
+  else if (r.t === "list") v = el.value.trim() ? el.value.split(r.sep ? new RegExp(`\\s*${r.sep}\\s*`) : /\s+/).filter(Boolean) : undefined;
+  else if (r.t === "props") v = el.value === "auto" ? undefined : el.value === "custom" ? opts(r.names).map(([n]) => n).join(",") : el.value;
+  else if (r.t === "text") v = el.value.trim() || r.empty;
+  else v = typed(r, el.value);
+  setVal(r.k, v);
+}
+function mixChanged(el) {
+  const list = el.closest("[data-mix]"), r = ROWS[list.dataset.mix], i = +el.dataset.mi;
+  const clamp = (x) => (Number.isFinite(x) ? Math.min(r.max, Math.max(0, Math.round(x))) : 0);
+  const vals = [...list.querySelectorAll(".mix-row")].map((row, j) => (j === i && el.type === "number" ? clamp(+el.value) : row.querySelector(".switch").checked ? clamp(+row.querySelector("input[type=number]").value) : 0));
+  const orig = original(r, presetOf(r, String(eff(r.k) ?? "").trim().toLowerCase()));
+  if (el.type === "checkbox" && el.checked && !vals[i]) vals[i] = orig[i] || (r.all ? 100 : 10);
+  // One part stays on: Arnis refuses an all-zero list.
+  if (!r.all && !vals.some((x) => x > 0)) vals[i] = orig[i] || 10;
+  setVal(r.k, mixValue(r, vals));
+}
+function bakeChanged(el) {
+  const b = cur.model.bake[el.dataset.bake], v = el.value.trim();
+  if (el.dataset.bk === "bbox") { if (v) b.bbox = v.split(",").map(Number); else delete b.bbox; }
+  else if (v) b[el.dataset.bk] = v; else delete b[el.dataset.bk];
+  saveSoon("saved the bake");
+}
+for (const box of [$("settingsCards"), $("serverBody")]) {
+  box.addEventListener("change", onChange);
+  box.addEventListener("input", (e) => {
+    const el = e.target, r = ROWS[el.dataset.k];
+    if (el.type === "range" && r) el.nextElementSibling.textContent = r.t === "time" ? clock(toTicks(+el.value)) : fmt(r, +el.value);
+  });
+  box.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b || b.disabled) return;
+    if (b.dataset.v !== undefined) { const r = ROWS[b.closest("[data-k]").dataset.k]; return setVal(r.k, typed(r, b.dataset.v)); }
+    if (b.dataset.reset) return resetRow(b.dataset.reset);
+    if (b.dataset.mixreset) { const r = ROWS[b.dataset.mixreset]; return setVal(r.k, mixValue(r, original(r, presetOf(r, "")))); }
+    if (b.dataset.unbake) { cur.model.bake.splice(+b.dataset.unbake, 1); if (!cur.model.bake.length) delete cur.model.bake; return saveModel("removed the bake"); }
+    if (b.id === "bakeAdd") {
+      const d = cur.model.defaults || {};
+      (cur.model.bake = cur.model.bake || []).push({ id: `bake${cur.model.bake.length + 1}`, osm_pbf: d.osm_pbf || "geofabrik", ...(d.osm_pbf_url ? { osm_pbf_url: d.osm_pbf_url } : {}) });
+      return saveModel("added a bake");
+    }
+  });
+}
+$("targetNote").addEventListener("click", (e) => {
+  if (e.target.id !== "resetAll" || !selOf()) return;
+  delete selOf().settings;
+  renderSettings();
+  renderSelections();
+  saveSoon(`reset every override of ${target}`);
+});
 
 // ---- projects overlay ----
 async function listProjects() {
@@ -612,20 +926,22 @@ async function listProjects() {
     if (p.error) return `<div class="pcard" data-open="${esc(p.name)}"><b>${esc(p.name)}</b><div class="stat bad">${esc(p.error)}</div></div>`;
     const st = Object.values(p.state || {});
     const done = st.filter((s) => s.status === "done").length;
-    const chip = p.running ? `<span class="chip on">running</span>` : st.length && done === st.length ? `<span class="chip good">built</span>` : "";
+    const chip = p.running ? `<span class="chip st-running">building</span>` : st.length && done === st.length ? `<span class="chip st-done">built</span>` : "";
     return `<div class="pcard ${cur && cur.name === p.name ? "on" : ""}" data-open="${esc(p.name)}"><div class="row"><b style="flex:1">${esc(p.title)}</b>${chip}</div>
-      <div class="stat">${esc(p.name)} · ${p.selections.length} selection(s)${st.length ? ` · ${done}/${st.length} built` : ""}</div></div>`;
-  }).join("") || `<div class="stat">No projects yet. Name one above and press New.</div>`;
+      <div class="stat">${esc(p.name)} · ${plural(p.selections.length, "selection")}${st.length ? ` · ${done}/${st.length} built` : ""}</div></div>`;
+  }).join("") || `<div class="empty">No projects yet. Name one above and press New.</div>`;
 }
 $("projCards").addEventListener("click", (e) => { const c = e.target.closest("[data-open]"); if (c) location.hash = `#/p/${c.dataset.open}`; });
 $("projSearch").oninput = listProjects;
-$("btnProjects").onclick = () => { $("projOverlay").classList.toggle("on"); listProjects(); };
+const showProjects = () => { $("projOverlay").classList.add("on"); listProjects(); $("newName").focus(); };
+$("btnProjects").onclick = () => ($("projOverlay").classList.contains("on") ? $("projOverlay").classList.remove("on") : showProjects());
 $("projClose").onclick = () => $("projOverlay").classList.remove("on");
+$("newName").onkeydown = (e) => { if (e.key === "Enter") $("newBtn").click(); };
 $("newBtn").onclick = async () => {
   const name = $("newName").value.trim();
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) return say("newMsg", "Use letters, digits, - and _.", true);
   try {
-    if ((await api("/api/projects")).some((p) => p.name === name)) return say("newMsg", `${name} exists.`, true);
+    if ((await api("/api/projects")).some((p) => p.name === name)) return say("newMsg", `${name} exists already.`, true);
     await api(`/api/projects/${name}`, { method: "PUT", body: JSON.stringify({ format: 1, name, output: "saves" }) });
     $("newName").value = "";
     say("newMsg", "");
@@ -638,15 +954,19 @@ $("newBtn").onclick = async () => {
 const map = L.map("map", { zoomControl: true }).setView([47.14, 9.52], 5);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
 const drawn = new L.FeatureGroup().addTo(map);
+// Fit inside the strip between the two rails, not under them.
+const fit = (bounds, maxZoom) => {
+  const css = (v) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || 0;
+  map.fitBounds(bounds, { maxZoom, paddingTopLeft: [css("--left-w") + 40, 40], paddingBottomRight: [css("--right-w") + 40, 40] });
+};
 const partsLayer = L.layerGroup().addTo(map);
 const shape = { color: "#fecc44", weight: 2, fillOpacity: 0.1 };
-map.addControl(new L.Control.Draw({
-  draw: { rectangle: { shapeOptions: shape, showArea: false }, polygon: { shapeOptions: shape, showArea: false }, polyline: false, circle: false, marker: false, circlemarker: false },
-  edit: { featureGroup: drawn },
-}));
+const drawOpts = { rectangle: { shapeOptions: shape, showArea: false }, polygon: { shapeOptions: shape, showArea: false } };
+map.addControl(new L.Control.Draw({ draw: { ...drawOpts, polyline: false, circle: false, marker: false, circlemarker: false }, edit: { featureGroup: drawn } }));
+const startDraw = (kind) => (kind === "polygon" ? new L.Draw.Polygon(map, drawOpts.polygon) : new L.Draw.Rectangle(map, drawOpts.rectangle)).enable();
 map.on("mousemove", (e) => ($("coordbox").textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`));
 map.on(L.Draw.Event.CREATED, (e) => {
-  if (!cur) return say("saveMsg", "Open or create a project first.", true);
+  if (!cur) return showProjects();
   const sels = (cur.model.selection = cur.model.selection || []);
   let n = sels.length + 1;
   while (sels.some((s) => s.id === `s${n}`)) n++;
@@ -654,10 +974,11 @@ map.on(L.Draw.Event.CREATED, (e) => {
   if (e.layerType === "rectangle") s.bbox = boxOf(e.layer);
   else s.polygon = [ringOf(e.layer)];
   sels.push(s);
-  saveModel(`added ${s.id}`, true);
+  target = s.id;
+  saveModel(`added ${s.id}`);
 });
-map.on(L.Draw.Event.EDITED, () => { geometryFromMap(); saveModel("saved the shapes", true); });
-map.on(L.Draw.Event.DELETED, () => { geometryFromMap(); saveModel("deleted", true); });
+map.on(L.Draw.Event.EDITED, () => { geometryFromMap(); saveModel("saved the shapes"); });
+map.on(L.Draw.Event.DELETED, () => { geometryFromMap(); saveModel("deleted"); });
 const boxOf = (l) => { const b = l.getBounds(); return [r6(b.getSouth()), r6(b.getWest()), r6(b.getNorth()), r6(b.getEast())]; };
 const ringOf = (l) => { const ll = l.getLatLngs(); return (Array.isArray(ll[0]) ? ll[0] : ll).map((p) => [r6(p.lat), r6(p.lng)]); };
 function geometryFromMap() {
@@ -682,9 +1003,15 @@ function selStatus(sel) {
   for (const k of ["running", "failed", "stopped", "pending"]) if (st.includes(k)) return k;
   return st.length ? "done" : "pending";
 }
+// A step's progress, 0-100: live while it runs, else what state.json says.
+function pctOf(id) {
+  const st = statusOf(id), l = ((cur && live[cur.name]) || {})[id], s = (cur.state || {})[id] || {};
+  return st === "done" || st === "skipped" ? 100 : (l && l.pct) ?? s.progress ?? 0;
+}
 const colour = { pending: "#fecc44", running: "#ff9800", done: "#4caf50", skipped: "#4caf50", failed: "#cf6679", stopped: "#b8b8b8" };
+const STATUS = { pending: "not built", running: "building", done: "built", skipped: "built", failed: "failed", stopped: "stopped" };
 const styleOf = (s) => ({ color: colour[selStatus(s)], weight: s.id === target ? 4 : 2.5, opacity: 1, fillOpacity: s.id === target ? 0.25 : 0.1 });
-function drawShapes(fit) {
+function drawShapes(first) {
   drawn.clearLayers();
   partsLayer.clearLayers();
   if (!cur) return;
@@ -698,333 +1025,171 @@ function drawShapes(fit) {
     }
   }
   for (const p of cur.parts) L.rectangle([[p.bbox[0], p.bbox[1]], [p.bbox[2], p.bbox[3]]], { color: "#f2f2f2", weight: 1.2, opacity: 0.7, dashArray: "6 5", fill: false, interactive: false }).addTo(partsLayer);
-  if (fit && drawn.getLayers().length) map.fitBounds(drawn.getBounds(), { maxZoom: 14, padding: [40, 40] });
+  if (first && drawn.getLayers().length) fit(drawn.getBounds(), 14);
 }
 function restyle() {
-  drawn.eachLayer((l) => { const s = (cur.model.selection || []).find((x) => x.id === l.selId); if (s) l.setStyle(styleOf(s)); });
+  if (cur) drawn.eachLayer((l) => { const s = (cur.model.selection || []).find((x) => x.id === l.selId); if (s) l.setStyle(styleOf(s)); });
 }
 
 // ---- one project ----
-// keep: the view stays; fresh: the model is read back too (after a TOML save).
-// Otherwise the forms keep editing the model object they rendered.
-async function openProject(name, keep, fresh) {
+// The first open reads the model and fits the map; later ones keep the model
+// the forms edit, unless `fresh` (after a TOML save).
+async function openProject(name, fresh) {
   let p;
   try { p = await api(`/api/projects/${name}`); } catch (e) { say("saveMsg", e.message, true); return; }
   const first = !cur || cur.name !== name;
-  const model = !first && !fresh && cur.model ? cur.model : p.model || { format: 1, name, output: "saves" };
-  cur = { name, model, parts: p.parts || [], state: p.state || {}, running: p.running };
-  if (first) { target = ""; lastPlan = null; $("log").textContent = (logs[name] || []).join("\n"); $("planOut").textContent = ""; }
+  const model = first || fresh ? p.model || { format: 1, name, output: "saves" } : cur.model;
+  cur = { name, model, parts: p.parts || [], state: p.state || {}, running: p.running || (cur && cur.name === name && cur.running) };
+  if (first) { target = ""; lastPlan = null; $("log").textContent = (logs[name] || []).join("\n"); }
+  if (!(cur.model.selection || []).some((s) => s.id === target)) target = "";
   $("toml").value = p.toml;
   say("tomlMsg", p.error || "", !!p.error);
-  drawShapes(first && !keep);
-  if (first) renderSettings();
-  renderTargets();
+  drawShapes(first);
+  renderSettings();
   renderSelections();
   renderBuild();
-  if (first) serverBody();
+  if (first || fresh) serverBody();
+}
+// Empty tables are left out, so the TOML stays what the user set.
+function tidy(m) {
+  for (const k of ["defaults", "run"]) if (m[k] && !Object.keys(m[k]).length) delete m[k];
+  for (const s of m.selection || []) if (s.settings && !Object.keys(s.settings).length) delete s.settings;
 }
 let saveTimer = null;
-async function saveModel(what, rerender) {
+async function saveModel(what) {
+  clearTimeout(saveTimer);
+  tidy(cur.model);
   try {
     await api(`/api/projects/${cur.name}`, { method: "PUT", body: JSON.stringify(cur.model) });
     say("saveMsg", what);
+    if (lastPlan) lastPlan.stale = true;
   } catch (e) { say("saveMsg", e.message, true); }
-  await openProject(cur.name, true);
-  if (rerender) { drawShapes(false); renderSettings(); }
+  await openProject(cur.name);
 }
 const saveSoon = (what) => { clearTimeout(saveTimer); saveTimer = setTimeout(() => saveModel(what), 450); };
 
-function renderTargets() {
-  const sels = cur.model.selection || [];
-  $("target").innerHTML = `<option value="">Project defaults</option>` + sels.map((s) => `<option value="${esc(s.id)}">Selection ${esc(s.id)}</option>`).join("");
-  $("target").value = target;
+// ---- selections ----
+function sizeOf(s) {
+  const pts = s.polygon ? s.polygon.flat() : s.bbox ? [[s.bbox[0], s.bbox[1]], [s.bbox[2], s.bbox[3]]] : [];
+  if (!pts.length) return "";
+  const lat = pts.map((p) => p[0]), lng = pts.map((p) => p[1]);
+  const h = (Math.max(...lat) - Math.min(...lat)) * 111.32, w = (Math.max(...lng) - Math.min(...lng)) * 111.32 * Math.cos(((Math.max(...lat) + Math.min(...lat)) / 2) * Math.PI / 180);
+  const km = (x) => (x < 10 ? x.toFixed(1) : Math.round(x));
+  const ids = new Set(partsOf(s));
+  const pieces = lastPlan ? lastPlan.selections.filter((x) => ids.has(x.id)).reduce((n, x) => n + x.pieces, 0) : 0;
+  return `${km(w)} × ${km(h)} km${s.polygon ? ", polygon" : ""} · ${pieces ? plural(pieces, "piece") : "Plan for pieces"}`;
 }
-$("target").onchange = () => pickTarget($("target").value);
-function pickTarget(id) {
-  target = id;
-  $("target").value = id;
-  renderSettings();
-  renderSelections();
-  restyle();
-}
-
-// ---- settings: render Arnis-style rows over the target's table ----
-let ctxt = null; // { table, inherited, run, sel }
-const isProject = () => !ctxt.sel;
-function where(r) { return r.run && isProject() ? { t: ctxt.run, base: r.def } : { t: ctxt.table, base: ctxt.inherited[r.k] ?? r.def }; }
-function eff(k) {
-  const r = ROWS[k];
-  if (!r) return ctxt.table[k] ?? ctxt.inherited[k];
-  const w = where(r);
-  return w.t[r.k] ?? w.base;
-}
-const ROWS = {};
-const walk = (rows, f) => rows.forEach((r) => (r.rows ? walk(r.rows, f) : f(r)));
-SECTIONS.forEach((s) => (s.groups || [{ rows: s.rows }]).forEach((g) => (g.sub || [g]).forEach((x) => walk(x.rows, (r) => r.k && (ROWS[r.k] = r)))));
-
-function control(r) {
-  const v = eff(r.k), k = esc(r.k);
-  switch (r.t) {
-    case "switch": return `<input type="checkbox" class="switch" data-k="${k}" ${v ? "checked" : ""}>`;
-    case "off": return `<input type="checkbox" class="switch" data-k="${k}" ${v === false ? "checked" : ""}>`;
-    case "num": return `<input type="number" data-k="${k}" value="${esc(where(r).t[r.k] ?? "")}" placeholder="${esc(where(r).base ?? "Auto")}">`;
-    case "text": case "list": {
-      const own = where(r).t[r.k];
-      return `<input type="text" data-k="${k}" value="${esc(Array.isArray(own) ? own.join(" ") : own ?? "")}" placeholder="${esc(ctxt.inherited[r.k] ?? "Default")}">`;
-    }
-    case "select": return `<select data-k="${k}">${r.o.map(([val, lab]) => `<option value="${esc(val)}" ${String(v) === val ? "selected" : ""}>${esc(lab)}</option>`).join("")}</select>`;
-    case "seg": return `<div class="segmented-control" data-k="${k}">${r.o.map(([val, lab]) => `<button type="button" class="segment ${String(v ?? "") === val ? "active" : ""}" data-v="${esc(val)}">${esc(lab)}</button>`).join("")}</div>`;
-    case "radio": return `<div class="preview-options" data-k="${k}">${r.o.map(([val, lab]) => `<button type="button" class="segment ${String(v) === val ? "active" : ""}" data-v="${esc(val)}">${esc(lab)}</button>`).join("")}</div>`;
-    case "realm": return `<div class="preview-options realm-grid" data-k="${k}">${r.o.map(([val, lab]) => `<button type="button" class="segment ${val === "auto" ? "realm-auto" : ""} ${String(v) === val ? "active" : ""}" data-v="${esc(val)}"><span class="realm-swatch" style="background-image:url(assets/tree-realm-${esc(val)}.webp)"></span>${esc(lab)}</button>`).join("")}</div>`;
-    case "mix": {
-      const w = Object.fromEntries(String(where(r).t[r.k] ?? ctxt.inherited[r.k] ?? "").split(",").filter(Boolean).map((x) => x.split("=")));
-      return `<div class="mix-list ${r.names.length > 5 ? "rows" : ""}" data-k="${k}">${r.names.map(([n, lab]) => `<label>${esc(lab)}<input type="number" min="0" max="200" step="5" data-size="${n}" value="${esc(w[n] ?? 100)}"></label>`).join("")}</div>`;
-    }
-    case "props": {
-      const own = where(r).t[r.k];
-      const mode = own === undefined ? "auto" : ["all", "none"].includes(own) ? own : "custom";
-      return `<div class="segmented-control" data-k="${k}" data-props="1">${o("auto=Auto;all=All;none=None;custom=Custom").map(([val, lab]) => `<button type="button" class="segment ${mode === val ? "active" : ""}" data-v="${val}">${lab}</button>`).join("")}</div>
-        <input type="text" data-k="${k}" data-custom="1" value="${mode === "custom" ? esc(own) : ""}" placeholder="boat,car,crane,…" style="${mode === "custom" ? "" : "display:none"};width:100%">`;
-    }
-  }
-  return "";
-}
-function tile(r) {
-  if (r.note) return `<div class="settings-notice">${esc(r.note)}</div>`;
-  if (r.bakes) return bakesHtml();
-  if (r.preview) return previewBlock(r);
-  if (r.project && !isProject()) return "";
-  const own = where(r).t[r.k] !== undefined;
-  const stack = ["radio", "realm", "mix", "props", "list"].includes(r.t) || (r.t === "text" && true) || (r.t === "seg" && r.o.length > 3);
-  const tipText = `${r.k}${r.run && isProject() ? ` ([run] ${r.run})` : ""}${r.d ? ": " + r.d : ""}`;
-  return `<div class="setting-tile ${stack ? "stack" : ""} ${own ? "is-set" : ""}" data-row="${esc(r.k)}"><div class="setting-label"><div class="setting-text">
-      <span class="setting-heading">${esc(r.l)}<span class="tooltip-icon" title="${esc(tipText)}">?</span></span>${r.d ? `<span class="setting-desc">${esc(r.d)}</span>` : ""}</div></div>
-    <div class="settings-control">${control(r)}</div></div>`;
-}
-function previewBlock(b) {
-  return `<div class="preview-block" data-preview="${SECTIONS_PREVIEWS.push(b) - 1}"><div class="preview-controls">${b.rows.map(tile).join("")}</div>
-    <figure class="preview-frame" style="margin:12px 0"><img alt="" src="assets/${esc(b.preview(eff))}.webp"></figure></div>`;
-}
-let SECTIONS_PREVIEWS = [];
-function updatePreviews() {
-  document.querySelectorAll("[data-preview]").forEach((el) => {
-    const img = el.querySelector("img"), src = `assets/${SECTIONS_PREVIEWS[el.dataset.preview].preview(eff)}.webp`;
-    if (!img.src.endsWith(src)) img.src = src;
-  });
-}
-function bakesHtml() {
-  const bakes = (cur && cur.model.bake) || [];
-  return `<div class="group-head">Bake Selection</div>
-    <div class="setting-desc">Cuts an extract once, before the builds that read it (the same PBF File and Geofabrik Extract).</div>
-    ${bakes.map((b, i) => `<div class="setting-tile stack"><div class="settings-control" style="flex-direction:column;align-items:stretch;gap:6px;width:100%">
-      <input type="text" data-bake="${i}" data-bk="id" value="${esc(b.id)}" placeholder="id" style="width:100%">
-      <input type="text" data-bake="${i}" data-bk="osm_pbf" value="${esc(b.osm_pbf)}" placeholder="osm_pbf: geofabrik or a path" style="width:100%">
-      <input type="text" data-bake="${i}" data-bk="osm_pbf_url" value="${esc(b.osm_pbf_url)}" placeholder="osm_pbf_url" style="width:100%">
-      <input type="text" data-bake="${i}" data-bk="bbox" value="${esc((b.bbox || []).join(","))}" placeholder="bbox: min_lat,min_lng,max_lat,max_lng (empty: around the selections)" style="width:100%">
-      <button class="small danger" data-unbake="${i}">${icon("trash")}Remove</button></div></div>`).join("")}
-    <button class="wide" id="bakeAdd">${icon("plus")}Add a Bake</button>`;
-}
-
-function renderSettings() {
-  SECTIONS_PREVIEWS = [];
-  if (!cur) { $("settingsCards").innerHTML = `<div class="settings-notice">Open or create a project (Projects, on the left).</div>`; return; }
-  const open = new Set([...document.querySelectorAll("#settingsCards .card:not(.collapsed)")].map((c) => c.id));
-  const openGroups = new Set([...document.querySelectorAll("#settingsCards details[open]")].map((d) => d.dataset.g));
-  const sel = (cur.model.selection || []).find((s) => s.id === target);
-  ctxt = {
-    sel,
-    table: sel ? (sel.settings = sel.settings || {}) : (cur.model.defaults = cur.model.defaults || {}),
-    inherited: sel ? cur.model.defaults || {} : {},
-    run: (cur.model.run = cur.model.run || {}),
-  };
-  const head = sel
-    ? `<div class="setting-tile"><div class="setting-label"><div class="setting-text"><span class="setting-heading">Selection Id</span></div></div><div class="settings-control"><input type="text" data-sel="id" value="${esc(sel.id)}"></div></div>
-       <div class="setting-tile"><div class="setting-label"><div class="setting-text"><span class="setting-heading">World</span><span class="setting-desc">The One World folder; selections in one world extend it.</span></div></div><div class="settings-control"><input type="text" data-sel="world" value="${esc(sel.world)}"></div></div>`
-    : `<div class="setting-tile"><div class="setting-label"><div class="setting-text"><span class="setting-heading">Project Name</span></div></div><div class="settings-control"><input type="text" data-proj="name" value="${esc(cur.model.name)}"></div></div>
-       <div class="setting-tile"><div class="setting-label"><div class="setting-text"><span class="setting-heading">Saves Folder</span><span class="setting-desc">Where the worlds are built, relative to the project file.</span></div></div><div class="settings-control"><input type="text" data-proj="output" value="${esc(cur.model.output)}"></div></div>`;
-  const known = new Set(Object.keys(ROWS));
-  const other = options.filter((x) => !known.has(x.key)).map((x) => ({ k: x.key, l: x.key, t: x.switch ? "switch" : "text", def: x.switch ? false : undefined }));
-  other.forEach((r) => (ROWS[r.k] = r));
-  const html = SECTIONS.map((s) => {
-    let body = s.id === "world" ? head : "";
-    if (s.groups) {
-      body += s.groups.map((g, gi) => {
-        const inner = g.sub ? g.sub.map((x, xi) => `<details class="group" data-g="${s.id}-${gi}-${xi}" ${openGroups.has(`${s.id}-${gi}-${xi}`) ? "open" : ""}><summary>${esc(x.title)}</summary><div class="card-body">${x.rows.map(tile).join("")}</div></details>`).join("")
-          : g.rows.map(tile).join("");
-        return `<details class="group" data-g="${s.id}-${gi}" ${openGroups.has(`${s.id}-${gi}`) ? "open" : ""}><summary><span>${esc(g.title)}${g.desc ? `<br><span class="sdesc">${esc(g.desc)}</span>` : ""}</span></summary><div class="card-body">${inner}</div></details>`;
-      }).join("");
-      if (other.length) body += `<details class="group"><summary>Other Arnis Settings</summary><div class="card-body">${other.map(tile).join("")}</div></details>`;
-    } else body += s.rows.map(tile).join("");
-    if (s.id === "features") body = `<div class="settings-notice">Meld always builds One Worlds in pieces, so Arnis's Extra Features are always on.</div>` + body;
-    return sectionCard(s, body).replace(`class="card collapsed" id="card-${s.id}"`, `class="card ${open.has(`card-${s.id}`) ? "" : "collapsed"}" id="card-${s.id}"`);
-  }).join("");
-  $("settingsCards").innerHTML = html;
-  wire();
-  search();
-}
-function setVal(r, v) {
-  const w = where(r);
-  if (v === undefined || v === "" || (typeof v === "number" && Number.isNaN(v)) || v === w.base || String(v) === String(w.base ?? "\u0000")) delete w.t[r.k];
-  else w.t[r.k] = v;
-  if (!Object.keys(ctxt.run).length) delete cur.model.run; else cur.model.run = ctxt.run;
-  const t = document.querySelector(`[data-row="${CSS.escape(r.k)}"]`);
-  if (t) t.classList.toggle("is-set", w.t[r.k] !== undefined);
-  updatePreviews();
-  saveSoon(`saved ${r.l}`);
-}
-const typed = (r, raw) => (typeof r.def === "number" || r.t === "num") && raw !== "" && !Number.isNaN(Number(raw)) ? Number(raw) : raw === "true" ? true : raw === "false" ? false : raw;
-function wire() {
-  const root = $("settingsCards");
-  root.querySelectorAll("input.switch[data-k]").forEach((el) => (el.onchange = () => { const r = ROWS[el.dataset.k]; setVal(r, r.t === "off" ? !el.checked : el.checked); }));
-  root.querySelectorAll("input[type=number][data-k], input[type=text][data-k]:not([data-custom])").forEach((el) => (el.onchange = () => {
-    const r = ROWS[el.dataset.k], raw = el.value.trim();
-    setVal(r, r.t === "list" ? (raw ? raw.split(/\s+/) : undefined) : raw === "" ? undefined : typed(r, raw));
-  }));
-  root.querySelectorAll("select[data-k]").forEach((el) => (el.onchange = () => setVal(ROWS[el.dataset.k], typed(ROWS[el.dataset.k], el.value))));
-  root.querySelectorAll(".segmented-control[data-k], .preview-options[data-k]").forEach((g) => g.addEventListener("click", (e) => {
-    const b = e.target.closest(".segment");
-    if (!b) return;
-    g.querySelectorAll(".segment").forEach((x) => x.classList.toggle("active", x === b));
-    const r = ROWS[g.dataset.k];
-    if (g.dataset.props) {
-      const custom = g.parentElement.querySelector("[data-custom]");
-      custom.style.display = b.dataset.v === "custom" ? "" : "none";
-      if (b.dataset.v !== "custom") setVal(r, b.dataset.v === "auto" ? undefined : b.dataset.v);
-      return;
-    }
-    setVal(r, typed(r, b.dataset.v));
-  }));
-  root.querySelectorAll("[data-custom]").forEach((el) => (el.onchange = () => setVal(ROWS[el.dataset.k], el.value.trim() || undefined)));
-  root.querySelectorAll(".mix-list[data-k]").forEach((g) => (g.onchange = () => {
-    const parts = [...g.querySelectorAll("[data-size]")].filter((i) => i.value !== "" && Number(i.value) !== 100).map((i) => `${i.dataset.size}=${Number(i.value)}`);
-    setVal(ROWS[g.dataset.k], parts.join(",") || undefined);
-  }));
-  root.querySelectorAll("[data-sel]").forEach((el) => (el.onchange = () => {
-    const v = el.value.trim();
-    if (el.dataset.sel === "id") {
-      if (!/^[A-Za-z0-9_-]+$/.test(v)) return say("saveMsg", "Ids use letters, digits, - and _.", true);
-      ctxt.sel.id = v; target = v;
-      saveModel(`renamed to ${v}`, true);
-    } else { ctxt.sel.world = v; saveSoon("saved world"); }
-  }));
-  root.querySelectorAll("[data-proj]").forEach((el) => (el.onchange = () => { cur.model[el.dataset.proj] = el.value.trim(); saveSoon("saved"); }));
-  root.querySelectorAll("[data-bake]").forEach((el) => (el.onchange = () => {
-    const b = cur.model.bake[el.dataset.bake], v = el.value.trim();
-    if (el.dataset.bk === "bbox") { if (v) b.bbox = v.split(",").map(Number); else delete b.bbox; }
-    else if (v) b[el.dataset.bk] = v; else delete b[el.dataset.bk];
-    saveSoon("saved the bake");
-  }));
-  root.querySelectorAll("[data-unbake]").forEach((el) => (el.onclick = () => { cur.model.bake.splice(Number(el.dataset.unbake), 1); if (!cur.model.bake.length) delete cur.model.bake; saveModel("removed the bake", true); }));
-  const add = $("bakeAdd");
-  if (add) add.onclick = () => {
-    const d = cur.model.defaults || {};
-    (cur.model.bake = cur.model.bake || []).push({ id: `bake${cur.model.bake.length + 1}`, osm_pbf: d.osm_pbf || "geofabrik", ...(d.osm_pbf_url ? { osm_pbf_url: d.osm_pbf_url } : {}) });
-    saveModel("added a bake", true);
-  };
-}
-
-// Settings search: highlight matching rows and open their cards and groups.
-function search() {
-  const q = $("railSearch").value.trim().toLowerCase();
-  document.querySelectorAll("#side .search-hit").forEach((el) => el.classList.remove("search-hit"));
-  if (!q) return;
-  let first = null;
-  document.querySelectorAll("#settingsCards .setting-tile").forEach((el) => {
-    if (!el.textContent.toLowerCase().includes(q) && !(el.dataset.row || "").includes(q)) return;
-    el.classList.add("search-hit");
-    let d = el.closest("details");
-    while (d) { d.open = true; d = d.parentElement.closest("details"); }
-    const c = el.closest(".card"); if (c) c.classList.remove("collapsed");
-    first = first || el;
-  });
-  if (first) first.scrollIntoView({ block: "center" });
-}
-$("railSearch").oninput = search;
-
-// ---- selections / worlds ----
 function renderSelections() {
   const sels = (cur && cur.model.selection) || [];
-  $("selList").innerHTML = sels.map((s) => {
-    const st = selStatus(s);
-    return `<div class="wrow ${s.id === target ? "on" : ""}" data-pick="${esc(s.id)}"><span><i class="dot" style="background:${colour[st]}"></i><b>${esc(s.id)}</b> · ${esc(s.world)} · ${s.polygon ? `polygon, ${partsOf(s).length} part(s)` : "bbox"}</span>
-      <span class="stat">${st}</span><button class="icon-only danger" data-del="${esc(s.id)}" title="Delete">${icon("trash")}</button></div>`;
-  }).join("") || `<div class="stat">No selections yet.</div>`;
+  $("selCount").textContent = sels.length || "";
+  $("selList").innerHTML = !cur ? `<div class="empty">Open a project to see its selections.</div>` : sels.length ? sels.map((s) => {
+    const st = selStatus(s), ids = partsOf(s), pct = ids.length ? ids.reduce((n, id) => n + pctOf(id), 0) / ids.length : 0, n = Object.keys(s.settings || {}).length;
+    return `<div class="wrow ${s.id === target ? "on" : ""}" data-pick="${esc(s.id)}" title="Select ${esc(s.id)} on the map and edit its own settings">
+      <i class="dot" style="background:${colour[st]}"></i>
+      <div class="wmain"><div class="wtop"><b>${esc(s.id)}</b><span class="sub">${esc(s.world)}</span><span class="chip st-${st}">${STATUS[st]}${st === "running" || (pct > 0 && pct < 100) ? ` ${pct.toFixed(0)} %` : ""}</span></div>
+        <div class="sub">${sizeOf(s)}${n ? ` · <span class="ovr-n">${plural(n, "override")}</span>` : ""}</div>
+        ${pct > 0 && pct < 100 ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}</div>
+      <button class="icon-only danger" data-del="${esc(s.id)}" title="Delete ${esc(s.id)} (its built world stays on disk)">${icon("trash")}</button></div>`;
+  }).join("") : `<div class="empty">No selections yet. Draw a <button type="button" class="link" data-draw="rectangle">rectangle</button> or a <button type="button" class="link" data-draw="polygon">polygon</button> on the map.</div>`;
+  renderTargets();
+  renderFlow();
 }
 $("selList").addEventListener("click", (e) => {
+  const draw = e.target.closest("[data-draw]");
+  if (draw) return startDraw(draw.dataset.draw);
   const del = e.target.closest("[data-del]");
   if (del) {
+    if (!confirm(`Delete selection ${del.dataset.del}? Its built world stays on disk.`)) return;
     cur.model.selection = cur.model.selection.filter((s) => s.id !== del.dataset.del);
     if (target === del.dataset.del) target = "";
-    return saveModel(`deleted ${del.dataset.del}`, true);
+    return saveModel(`deleted ${del.dataset.del}`);
   }
   const p = e.target.closest("[data-pick]");
   if (p) {
-    pickTarget(p.dataset.pick);
+    pickTarget(p.dataset.pick === target ? "" : p.dataset.pick);
     const ls = drawn.getLayers().filter((l) => l.selId === p.dataset.pick);
-    if (ls.length) map.fitBounds(L.featureGroup(ls).getBounds(), { maxZoom: 15, padding: [60, 60] });
+    if (target && ls.length) fit(L.featureGroup(ls).getBounds(), 15);
   }
 });
 
-// ---- generate ----
-$("btnRun").onclick = () => run("");
-$("btnRebuild").onclick = () => { if (confirm("Build every selection again from scratch?")) run("?rebuild=all"); };
-async function run(q) {
-  if (!cur) return;
-  try { await post(`/api/projects/${cur.name}/run${q}`); cur.running = true; live[cur.name] = {}; runStart = Date.now(); renderBuild(); }
-  catch (e) { logLine(cur.name, `run: ${e.message}`); }
+// ---- the flow: project, draw, settings, plan, generate ----
+function renderFlow() {
+  const sels = (cur && cur.model.selection) || [];
+  const st = sels.map(selStatus), running = !!(cur && cur.running);
+  const built = sels.length && st.every((x) => x === "done"), partial = !running && st.some((x) => ["stopped", "failed"].includes(x));
+  const planned = lastPlan && !lastPlan.stale;
+  const step = !cur ? 1 : !sels.length ? 2 : running || built || partial || planned ? 5 : 4;
+  $("steps").querySelectorAll("li").forEach((li, i) => { li.className = i + 1 < step ? "done" : i + 1 === step ? "now" : ""; });
+  let hint, primary = null, bad = false;
+  if (!cur) { hint = `Open a project, or create one. <button type="button" class="link" data-act="projects">Projects</button>`; }
+  else if (!sels.length) { hint = `Draw the area to build with the map's tools: a <button type="button" class="link" data-draw="rectangle">rectangle</button> or a <button type="button" class="link" data-draw="polygon">polygon</button>.`; }
+  else if (running) { hint = "Generating. Stop keeps what is built; Generate resumes it."; primary = "btnStop"; }
+  else if (partial) { hint = "Stopped before the end. Resume builds what is left."; primary = "btnRun"; }
+  else if (built) { hint = "Every selection is built. Set up a server under Server to play them."; }
+  else if (planned && lastPlan.disk === "short") { hint = `Not enough disk: the plan needs ${mb(lastPlan.need_mb)} plus ${mb(lastPlan.min_free_mb)} kept free; ${mb(lastPlan.free_mb)} is free.`; bad = true; }
+  else if (planned) { hint = `Plan: ${mb(lastPlan.need_mb)} in ${plural(lastPlan.selections.reduce((n, s) => n + s.pieces, 0), "piece")}, disk ${esc(lastPlan.disk)}. Generate builds it.`; primary = "btnRun"; }
+  else { hint = `${lastPlan ? "Settings changed since the plan. " : ""}Settings below are optional. Plan shows pieces, size and free disk before you build.`; primary = "btnPlan"; }
+  $("nextHint").innerHTML = hint;
+  $("nextHint").className = "next" + (bad ? " bad" : "");
+  const why = { btnPlan: !sels.length ? "Draw a selection first." : running ? "A run is going." : "", btnRun: !sels.length ? "Draw a selection first." : running ? "Already generating." : bad ? "Not enough free disk." : "", btnStop: running ? "" : "Nothing is running.", btnRebuild: !sels.length ? "Draw a selection first." : running ? "Stop the run first." : "" };
+  for (const [id, w] of Object.entries(why)) { $(id).disabled = !!w; $(id).classList.toggle("primary", id === primary); if (w) $(id).title = w; else $(id).title = $(id).dataset.title || ""; }
+  $("btnRun").lastChild.textContent = partial ? "Resume" : "Generate";
 }
-$("btnStop").onclick = async () => { if (cur) try { await post(`/api/projects/${cur.name}/stop`); logLine(cur.name, "asked the run to stop; Generate resumes it"); } catch (e) { logLine(cur.name, e.message); } };
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("#nextHint [data-act], #nextHint [data-draw]");
+  if (a) a.dataset.draw ? startDraw(a.dataset.draw) : showProjects();
+});
+$("btnRun").onclick = () => run("");
+$("btnRebuild").onclick = () => { if (confirm("Build every selection again from scratch? Their worlds are rebuilt.")) run("?rebuild=all"); };
+async function run(q) {
+  try { await post(`/api/projects/${cur.name}/run${q}`); cur.running = true; live[cur.name] = {}; runStart = Date.now(); renderBuild(); renderSelections(); }
+  catch (e) { logLine(cur.name, `run: ${e.message}`); say("saveMsg", e.message, true); }
+}
+$("btnStop").onclick = async () => { try { await post(`/api/projects/${cur.name}/stop`); logLine(cur.name, "asked the run to stop; Generate resumes it"); } catch (e) { logLine(cur.name, e.message); } };
 $("btnPlan").onclick = async () => {
-  if (!cur) return;
-  $("planOut").textContent = "Asking Arnis for the plan…";
-  try {
-    const r = (lastPlan = await api(`/api/projects/${cur.name}/plan`));
-    $("planOut").textContent = r.selections.map((s) => `${s.id}: ${s.pieces} pieces, ${s.todo_chunks}/${s.chunks} chunks to build, ~${s.est_mb.toFixed(1)} MB`).join("\n");
-    renderBuild();
-  } catch (e) { $("planOut").textContent = e.message; }
+  $("nextHint").textContent = "Asking Arnis for the plan…";
+  $("btnPlan").disabled = true;
+  try { lastPlan = await api(`/api/projects/${cur.name}/plan`); }
+  catch (e) { lastPlan = null; renderSelections(); $("nextHint").textContent = e.message; $("nextHint").className = "next bad"; return; }
+  renderSelections();
+  renderBuild();
 };
+const mb = (x) => (x >= 1024 ? `${(x / 1024).toFixed(1)} GB` : `${Math.round(x)} MB`);
 const dur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min` : s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
-// The left rail: size, disk, progress across the project, ETA, workers.
+// The left rail: progress across the project, ETA, size, workers.
 function renderBuild() {
   if (!cur) return;
   const sels = cur.model.selection || [];
-  $("projLine").innerHTML = `<b>${esc(cur.model.name)}</b> · ${sels.length} selection(s)${cur.running ? ' · <span style="color:var(--ui-accent)">running</span>' : ""}`;
-  if (!lastPlan) { $("estSize").textContent = "–"; $("estSub").textContent = "Plan to see the pieces and size."; $("diskLine").textContent = ""; }
-  if (lastPlan) {
-    $("estSize").textContent = lastPlan.need_mb >= 1024 ? `${(lastPlan.need_mb / 1024).toFixed(1)} GB` : `${lastPlan.need_mb.toFixed(0)} MB`;
-    const pieces = lastPlan.selections.reduce((n, s) => n + s.pieces, 0);
-    const chunks = lastPlan.selections.reduce((n, s) => n + s.todo_chunks, 0);
-    $("estSub").textContent = `${pieces} pieces · ${chunks.toLocaleString()} chunks to build`;
-    $("diskLine").innerHTML = `disk <b style="color:${lastPlan.disk === "short" ? "var(--ui-danger)" : lastPlan.disk === "tight" ? "var(--ui-accent)" : "var(--ok)"}">${esc(lastPlan.disk)}</b> · ${(lastPlan.free_mb / 1024).toFixed(0)} GB free`;
-  }
-  // Every step's pieces, weighted by its live percentage.
+  $("projLine").textContent = `${cur.model.name} · ${plural(sels.length, "selection")}`;
   const L = live[cur.name] || {};
-  const ids = [...new Set(Object.keys(cur.state || {}).concat(Object.keys(L)))];
+  // Every step the state, the run or the plan knows, weighted by its pieces.
+  const planned = Object.fromEntries((lastPlan ? lastPlan.selections : []).map((s) => [s.id, s.pieces]));
+  const ids = [...new Set(Object.keys(cur.state || {}).concat(Object.keys(L), Object.keys(planned)))];
   let of = 0, done = 0, w = 0, wsum = 0;
   for (const id of ids) {
-    const l = L[id] || {}, s = cur.state[id] || {};
-    const n = l.of || s.pieces || 1;
-    of += l.of || s.pieces || 0;
+    const l = L[id] || {}, s = cur.state[id] || {}, n = l.of || s.pieces || planned[id] || 1;
+    of += l.of || s.pieces || planned[id] || 0;
     const seen = l.pieces && Object.keys(l.pieces).length;
     done += seen ? Object.values(l.pieces).filter((x) => x === "done" || x === "skipped").length : s.pieces_done || 0;
-    const st = statusOf(id);
-    const pct = st === "done" || st === "skipped" ? 100 : l.pct ?? s.progress ?? 0;
-    w += n * pct; wsum += n;
+    w += n * pctOf(id); wsum += n;
   }
   const f = wsum ? w / wsum / 100 : 0;
-  if (lastPlan) of = Math.max(of, lastPlan.selections.reduce((n, s) => n + s.pieces, 0));
-  $("runLine").innerHTML = ids.length ? `<b>${(f * 100).toFixed(1)} %</b> · ${done}/${of} pieces · ${ids.filter((i) => ["done", "skipped"].includes(statusOf(i))).length}/${ids.length} steps built` : "Not run yet.";
+  const state = cur.running ? "running" : !ids.some((i) => cur.state[i] || L[i]) ? "pending" : f >= 1 ? "done" : ids.some((i) => statusOf(i) === "failed") ? "failed" : "stopped";
+  $("runChip").textContent = { running: "building", pending: "not built", done: "built", failed: "failed", stopped: "stopped" }[state];
+  $("runChip").className = `chip st-${state}`;
+  $("runPct").textContent = `${(f * 100).toFixed(1)} %`;
+  $("runLine").innerHTML = ids.length ? `${done}/${of} pieces · ${ids.filter((i) => ["done", "skipped"].includes(statusOf(i))).length}/${ids.length} steps` : "Not built yet.";
   $("runBar").style.width = `${f * 100}%`;
   $("runBar").className = f >= 1 ? "ok" : "";
-  if (cur.running && runStart && f > 0.01 && f < 1) {
-    const el = (Date.now() - runStart) / 1000;
-    $("etaLine").textContent = `elapsed ${dur(el)} · ETA ${dur((el * (1 - f)) / f)}`;
-  } else $("etaLine").textContent = cur.running ? "elapsed …" : "";
+  $("etaLine").textContent = cur.running && runStart && f > 0.01 && f < 1 ? `elapsed ${dur((Date.now() - runStart) / 1000)} · about ${dur(((Date.now() - runStart) / 1000) * (1 - f) / f)} left` : cur.running ? "elapsed …" : "";
+  $("estLine").innerHTML = lastPlan
+    ? `Size <b>~${mb(lastPlan.need_mb)}</b> · ${plural(lastPlan.selections.reduce((n, s) => n + s.pieces, 0), "piece")} · disk <b class="${lastPlan.disk === "short" ? "bad" : lastPlan.disk === "tight" ? "" : "good"}">${esc(lastPlan.disk)}</b>, ${mb(lastPlan.free_mb)} free${lastPlan.stale ? " (before the last change)" : ""}`
+    : "Plan to see the size and pieces.";
   // Workers: one row per step this run touched, running ones first.
   const rows = Object.entries(L).sort(([, a], [, b]) => (b.status === "running") - (a.status === "running"));
   const running = rows.filter(([, l]) => l.status === "running").length;
   $("workersCount").textContent = running ? `${running} running` : "idle";
-  $("workersCount").className = "chip" + (running ? " on" : "");
+  $("workersCount").className = "chip" + (running ? " st-running" : "");
   $("workersState").innerHTML = rows.length ? rows.map(([id, l]) => {
     const pieces = l.pieces || {};
     const strip = l.of ? `<div class="pieces">${Array.from({ length: Math.min(l.of, 300) }, (_, i) => `<i class="${pieces[i] || ""}" title="piece ${i + 1}${pieces[i] ? ": " + pieces[i] : ""}"></i>`).join("")}</div>` : "";
@@ -1034,88 +1199,57 @@ function renderBuild() {
       <div class="wjtop"><span>${esc(id)}</span><span class="wjpct">${(l.pct || 0).toFixed(1)}%</span></div>
       <div class="bar"><i class="${cls}" style="width:${Math.min(100, l.pct || 0)}%"></i></div>
       <div class="wjmsg">${esc(l.status)}${l.msg ? " · " + esc(l.msg) : ""}${l.error ? ` · <span class="bad">${esc(l.error)}</span>` : ""}</div>${strip}</div></div>`;
-  }).join("") : `<div class="stat">Idle. Generate to see live workers here.</div>`;
-  $("btnRun").disabled = !!cur.running;
-  $("btnStop").disabled = !cur.running;
+  }).join("") : `<div class="stat">Idle. Generate shows each Arnis job here.</div>`;
 }
 $("tomlSave").onclick = async () => {
-  try { await api(`/api/projects/${cur.name}`, { method: "PUT", body: $("toml").value }); say("tomlMsg", "saved"); await openProject(cur.name, true, true); renderSettings(); drawShapes(false); serverBody(); }
+  try { await api(`/api/projects/${cur.name}`, { method: "PUT", body: $("toml").value }); say("tomlMsg", "saved"); await openProject(cur.name, true); }
   catch (e) { say("tomlMsg", e.message, true); }
 };
 
 // ---- server ----
-const SRV = [
-  ["flavor", "Flavor", "Leaf reads B_Linear.", "seg", o("leaf=Leaf;paper=Paper"), "leaf"],
-  ["version", "Minecraft Version", "B_Linear needs Leaf 1.21.11 or newer.", "text", null, "1.21.11"],
-  ["format", "Region Format", "B_Linear converts each world after its build and serves the copy.", "seg", o("mca=Anvil;blinear=B_Linear"), "mca"],
-  ["dir", "Server Folder", "Relative to the project file.", "text", null, "server"],
-  ["ip", "IP", "", "text", null, "127.0.0.1"],
-  ["port", "Port", "", "num", null, 25565],
-  ["ram_mb", "Memory (MB)", "", "num", null, 4096],
-  ["link", "Link Worlds", "A junction or symlink; off copies the worlds.", "switch", null, true],
-  ["worlds", "Worlds", "Comma separated. Empty: every world, the first as the main level.", "csv"],
-  ["plugins", "Plugins", "Modrinth slugs, comma separated; slug@version pins a build.", "csv"],
-  ["datapacks", "Datapacks", "Zips or folders for the main level, comma separated.", "csv"],
-  ["motd", "MOTD", "", "text", null, "A Meld world"],
-];
 let srvTimer = null;
+function serverFields() {
+  if ($("srvFields")) $("srvFields").innerHTML = SCHEMA ? SCHEMA.server.map((r) => tile(ROWS[`srv:${r.k}`])).join("") : "";
+}
+function serverHead(text, chip, cls) {
+  $("srvHead").textContent = text;
+  $("srvChip").textContent = chip;
+  $("srvChip").className = `chip ${cls || ""}`;
+}
 async function serverBody() {
   clearInterval(srvTimer);
-  if (!cur) { $("serverBody").innerHTML = `<div class="stat">Open a project first.</div>`; return; }
-  const name = cur.name, conf = cur.model.server;
-  if (!conf) {
-    $("serverBody").innerHTML = `<div class="setting-desc">A Leaf or Paper server for this project's worlds. Nothing is set up yet.</div><button class="wide" id="srvAdd">${icon("plus")}Add a Server</button>`;
-    $("srvAdd").onclick = async () => { cur.model.server = {}; await saveModel("added [server]"); serverBody(); };
+  if (!cur) { $("serverBody").innerHTML = `<div class="empty">Open a project first.</div>`; return serverHead("Open a project first", ""); }
+  const name = cur.name;
+  if (!cur.model.server) {
+    serverHead("Not set up. Add one to play the worlds.", "none");
+    $("serverBody").innerHTML = `<div class="setting-desc">A Leaf or Paper server for this project's worlds, set up and run from here.</div><button class="wide primary" id="srvAdd">${icon("plus")}Add a Server</button>`;
+    $("srvAdd").onclick = async () => { cur.model.server = {}; await saveModel("added a server"); };
     return;
   }
-  const fields = SRV.map(([k, label, d, t, opts, def]) => {
-    const v = conf[k];
-    let c;
-    if (t === "seg") c = `<div class="segmented-control" data-srv="${k}">${opts.map(([val, lab]) => `<button type="button" class="segment ${(v ?? def) === val ? "active" : ""}" data-v="${val}">${lab}</button>`).join("")}</div>`;
-    else if (t === "switch") c = `<input type="checkbox" class="switch" data-srv="${k}" data-t="on" ${v ?? def ? "checked" : ""}>`;
-    else c = `<input type="${t === "num" ? "number" : "text"}" data-srv="${k}" data-t="${t}" value="${esc(t === "csv" ? (v || []).join(", ") : v ?? "")}" placeholder="${esc(def ?? "")}">`;
-    return `<div class="setting-tile ${t === "csv" ? "stack" : ""}"><div class="setting-label"><div class="setting-text"><span class="setting-heading">${esc(label)}</span>${d ? `<span class="setting-desc">${esc(d)}</span>` : ""}</div></div><div class="settings-control">${c}</div></div>`;
-  }).join("");
   const worlds = [...new Set((cur.model.selection || []).map((s) => s.world))];
-  $("serverBody").innerHTML = `<details class="group"><summary>Server Settings</summary><div class="card-body">${fields}
-      ${conf.java ? `<div class="settings-notice">java = ${esc(conf.java)}: it must be a Java Meld finds, or one listed in trusted-executables.txt.</div>` : ""}</div></details>
-    <div class="stat" id="srvState">…</div>
-    <div class="setting-tile"><div class="setting-label"><div class="setting-text"><span class="setting-heading">Minecraft EULA</span><span class="setting-desc">I accept the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener">Minecraft EULA</a>.</span></div></div><div class="settings-control"><input type="checkbox" class="switch" id="srvEula"></div></div>
-    <button class="wide" id="srvSetup">${icon("download")}Set Up</button>
-    <div class="row"><button class="primary" id="srvStart">${icon("play")}Start</button><button id="srvStop">${icon("square")}Stop</button></div>
+  $("serverBody").innerHTML = `<div class="stat" id="srvState">…</div>
+    <div class="setting-tile"><div class="setting-label"><div class="setting-text"><span class="setting-heading">Minecraft EULA</span><span class="setting-desc">I accept the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener">Minecraft EULA</a>. Set Up needs it.</span></div></div><div class="settings-control"><input type="checkbox" class="switch" id="srvEula"></div></div>
+    <div class="row"><button id="srvSetup" title="Downloads the server jar and plugins, links the worlds">${icon("download")}Set Up</button><button id="srvStart">${icon("play")}Start</button><button id="srvStop">${icon("square")}Stop</button></div>
     <div class="msg" id="srvMsg"></div>
     <pre class="console" id="console"></pre>
-    <div class="row"><input id="srvCmd" type="text" placeholder="Console command, e.g. say hi" style="flex:1;width:auto"><button id="srvSend" style="flex:none">Send</button></div>
-    <div class="group-head">Back Up</div>
-    <div class="setting-desc">A world as a zip in exports/ beside the project, after a disk check. Send save-all first while it runs.</div>
-    ${worlds.map((w) => `<button class="wide" data-export="${esc(w)}">${icon("hard-drive")}${esc(w)}</button>`).join("")}
-    <div class="msg" id="exportMsg"></div>`;
-  const body = $("serverBody");
-  body.querySelectorAll("input[data-srv]").forEach((el) => (el.onchange = () => {
-    const k = el.dataset.srv, t = el.dataset.t, raw = el.value.trim();
-    const v = t === "on" ? (el.checked ? undefined : false) : t === "csv" ? (raw ? raw.split(",").map((x) => x.trim()).filter(Boolean) : undefined) : t === "num" ? (raw ? Number(raw) : undefined) : raw || undefined;
-    if (v === undefined) delete conf[k]; else conf[k] = v;
-    saveSoon(`saved server ${k}`);
-  }));
-  body.querySelectorAll(".segmented-control[data-srv]").forEach((g) => g.addEventListener("click", (e) => {
-    const b = e.target.closest(".segment");
-    if (!b) return;
-    g.querySelectorAll(".segment").forEach((x) => x.classList.toggle("active", x === b));
-    conf[g.dataset.srv] = b.dataset.v;
-    saveSoon(`saved server ${g.dataset.srv}`);
-  }));
+    <div class="row"><input id="srvCmd" type="text" placeholder="Console command, e.g. say hi" style="flex:1;width:auto" disabled><button id="srvSend" style="flex:none" disabled>Send</button></div>
+    <details class="group"><summary>Server Settings</summary><div class="card-body" id="srvFields"></div>
+      ${cur.model.server.java ? `<div class="settings-notice">java = ${esc(cur.model.server.java)}: it must be a Java Meld finds, or one listed in trusted-executables.txt.</div>` : ""}</details>
+    <details class="group"><summary>Back Up</summary><div class="card-body"><div class="setting-desc">A world as a zip in exports/ beside the project, after a disk check. Send save-all first while it runs.</div>
+      ${worlds.map((w) => `<button class="wide" data-export="${esc(w)}">${icon("hard-drive")}${esc(w)}</button>`).join("")}<div class="msg" id="exportMsg"></div></div></details>`;
+  serverFields();
   const act = (what, path) => async () => {
     say("srvMsg", `${what}…`);
     try {
-      const r = await post(path);
+      const r = await post(path());
       say("srvMsg", r.lines ? r.lines.slice(-2).join(" · ") || "done" : `${what}: ok`);
       if (r.lines) appendConsole(r.lines.join("\n"));
     } catch (e) { say("srvMsg", e.message, true); }
     poll();
   };
-  $("srvSetup").onclick = () => act("set up", `/api/projects/${name}/server/setup?accept_eula=${$("srvEula").checked ? 1 : 0}`)();
-  $("srvStart").onclick = act("start", `/api/projects/${name}/server/start`);
-  $("srvStop").onclick = act("stop", `/api/projects/${name}/server/stop`);
+  $("srvSetup").onclick = act("set up", () => `/api/projects/${name}/server/setup?accept_eula=${$("srvEula").checked ? 1 : 0}`);
+  $("srvStart").onclick = act("start", () => `/api/projects/${name}/server/start`);
+  $("srvStop").onclick = act("stop", () => `/api/projects/${name}/server/stop`);
   const send = async () => {
     const c = $("srvCmd").value.trim();
     if (!c) return;
@@ -1123,7 +1257,7 @@ async function serverBody() {
   };
   $("srvSend").onclick = send;
   $("srvCmd").onkeydown = (e) => { if (e.key === "Enter") send(); };
-  body.querySelectorAll("[data-export]").forEach((b) => (b.onclick = async () => {
+  $("serverBody").querySelectorAll("[data-export]").forEach((b) => (b.onclick = async () => {
     say("exportMsg", `zipping ${b.dataset.export}…`);
     try { const r = await post(`/api/projects/${name}/export?world=${encodeURIComponent(b.dataset.export)}`); say("exportMsg", `${r.path}: ${r.files} files, ${(r.zip_bytes / 1e6).toFixed(1)} MB`); }
     catch (e) { say("exportMsg", e.message, true); }
@@ -1132,9 +1266,17 @@ async function serverBody() {
   const poll = async () => {
     if (!cur || cur.name !== name || !$("srvState")) return clearInterval(srvTimer);
     const s = await api(`/api/projects/${name}/server?lines=200`).catch((e) => ({ error: e.message }));
-    $("srvState").innerHTML = s.error ? `<span class="bad">${esc(s.error)}</span>` : s.running ? `<b class="good">running (${esc(s.state)})</b>, pid ${s.pid}` : "not running";
-    $("srvStart").disabled = !!s.running;
-    $("srvStop").disabled = !s.running;
+    const conf = cur.model.server || {};
+    const at = `${conf.ip || "127.0.0.1"}:${conf.port || 25565}`;
+    $("srvState").innerHTML = s.error ? `<span class="bad">${esc(s.error)}</span>` : s.running ? `<b class="good">Running (${esc(s.state)})</b> on ${esc(at)}, pid ${s.pid}` : "Stopped. Set Up once, then Start.";
+    if (s.error) serverHead(s.error, "error", "st-failed");
+    else if (s.running) serverHead(`Running on ${at}`, s.state || "running", "st-done");
+    else serverHead("Stopped · Start it to play", "stopped");
+    $("srvStart").disabled = !!s.running; $("srvStart").title = s.running ? "It is running." : "";
+    $("srvStop").disabled = !s.running; $("srvStop").title = s.running ? "" : "It is not running.";
+    $("srvStart").classList.toggle("primary", !s.running);
+    $("srvCmd").disabled = $("srvSend").disabled = !s.running;
+    $("srvCmd").placeholder = s.running ? "Console command, e.g. say hi" : "Start the server to send commands";
     if (first && s.log) { $("console").textContent = plain(s.log.join("\n")) + "\n"; first = false; $("console").scrollTop = 1e9; }
   };
   poll();
@@ -1152,16 +1294,17 @@ function appendConsole(text) {
 
 // ---- arnis ----
 async function arnisCard() {
-  const b = $("arnisBody");
+  const b = $("arnisBody"), head = (t, chip, cls) => { $("arnisHead").textContent = t; $("arnisChip").textContent = chip; $("arnisChip").className = `chip ${cls}`; };
   let a;
-  try { a = await api("/api/arnis"); } catch (e) { b.innerHTML = `<span class="bad">${esc(e.message)}</span>`; return; }
-  const pin = a.pinned;
-  b.innerHTML = `<div class="stat">In use: <b>${a.found ? esc(a.path) : "none yet; a run downloads the pinned release"}</b></div>
-    ${a.found ? `<div class="stat">Found as: <b>${esc(a.source)}</b></div>` : ""}
+  try { a = await api("/api/arnis"); } catch (e) { b.innerHTML = `<span class="bad">${esc(e.message)}</span>`; return head(e.message, "error", "st-failed"); }
+  const pin = a.pinned, ok = a.found && a.version && !a.error;
+  if (ok) head(`${a.version} · ${a.source}`, "ready", "st-done");
+  else { head(a.found ? "Found, but it does not run" : `Not installed · Install ${pin.version}, or a run downloads it`, a.found ? "error" : "missing", "st-failed"); $("cardArnis").classList.remove("collapsed"); }
+  b.innerHTML = `<div class="stat">In use: <b>${a.found ? esc(a.path) : "none yet"}</b></div>
     <div class="stat">Version: ${a.version ? `<b>${esc(a.version)}</b> <span class="good">ok</span>` : a.error ? `<span class="bad">${esc(a.error)}</span>` : "–"}</div>
     <div class="stat">Pinned: <b>${esc(pin.repo)} v${esc(pin.version)}</b> (needs ${esc(pin.min)} or newer)</div>
     ${a.caps ? `<details class="group"><summary>Capabilities (${a.caps.length})</summary><div class="stat">${a.caps.map((c) => (pin.required.includes(c) ? `<b style="color:var(--ui-accent)">${esc(c)}</b>` : esc(c))).join(" · ")}</div><div class="stat">Yellow: what Meld needs on every run.</div></details>` : ""}
-    <div class="row"><button class="primary" id="arnisInstall">${icon("download")}Install v${esc(pin.version)}</button><button id="arnisRefresh" style="flex:none">${icon("refresh")}Refresh</button></div>
+    <div class="row"><button class="${ok ? "" : "primary"}" id="arnisInstall">${icon("download")}${ok ? "Reinstall" : "Install"} v${esc(pin.version)}</button><button id="arnisRefresh" style="flex:none">${icon("refresh")}Check</button></div>
     <div class="msg" id="arnisMsg"></div>`;
   $("arnisRefresh").onclick = arnisCard;
   $("arnisInstall").onclick = async () => {
@@ -1207,7 +1350,7 @@ function onEvent(e) {
     case "stopping": logLine(e.project, "stopping: killing running jobs"); break;
     case "end":
       logLine(e.project, e.error ? `run failed: ${e.error}` : `run ended: ${e.summary.done} done, ${e.summary.skipped} skipped, ${e.summary.stopped} stopped, ${e.summary.failed} failed`);
-      if (cur && cur.name === e.project) { cur.running = false; runStart = null; openProject(e.project, true); }
+      if (cur && cur.name === e.project) { cur.running = false; runStart = null; openProject(e.project); }
       break;
     case "console": if (cur && cur.name === e.project) appendConsole(e.line); break;
     case "server-exit": if (cur && cur.name === e.project) appendConsole(`[meld] server exited ${e.error || e.code}`); break;
@@ -1215,20 +1358,18 @@ function onEvent(e) {
   later();
 }
 const es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
-es.onopen = () => { $("conn").textContent = "live"; $("conn").className = "chip on"; };
+es.onopen = () => { $("conn").textContent = "live"; $("conn").className = "chip st-done"; $("conn").title = "Receiving the run's events"; };
 es.onerror = () => { $("conn").textContent = "reconnecting…"; $("conn").className = "chip"; };
 es.onmessage = (m) => onEvent(JSON.parse(m.data));
 
 function route() {
   const m = (location.hash || "").match(/^#\/p\/([\w-]+)/);
   if (m) { $("projOverlay").classList.remove("on"); openProject(m[1]); }
-  else { $("projOverlay").classList.add("on"); listProjects(); renderSettings(); }
+  else { showProjects(); renderSettings(); renderSelections(); serverBody(); }
 }
 window.addEventListener("hashchange", route);
-// /api/options is now the settings form; this page keeps its own table until the next commit.
 arnisCard();
 route();
-
 </script>
 </body>
 </html>

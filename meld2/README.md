@@ -20,14 +20,16 @@ A `v2.*` tag builds all of it on GitHub Actions (`.github/workflows/release.yml`
 ## The desktop app
 
 The app keeps Meld 1's frame and is skinned with Arnis at Scale's own components (the `arnis-scale-phase-6` GUI): its dark surfaces, the #fecc44 accent, its Lucide sprite, setting tiles, switches, segmented controls and preview cards.
-- **Left:** Meld 1's animated wordmark, then the build: the estimated size and disk check, the progress across the project with pieces and an ETA, one row per running job (workers) with its live percentage and pieces, and the log.
+- **Left:** Meld 1's animated wordmark, then **Build** (the progress across the project with pieces, an ETA, and the planned size and disk check), **Workers** (one row per running Arnis job with its live percentage and pieces) and **Log** (with the live-events state).
 - **Middle:** the map, with Meld 1's Leaflet and leaflet.draw setup. Draw rectangles and polygons to add selections, and edit or delete them with the map tools. Polygon parts and snapped boxes show dashed, as Meld builds them.
-- **Right:** a search box, **Generate** (Generate World, Plan, Stop, Rebuild) and **Selections**. Below them, *Settings for* picks the project's `[defaults]` or one selection. Then Arnis's settings sections, with Arnis's labels: World, Generation, Terrain & Nature, Building Facades, Map & Input, Advanced, **Extra Features** and **OSM Data Source**:
-  - **Extra Features** has Performance & Large Worlds (CPU Usage, Threads, Memory Budget, Parallel Workers, Cell Size, Selection Snap, plus Meld's Jobs at Once and Keep Free on Disk), Meld Generation (Terrain, Roads & Buildings, Fields & Trees, Caves & Water) and Experimental.
-  - **OSM Data Source** includes Bake CPU Usage and the bakes.
-  - Options with a picture in Arnis show it here too: snow, scatter, roads, fields, tree realm, tree size, cave style and ores, climate, river bed, water and grass/land texture.
-  - Every key Meld passes to Arnis has a row. A key a newer Arnis adds shows under "Other Arnis Settings".
-  - Last come **Server** (the `[server]` fields, the EULA, Set Up, Start, Stop, the live console with a command box, and a zip backup per world), **Arnis** (which Arnis is in use, its version and capabilities, and Install) and **Project File** (the raw TOML).
+- **Right**, top to bottom:
+  - **Generate:** the five steps (Project, Draw, Settings, Plan, Generate), a line on what to do next, and Plan, Generate (Resume after a stop), Stop and Rebuild; the next action is the yellow button, and a disabled one says why.
+  - **Selections:** name, world, size in km, pieces (after a Plan), status with progress, and how many values it overrides. Clicking one picks it on the map and for the settings.
+  - **Arnis** and **Server:** their state and next action on the card itself (ready / missing and Install; not set up, stopped or running).
+  - *Settings for* (all selections, or one), search and *Changed only*, then Arnis at Scale's Settings page in its order, with its labels, help, controls, defaults and dependencies: World, Generation, Terrain & Nature, Building Facades, Map & Input, Application, Advanced, **Extra Features** (Performance & Large Worlds; Meld Generation: Terrain, Roads & Buildings, Fields & Trees, Caves & Water; Experimental) and **OSM Data Source**. A selection's own values are marked yellow with what they override and a Reset; a project value changed from Arnis's default shows that default. A row that needs another (Cave Style needs Caves) greys and says so. Rows Arnis's GUI lacks carry a *Meld* or *CLI* badge. Sections remember being open.
+  - **Advanced: Project File**, the raw TOML.
+
+The form is one table, `core/src/settings.json`, served at `/api/options`; a test keeps it in step with the settings Meld knows. `docs/PLAN.md` §10 maps every Arnis setting to it.
 
 The wordmark images and the option pictures are built into the binary (`cli/assets/`, served at `/assets/` without the token). The pictures are Arnis's, Apache-2.0.
 
@@ -192,7 +194,7 @@ meld2 serve [--bind 127.0.0.1:7878] [--dir <workspace>] [--arnis <path>]
 | GET | `/api/projects/<name>/server` | `{running, state, pid, dir, log}`; `state` is `starting`, `ready` or `stopping`; `?lines=N` (50) |
 | POST | `/api/projects/<name>/server/send` | one console command, the body; 409 if the server does not run |
 | POST | `/api/projects/<name>/export?world=W` | zips one of the project's worlds into `exports/` beside the project, after a disk check |
-| GET | `/api/options` | every setting key a selection may use, and whether it is a switch |
+| GET | `/api/options` | the settings form: Arnis's sections and rows over Meld's keys (`core/src/settings.json`) |
 | GET | `/api/arnis` | which Arnis a run would use (never downloads), its version and capabilities, and the pin |
 | POST | `/api/arnis/install` | downloads and verifies the pinned Arnis |
 
@@ -247,7 +249,7 @@ jobs = 2                          # Arnis processes at once
 cpu_target = 90                   # % of cores, split between the jobs running
 # ram_budget_mb = 16000           # split the same way; unset: 80 % of free RAM
 # min_free_mb = 1024              # disk to keep free after the estimated build
-# bake_cpu = 50                   # % of the cores for bakes and prewarms (Bake CPU Usage)
+# bake_cpu = 50                   # % of the cores for bakes and prewarms (Bake CPU Usage, default 75)
 
 [defaults]                        # every selection starts from these
 scale = 1.0
@@ -257,7 +259,7 @@ unit_regions = 4                  # piece size; pieces are what resumes
 id = "vaduz"
 bbox = [47.139, 9.520, 47.141, 9.523]   # min_lat, min_lng, max_lat, max_lng
 world = "Alps"
-settings = { caves = true, snow_mode = "peaks" }
+settings = { caves = true, snow_mode = "off" }
 ```
 
 Settings use the names of the Arnis flags in snake case, e.g. `snow_mode` for `--snow-mode`, `buildings = false` for `--no-buildings` and `use_3d = false` for `--no-3d`. The full list is the `OPTS` table in `core/src/args.rs`. `min_y`, `max_y`, `region_format`, `rotation` and `body` are refused: Arnis refuses them with One World (B_Linear comes from `[server] format`).
