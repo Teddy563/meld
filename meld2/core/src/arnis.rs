@@ -112,7 +112,7 @@ pub struct Process {
 
 impl Process {
     #[cfg(windows)]
-    fn adopt(mut child: Child) -> Result<Self> {
+    pub fn adopt(mut child: Child) -> Result<Self> {
         // ponytail: the child runs a few ms before it joins the job. Arnis starts
         // its pieces far later; a CREATE_SUSPENDED start needs the raw thread handle
         // std does not give, so add it if anything ever spawns earlier.
@@ -129,7 +129,7 @@ impl Process {
     }
 
     #[cfg(unix)]
-    fn adopt(mut child: Child) -> Result<Self> {
+    pub fn adopt(mut child: Child) -> Result<Self> {
         use std::os::unix::process::CommandExt;
         // $0 is the group id, the run's pid (process_group(0) above). The
         // watchdog has a group of its own, so a Ctrl+C meant for Meld leaves

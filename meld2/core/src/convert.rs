@@ -372,10 +372,39 @@ pub fn convert(
     Ok(out)
 }
 
+/// A built world of two small Anvil regions (5 chunks), for tests.
+#[cfg(test)]
+pub(crate) fn tiny_world(world: &Path) {
+    use region_converter::model::{ChunkData, Region};
+    std::fs::create_dir_all(world.join("region")).unwrap();
+    std::fs::create_dir_all(world.join("arnis_one_world/jobs")).unwrap();
+    std::fs::write(world.join("level.dat"), b"level").unwrap();
+    std::fs::write(world.join("arnis_one_world.json"), b"{}").unwrap();
+    for (rx, n) in [(0, 3usize), (-1, 2)] {
+        let mut r = Region::new(rx, 0);
+        for i in 0..n {
+            // A minimal NBT compound per chunk, different in each.
+            let nbt = vec![10, 0, 0, 1, 0, 1, b'a', i as u8, 0];
+            r.set_chunk(
+                i * 7,
+                ChunkData {
+                    timestamp: 1,
+                    raw_nbt: nbt,
+                },
+            )
+            .unwrap();
+        }
+        let file = world.join(format!("region/r.{rx}.0.mca"));
+        write_region_with_transaction(RegionFormat::Mca, &file, |t| {
+            encode_region_to_writer(&r, RegionFormat::Mca, 6, t).map(drop)
+        })
+        .unwrap();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use region_converter::model::{ChunkData, Region};
 
     /// A tiny Anvil world converts, reads back chunk for chunk, swaps in
     /// atomically, and is refused once something else wrote to it.
@@ -384,30 +413,7 @@ mod tests {
         let root = std::env::temp_dir().join(format!("meld2-convert-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let world = root.join("W");
-        std::fs::create_dir_all(world.join("region")).unwrap();
-        std::fs::create_dir_all(world.join("arnis_one_world/jobs")).unwrap();
-        std::fs::write(world.join("level.dat"), b"level").unwrap();
-        std::fs::write(world.join("arnis_one_world.json"), b"{}").unwrap();
-        for (rx, n) in [(0, 3usize), (-1, 2)] {
-            let mut r = Region::new(rx, 0);
-            for i in 0..n {
-                // A minimal NBT compound per chunk, different in each.
-                let nbt = vec![10, 0, 0, 1, 0, 1, b'a', i as u8, 0];
-                r.set_chunk(
-                    i * 7,
-                    ChunkData {
-                        timestamp: 1,
-                        raw_nbt: nbt,
-                    },
-                )
-                .unwrap();
-            }
-            let file = world.join(format!("region/r.{rx}.0.mca"));
-            write_region_with_transaction(RegionFormat::Mca, &file, |t| {
-                encode_region_to_writer(&r, RegionFormat::Mca, 6, t).map(drop)
-            })
-            .unwrap();
-        }
+        tiny_world(&world);
         let dest = sibling(&world);
         assert!(dest.ends_with("W [BLinear]"));
         let mut seen = vec![];

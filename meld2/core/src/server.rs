@@ -1,0 +1,927 @@
+//! A Minecraft server for a project's worlds, from Meld 1's `mcserver.py`:
+//! a Leaf (or Paper) folder with the built worlds linked or copied in, its
+//! config, datapacks, plugins and WorldGuard regions, and the server run as
+//! a managed process (`meld2 server start|stop|status`, and over `serve`).
+//!
+//! Nothing runs through a shell: Java gets an argument list, and the only
+//! console input Meld sends is `stop` and fixed Multiverse imports of the
+//! folder names it chose. A folder Meld did not set up, a copied world and
+//! the files an admin edits (server.properties, regions.yml) are replaced
+//! only with `--force`. The EULA is accepted only when asked to.
+
+use crate::arnis::Process;
+use crate::frame::Manifest;
+use crate::project::Project;
+use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
+use std::fmt::Write as _;
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+/// The `[server]` table of a project.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct Conf {
+    /// The server folder, relative to the project file.
+    pub dir: PathBuf,
+    pub flavor: Flavor,
+    /// The Minecraft version; B_Linear needs Leaf 1.21.11 or newer.
+    pub version: String,
+    /// The worlds to serve, the first as the main level. Unset: every world
+    /// of the project in order. More than one adds Multiverse-Core.
+    pub worlds: Vec<String>,
+    /// `blinear` converts each served world after its build and serves the
+    /// `<World> [BLinear]` copies; `mca` serves the built worlds.
+    pub format: Format,
+    pub ip: String,
+    pub port: u16,
+    pub ram_mb: u32,
+    /// Link the worlds into the folder (a junction on Windows) instead of copying them.
+    pub link: bool,
+    /// Modrinth project slugs, e.g. "worldguard", "worldedit", "voxy-server-side".
+    pub plugins: Vec<String>,
+    /// Datapack zips or folders for the main level's `datapacks/`.
+    pub datapacks: Vec<PathBuf>,
+    pub java: Option<PathBuf>,
+    pub motd: String,
+}
+
+impl Default for Conf {
+    fn default() -> Self {
+        Self {
+            dir: "server".into(),
+            flavor: Flavor::Leaf,
+            version: "1.21.11".into(),
+            worlds: vec![],
+            format: Format::Mca,
+            ip: "127.0.0.1".into(),
+            port: 25565,
+            ram_mb: 4096,
+            link: true,
+            plugins: vec![],
+            datapacks: vec![],
+            java: None,
+            motd: "A Meld world".into(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Flavor {
+    #[default]
+    Leaf,
+    Paper,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum Format {
+    #[default]
+    Mca,
+    Blinear,
+}
+
+const LEAF_API: &str = "https://api.leafmc.one/v2/projects/leaf";
+const PAPER_API: &str = "https://fill.papermc.io/v3/projects/paper";
+const MODRINTH_API: &str = "https://api.modrinth.com/v2";
+/// What `meld2 server setup` records for `start`.
+const META: &str = "meld-server.json";
+const LOCK: &str = "meld-server.lock";
+const STOP: &str = "meld-server.stop";
+const STATUS: &str = "meld-server.status.json";
+/// Aikar's flags, as Meld 1 starts its servers with them.
+const JVM_FLAGS: &[&str] = &[
+    "-XX:+UseG1GC",
+    "-XX:+ParallelRefProcEnabled",
+    "-XX:MaxGCPauseMillis=200",
+    "-XX:+UnlockExperimentalVMOptions",
+    "-XX:+DisableExplicitGC",
+    "-XX:G1HeapRegionSize=8M",
+    "-XX:G1NewSizePercent=30",
+    "-XX:G1MaxNewSizePercent=40",
+    "-XX:G1ReservePercent=20",
+    "-XX:InitiatingHeapOccupancyPercent=15",
+    "-Dusing.aikars.flags=https://mcflags.emc.gs",
+    "-Daikars.new.flags=true",
+];
+
+impl Conf {
+    pub fn check(&self, worlds: &[String]) -> Result<()> {
+        let plain = |s: &str, extra: &[char]| {
+            !s.is_empty()
+                && s.chars()
+                    .all(|c| c.is_ascii_alphanumeric() || extra.contains(&c))
+        };
+        if !plain(&self.version, &['.', '-']) {
+            bail!("[server] version {:?}: e.g. \"1.21.11\"", self.version);
+        }
+        if self.format == Format::Blinear && self.flavor != Flavor::Leaf {
+            bail!("[server] format = \"blinear\": only Leaf (1.21.11 or newer) reads B_Linear");
+        }
+        if let Some(s) = self.plugins.iter().find(|s| !plain(s, &['-', '_'])) {
+            bail!("[server] plugins: {s:?} is not a Modrinth slug");
+        }
+        if let Some(w) = self.worlds.iter().find(|w| !worlds.contains(w)) {
+            bail!("[server] worlds: no selection builds {w:?}");
+        }
+        self.ip
+            .parse::<std::net::IpAddr>()
+            .with_context(|| format!("[server] ip {:?}", self.ip))?;
+        if self.ram_mb < 512 {
+            bail!("[server] ram_mb must be at least 512");
+        }
+        Ok(())
+    }
+}
+
+/// The server's settings and where things are, for one project.
+pub struct Server<'a> {
+    pub project: &'a Project,
+    pub conf: Conf,
+    pub dir: PathBuf,
+}
+
+/// A world's folder name inside the server: letters, digits, `-` and `_`.
+pub fn level_name(world: &str) -> String {
+    let s: String = world
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    match s.trim_matches('_') {
+        "" => "world".into(),
+        t => t.into(),
+    }
+}
+
+/// What `setup` records for `start`.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+struct Meta {
+    jar: String,
+    level: String,
+    /// Console commands for the first start, sent once after `Done (`.
+    first_start: Vec<String>,
+}
+
+/// What `status` reports.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Status {
+    pub running: bool,
+    pub pid: Option<u32>,
+    /// `starting`, `ready` or `stopping` while it runs.
+    pub state: String,
+    pub dir: PathBuf,
+    pub log: Vec<String>,
+}
+
+impl<'a> Server<'a> {
+    pub fn of(project: &'a Project) -> Result<Self> {
+        let mut conf = project
+            .server
+            .clone()
+            .context("the project has no [server] table")?;
+        if conf.worlds.is_empty() {
+            conf.worlds = project.worlds();
+        }
+        let dir = project
+            .path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join(&conf.dir);
+        Ok(Self { project, conf, dir })
+    }
+
+    /// The built world `world` is served from: the build, or its B_Linear copy.
+    pub fn source(&self, world: &str) -> PathBuf {
+        let built = self.project.output_dir().join(world);
+        match self.conf.format {
+            Format::Mca => built,
+            Format::Blinear => crate::convert::sibling(&built),
+        }
+    }
+
+    fn java_major(&self) -> u32 {
+        if self.conf.version.starts_with("1.") {
+            21
+        } else {
+            25
+        }
+    }
+
+    /// Sets the folder up. `say` gets one line per thing done or kept.
+    pub fn setup(
+        &self,
+        force: bool,
+        accept_eula: bool,
+        download: bool,
+        say: &mut dyn FnMut(String),
+    ) -> Result<()> {
+        let dir = &self.dir;
+        let ours = dir.join(META).is_file();
+        let empty = std::fs::read_dir(dir).map_or(true, |mut d| d.next().is_none());
+        if !ours && !empty && !force {
+            bail!(
+                "{} exists and Meld did not set it up; pick another [server] dir, or pass --force to set it up there",
+                dir.display()
+            );
+        }
+        for w in &self.conf.worlds {
+            let src = self.source(w);
+            if !src.join("level.dat").is_file() {
+                bail!(
+                    "{} is not built yet{}; run the project first",
+                    src.display(),
+                    match self.conf.format {
+                        Format::Blinear => " (format = blinear: the run converts it)",
+                        Format::Mca => "",
+                    }
+                );
+            }
+        }
+        std::fs::create_dir_all(dir.join("plugins"))?;
+        let level = level_name(&self.conf.worlds[0]);
+        let mut first_start = vec![];
+        for (i, w) in self.conf.worlds.iter().enumerate() {
+            let name = level_name(w);
+            self.place(&self.source(w), &dir.join(&name), force, say)?;
+            if i > 0 {
+                first_start.push(format!("mv import {name} normal"));
+            }
+            let regions = dir
+                .join("plugins/WorldGuard/worlds")
+                .join(&name)
+                .join("regions.yml");
+            if let Some(yml) = self.regions_yml(w)? {
+                write_new(&regions, &yml, force, say)?;
+            }
+        }
+        for pack in &self.conf.datapacks {
+            let pack = self
+                .project
+                .path
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join(pack);
+            let name = pack.file_name().context("a datapack path has no name")?;
+            let to = dir.join(&level).join("datapacks").join(name);
+            if to.exists() && !force {
+                say(format!(
+                    "kept {} (exists; --force replaces it)",
+                    to.display()
+                ));
+                continue;
+            }
+            copy_tree(&pack, &to).with_context(|| format!("copying {}", pack.display()))?;
+            say(format!("datapack {}", to.display()));
+        }
+        write_new(
+            &dir.join("server.properties"),
+            &self.properties(&level),
+            force,
+            say,
+        )?;
+        if self.conf.flavor == Flavor::Leaf {
+            let fmt = match self.conf.format {
+                Format::Mca => "MCA",
+                Format::Blinear => "B_LINEAR",
+            };
+            // Leaf fills in its other defaults on first boot.
+            let yml = format!(
+                "# Written by Meld: the region format of the worlds it placed here.\nconfig-version: '3.0'\nmisc:\n  region-format:\n    format-name: {fmt}\n    compress-level: 6\n"
+            );
+            write_new(&dir.join("config/leaf-global.yml"), &yml, true, say)?;
+        }
+        let eula = dir.join("eula.txt");
+        if accept_eula {
+            std::fs::write(
+                &eula,
+                "# Accepted through Meld on request: https://aka.ms/MinecraftEULA\neula=true\n",
+            )?;
+            say("eula.txt: accepted (--accept-eula)".into());
+        } else if !eula.exists() {
+            std::fs::write(&eula, "# Running the server means agreeing to https://aka.ms/MinecraftEULA\n# `meld2 server setup --accept-eula` sets this to true.\neula=false\n")?;
+            say(
+                "eula.txt: not accepted; pass --accept-eula once you agree to the Minecraft EULA"
+                    .into(),
+            );
+        }
+
+        let mut meta: Meta = read_json(&dir.join(META)).unwrap_or_default();
+        meta.level = level;
+        meta.first_start = first_start;
+        if download {
+            let jar = jar(self.conf.flavor, &self.conf.version)?;
+            if !dir.join(&jar.name).is_file() {
+                say(format!("downloading {}", jar.url));
+                crate::install::download(&jar.url, &dir.join(&jar.name), Sum::Sha256(&jar.sha256))?;
+            }
+            say(format!("server jar {} (sha256 verified)", jar.name));
+            meta.jar = jar.name;
+            let mut plugins = self.conf.plugins.clone();
+            if self.conf.worlds.len() > 1 && !plugins.iter().any(|p| p == "multiverse-core") {
+                plugins.push("multiverse-core".into());
+            }
+            for slug in &plugins {
+                let p = plugin(slug, &self.conf.version)?;
+                let to = dir.join("plugins").join(&p.file);
+                if !to.is_file() {
+                    crate::install::download(&p.url, &to, Sum::Sha512(&p.sha512))?;
+                }
+                say(format!("plugin {} {} (sha512 verified)", slug, p.file));
+            }
+        } else if meta.jar.is_empty() {
+            say(
+                "no server jar: run setup without --no-download before `meld2 server start`".into(),
+            );
+        }
+        let tmp = dir.join(format!("{META}.tmp"));
+        std::fs::write(&tmp, serde_json::to_vec_pretty(&meta)?)?;
+        std::fs::rename(&tmp, dir.join(META))?;
+        say(format!("server ready in {}", dir.display()));
+        Ok(())
+    }
+
+    /// Puts `src` at `dest`: a link (replaced freely), or a copy (replaced only with `force`).
+    fn place(
+        &self,
+        src: &Path,
+        dest: &Path,
+        force: bool,
+        say: &mut dyn FnMut(String),
+    ) -> Result<()> {
+        if let Ok(m) = std::fs::symlink_metadata(dest) {
+            if m.file_type().is_symlink() {
+                remove_link(dest)?;
+            } else if force {
+                std::fs::remove_dir_all(dest)
+                    .with_context(|| format!("removing {}", dest.display()))?;
+            } else {
+                say(format!(
+                    "kept {} (a world is there; --force replaces it)",
+                    dest.display()
+                ));
+                return Ok(());
+            }
+        }
+        let src = std::path::absolute(src)?;
+        if self.conf.link {
+            link(&src, dest).with_context(|| {
+                format!(
+                    "linking {} to {}; set [server] link = false to copy instead",
+                    dest.display(),
+                    src.display()
+                )
+            })?;
+            say(format!(
+                "world {} -> {} (linked)",
+                dest.display(),
+                src.display()
+            ));
+        } else {
+            let need = dir_bytes(&src)? / (1 << 20) + 512;
+            let free = crate::plan::free_mb(dest.parent().unwrap_or(Path::new(".")))?;
+            if free < need {
+                bail!(
+                    "not enough disk to copy {}: ~{need} MB needed, {free} MB free",
+                    src.display()
+                );
+            }
+            copy_tree(&src, dest)?;
+            say(format!(
+                "world {} (copied from {})",
+                dest.display(),
+                src.display()
+            ));
+        }
+        Ok(())
+    }
+
+    fn properties(&self, level: &str) -> String {
+        let local = self
+            .conf
+            .ip
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback());
+        let c = &self.conf;
+        let mut s = String::from(
+            "# Written by Meld. Edit freely; `meld2 server setup --force` writes it again.\n",
+        );
+        // Offline mode only while the server listens on this machine alone.
+        for (k, v) in [
+            ("motd", c.motd.replace(['\n', '\r'], " ")),
+            ("level-name", level.into()),
+            ("server-ip", c.ip.clone()),
+            ("server-port", c.port.to_string()),
+            ("online-mode", (!local).to_string()),
+            ("gamemode", "creative".into()),
+            ("difficulty", "normal".into()),
+            ("generate-structures", "false".into()),
+            ("allow-nether", "false".into()),
+            ("spawn-protection", "0".into()),
+            ("view-distance", "10".into()),
+            ("simulation-distance", "6".into()),
+            ("allow-flight", "true".into()),
+            ("enable-rcon", "false".into()),
+            ("white-list", "false".into()),
+        ] {
+            let _ = writeln!(s, "{k}={v}");
+        }
+        s
+    }
+
+    /// WorldGuard regions for a world's selections, in its One World frame:
+    /// a polygon's rings as drawn, a bbox as the chunks Arnis builds for it.
+    pub fn regions_yml(&self, world: &str) -> Result<Option<String>> {
+        let Some(m) = Manifest::load(&self.project.output_dir().join(world))? else {
+            return Ok(None);
+        };
+        let f = m.frame();
+        let (min_y, max_y) = m.y_range();
+        let mut rings: Vec<(String, Vec<[i64; 2]>)> = vec![];
+        for s in self
+            .project
+            .selections
+            .iter()
+            .filter(|s| s.world == world && s.part_of.is_none())
+        {
+            let [south, west, north, east] = s.bbox;
+            let chunk = |v: f64, up: bool| {
+                let c = if up {
+                    (v / 16.0 - 1e-9).ceil()
+                } else {
+                    (v / 16.0 + 1e-9).floor()
+                };
+                c as i64 * 16
+            };
+            let (x0, x1) = (chunk(f.x(west), false), chunk(f.x(east), true) - 1);
+            let (z0, z1) = (chunk(f.z(north), false), chunk(f.z(south), true) - 1);
+            rings.push((s.id.clone(), vec![[x0, z0], [x1, z0], [x1, z1], [x0, z1]]));
+        }
+        for s in self.project.shapes.iter().filter(|s| s.world == world) {
+            for (i, ring) in s.polygon.iter().enumerate() {
+                let pts = ring
+                    .iter()
+                    .map(|&[lat, lon]| [f.x(lon).round() as i64, f.z(lat).round() as i64]);
+                rings.push((format!("{}-{}", s.id, i + 1), pts.collect()));
+            }
+        }
+        let mut y = String::from("# Written by Meld: one region per selection, in the world's One World frame.\nregions:\n");
+        for (id, pts) in rings {
+            let _ = writeln!(
+                y,
+                "  meld-{}:\n    type: poly2d\n    min-y: {min_y}\n    max-y: {max_y}\n    priority: 0\n    flags: {{}}\n    owners: {{}}\n    members: {{}}\n    points:",
+                id.to_lowercase()
+            );
+            for [x, z] in pts {
+                let _ = writeln!(y, "    - {{x: {x}, z: {z}}}");
+            }
+        }
+        Ok(Some(y))
+    }
+
+    /// Runs the server until it ends: `stop()` (or `meld2 server stop`)
+    /// sends `stop` on its console and kills it after 60 s. Every console
+    /// line goes to `on_line`. Returns its exit code.
+    pub fn start(
+        &self,
+        java: Option<PathBuf>,
+        stop: &dyn Fn() -> bool,
+        on_line: &mut dyn FnMut(&str),
+    ) -> Result<i32> {
+        let dir = &self.dir;
+        let mut meta: Meta = read_json(&dir.join(META)).with_context(|| {
+            format!(
+                "{} is not set up; run `meld2 server setup` first",
+                dir.display()
+            )
+        })?;
+        if meta.jar.is_empty() || !dir.join(&meta.jar).is_file() {
+            bail!(
+                "no server jar in {}; run `meld2 server setup` (with downloads)",
+                dir.display()
+            );
+        }
+        let eula = std::fs::read_to_string(dir.join("eula.txt")).unwrap_or_default();
+        if !eula.lines().any(|l| l.trim() == "eula=true") {
+            bail!("the Minecraft EULA is not accepted in {}; `meld2 server setup --accept-eula` once you agree to it", dir.display());
+        }
+        let lock = std::fs::File::create(dir.join(LOCK))?;
+        if lock.try_lock().is_err() {
+            bail!("the server in {} is already running", dir.display());
+        }
+        std::net::TcpListener::bind((self.conf.ip.as_str(), self.conf.port)).with_context(
+            || {
+                format!(
+                    "port {}:{} is taken; stop what uses it or change [server] port",
+                    self.conf.ip, self.conf.port
+                )
+            },
+        )?;
+        let java = find_java(java.or(self.conf.java.clone()), self.java_major())?;
+        let _ = std::fs::remove_file(dir.join(STOP));
+
+        let mut cmd = std::process::Command::new(&java);
+        let heap = format!("{}M", self.conf.ram_mb);
+        cmd.args([format!("-Xms{heap}"), format!("-Xmx{heap}")])
+            .args(JVM_FLAGS)
+            .args(["-jar", &meta.jar, "--nogui"])
+            .current_dir(dir)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::fs::File::create(dir.join("meld-server.err"))?);
+        let mut child = cmd
+            .spawn()
+            .with_context(|| format!("starting {}", java.display()))?;
+        let (mut stdin, stdout) = (
+            child.stdin.take().expect("piped"),
+            child.stdout.take().expect("piped"),
+        );
+        let process = Process::adopt(child)?;
+        let mut status = Status {
+            running: true,
+            pid: Some(process.id()),
+            state: "starting".into(),
+            dir: dir.clone(),
+            log: vec![],
+        };
+        let save = |s: &Status| {
+            std::fs::write(dir.join(STATUS), serde_json::to_vec(s).unwrap_or_default())
+        };
+        save(&status)?;
+
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let mut deadline: Option<Instant> = None;
+        loop {
+            match rx.recv_timeout(Duration::from_millis(500)) {
+                Ok(line) => {
+                    on_line(&line);
+                    // The vanilla ready line: `Done (12.3s)! For help, type "help"`.
+                    if status.state == "starting" && line.contains("Done (") {
+                        status.state = "ready".into();
+                        save(&status)?;
+                        for c in std::mem::take(&mut meta.first_start) {
+                            on_line(&format!("[meld] > {c}"));
+                            let _ = writeln!(stdin, "{c}");
+                        }
+                        std::fs::write(dir.join(META), serde_json::to_vec_pretty(&meta)?)?;
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+                Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            }
+            if deadline.is_none() && (stop() || dir.join(STOP).exists()) {
+                on_line("[meld] > stop");
+                let _ = writeln!(stdin, "stop").and_then(|_| stdin.flush());
+                deadline = Some(Instant::now() + Duration::from_secs(60));
+                status.state = "stopping".into();
+                save(&status)?;
+            }
+            if deadline.is_some_and(|d| Instant::now() > d) {
+                on_line("[meld] the server did not stop in 60 s; killing it");
+                process.kill();
+            }
+        }
+        let code = process.wait()?.code().unwrap_or(-1);
+        let _ = std::fs::remove_file(dir.join(STOP));
+        let _ = std::fs::remove_file(dir.join(STATUS));
+        drop(lock);
+        Ok(code)
+    }
+
+    /// Asks a running server (started here or by another Meld) to stop.
+    pub fn request_stop(&self) -> Result<()> {
+        if !self.status(0).running {
+            bail!("the server in {} is not running", self.dir.display());
+        }
+        std::fs::write(self.dir.join(STOP), b"")?;
+        Ok(())
+    }
+
+    /// Whether it runs (its lock is held), and the last `lines` of its log.
+    pub fn status(&self, lines: usize) -> Status {
+        let running = std::fs::File::open(self.dir.join(LOCK))
+            .is_ok_and(|f| matches!(f.try_lock(), Err(std::fs::TryLockError::WouldBlock)));
+        let mut s: Status = if running {
+            read_json(&self.dir.join(STATUS)).unwrap_or_default()
+        } else {
+            Status::default()
+        };
+        s.running = running;
+        s.dir = self.dir.clone();
+        let log = std::fs::read_to_string(self.dir.join("logs/latest.log")).unwrap_or_default();
+        let all: Vec<&str> = log.lines().collect();
+        s.log = all[all.len().saturating_sub(lines)..]
+            .iter()
+            .map(|l| l.to_string())
+            .collect();
+        s
+    }
+}
+
+fn read_json<T: for<'de> Deserialize<'de>>(file: &Path) -> Result<T> {
+    let bytes = std::fs::read(file).with_context(|| format!("reading {}", file.display()))?;
+    serde_json::from_slice(&bytes).with_context(|| format!("reading {}", file.display()))
+}
+
+/// Writes `text` unless the file exists and `force` is off.
+fn write_new(file: &Path, text: &str, force: bool, say: &mut dyn FnMut(String)) -> Result<()> {
+    if file.exists() && !force {
+        say(format!(
+            "kept {} (exists; --force writes it again)",
+            file.display()
+        ));
+        return Ok(());
+    }
+    std::fs::create_dir_all(file.parent().unwrap_or(Path::new(".")))?;
+    std::fs::write(file, text)?;
+    say(format!("wrote {}", file.display()));
+    Ok(())
+}
+
+fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+    if from.is_file() {
+        std::fs::create_dir_all(to.parent().unwrap_or(Path::new(".")))?;
+        std::fs::copy(from, to)?;
+        return Ok(());
+    }
+    std::fs::create_dir_all(to)?;
+    for e in std::fs::read_dir(from)? {
+        let e = e?;
+        if e.file_name() != "session.lock" {
+            copy_tree(&e.path(), &to.join(e.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
+fn dir_bytes(dir: &Path) -> Result<u64> {
+    let mut n = 0;
+    for e in std::fs::read_dir(dir)? {
+        let e = e?;
+        n += if e.file_type()?.is_dir() {
+            dir_bytes(&e.path())?
+        } else {
+            e.metadata()?.len()
+        };
+    }
+    Ok(n)
+}
+
+#[cfg(windows)]
+fn link(src: &Path, dest: &Path) -> Result<()> {
+    // A junction: no admin rights or developer mode needed, unlike a symlink.
+    Ok(junction::create(src, dest)?)
+}
+
+#[cfg(unix)]
+fn link(src: &Path, dest: &Path) -> Result<()> {
+    Ok(std::os::unix::fs::symlink(src, dest)?)
+}
+
+/// Removes a link, never what it points at.
+fn remove_link(p: &Path) -> Result<()> {
+    // A Windows junction or directory symlink goes with remove_dir, a Unix symlink with remove_file.
+    std::fs::remove_dir(p)
+        .or_else(|_| std::fs::remove_file(p))
+        .with_context(|| format!("removing the link {}", p.display()))
+}
+
+pub use crate::install::Sum;
+
+/// A GET's JSON body.
+fn json(req: ureq::RequestBuilder<ureq::typestate::WithoutBody>) -> Result<serde_json::Value> {
+    let text = req
+        .header("User-Agent", "Meld2 (server setup)")
+        .call()?
+        .into_body()
+        .read_to_string()?;
+    Ok(serde_json::from_str(&text)?)
+}
+
+struct Download {
+    name: String,
+    url: String,
+    sha256: String,
+}
+
+/// The newest build of a Leaf or Paper version.
+fn jar(flavor: Flavor, version: &str) -> Result<Download> {
+    let get = |url: &str| json(ureq::get(url)).with_context(|| format!("asking {url}"));
+    let missing = || format!("no {flavor:?} build for {version}");
+    match flavor {
+        Flavor::Leaf => {
+            let builds = get(&format!("{LEAF_API}/versions/{version}/builds"))?;
+            let b = builds["builds"]
+                .as_array()
+                .and_then(|b| b.last())
+                .with_context(missing)?;
+            let dl = &b["downloads"]["primary"];
+            let name = dl["name"].as_str().with_context(missing)?.to_string();
+            Ok(Download {
+                url: format!(
+                    "{LEAF_API}/versions/{version}/builds/{}/downloads/{name}",
+                    b["build"]
+                ),
+                sha256: dl["sha256"].as_str().with_context(missing)?.into(),
+                name,
+            })
+        }
+        Flavor::Paper => {
+            let b = get(&format!("{PAPER_API}/versions/{version}/builds/latest"))?;
+            let dl = &b["downloads"]["server:default"];
+            Ok(Download {
+                name: dl["name"].as_str().with_context(missing)?.into(),
+                url: dl["url"].as_str().with_context(missing)?.into(),
+                sha256: dl["checksums"]["sha256"]
+                    .as_str()
+                    .with_context(missing)?
+                    .into(),
+            })
+        }
+    }
+}
+
+struct Plugin {
+    file: String,
+    url: String,
+    sha512: String,
+}
+
+/// The newest Modrinth build of `slug` for `version` (a stable one first),
+/// else for its family (`1.21`): Meld 1's `resolve_plugin`.
+fn plugin(slug: &str, version: &str) -> Result<Plugin> {
+    let loaders = r#"["paper","bukkit","spigot","folia"]"#;
+    let list = |game: Option<&str>| -> Result<Vec<serde_json::Value>> {
+        let url = format!("{MODRINTH_API}/project/{slug}/version");
+        let mut req = ureq::get(&url).query("loaders", loaders);
+        if let Some(g) = game {
+            req = req.query("game_versions", format!(r#"["{g}"]"#));
+        }
+        let v = json(req).with_context(|| format!("asking Modrinth for {slug}"))?;
+        Ok(v.as_array().cloned().unwrap_or_default())
+    };
+    let family: String = version.split('.').take(2).collect::<Vec<_>>().join(".");
+    let pick = |vs: Vec<serde_json::Value>| {
+        vs.iter()
+            .find(|v| v["version_type"] == "release")
+            .or(vs.first())
+            .cloned()
+    };
+    let v = match pick(list(Some(version))?) {
+        Some(v) => v,
+        None => pick(
+            list(None)?
+                .into_iter()
+                .filter(|v| {
+                    v["game_versions"].as_array().is_some_and(|g| {
+                        g.iter()
+                            .filter_map(|g| g.as_str())
+                            .any(|g| g == family || g.starts_with(&format!("{family}.")))
+                    })
+                })
+                .collect(),
+        )
+        .with_context(|| format!("{slug}: no build for Minecraft {version} on Modrinth"))?,
+    };
+    let files = v["files"].as_array().context("no files")?;
+    let f = files
+        .iter()
+        .find(|f| f["primary"] == true)
+        .or(files.first())
+        .context("no files")?;
+    let file = f["filename"].as_str().context("no file name")?;
+    if !file.ends_with(".jar") || file.contains(['/', '\\']) {
+        bail!("{slug}: unexpected file {file:?}");
+    }
+    Ok(Plugin {
+        file: file.into(),
+        url: f["url"].as_str().context("no url")?.into(),
+        sha512: f["hashes"]["sha512"].as_str().context("no sha512")?.into(),
+    })
+}
+
+/// Java's major version from `java -version` output (`"21.0.9"`, `"1.8.0_481"`).
+pub fn java_major(text: &str) -> Option<u32> {
+    let v = text.split("version \"").nth(1)?.split('"').next()?;
+    let mut parts = v.split(['.', '_', '-', '+']);
+    match parts.next()?.parse().ok()? {
+        1 => parts.next()?.parse().ok(),
+        n => Some(n),
+    }
+}
+
+/// The first Java of at least `need`: the one given, `JAVA_HOME`, the
+/// Modrinth app's runtimes, then `java` on PATH.
+pub fn find_java(given: Option<PathBuf>, need: u32) -> Result<PathBuf> {
+    let exe = if cfg!(windows) { "java.exe" } else { "java" };
+    let mut candidates: Vec<PathBuf> = given.into_iter().collect();
+    if let Some(home) = std::env::var_os("JAVA_HOME") {
+        candidates.push(PathBuf::from(home).join("bin").join(exe));
+    }
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        let meta = PathBuf::from(appdata).join("ModrinthApp/meta/java_versions");
+        let mut found: Vec<PathBuf> = std::fs::read_dir(meta)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path().join("bin").join(exe))
+            .collect();
+        found.sort();
+        candidates.extend(found.into_iter().rev());
+    }
+    candidates.push(PathBuf::from("java"));
+    let mut seen = vec![];
+    for c in candidates {
+        let out = std::process::Command::new(&c).arg("-version").output();
+        if let Ok(o) = out {
+            let text = String::from_utf8_lossy(&o.stderr).into_owned()
+                + &String::from_utf8_lossy(&o.stdout);
+            if let Some(m) = java_major(&text) {
+                if m >= need {
+                    return Ok(c);
+                }
+                seen.push(format!("{} is Java {m}", c.display()));
+            }
+        }
+    }
+    bail!(
+        "no Java {need} or newer found ({}); install one, or set [server] java or --java",
+        if seen.is_empty() {
+            "none at all".into()
+        } else {
+            seen.join(", ")
+        }
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn java_versions_and_names() {
+        assert_eq!(
+            java_major("java version \"21.0.9\" 2025-10-21 LTS"),
+            Some(21)
+        );
+        assert_eq!(java_major("openjdk version \"25\" 2025-09-16"), Some(25));
+        assert_eq!(java_major("java version \"1.8.0_481\""), Some(8));
+        assert_eq!(java_major("no java here"), None);
+        assert_eq!(level_name("Alps World"), "Alps_World");
+        assert_eq!(level_name("../x"), "x");
+        assert_eq!(level_name("??"), "world");
+    }
+
+    /// The WorldGuard ring of a bbox selection lands on the area Arnis
+    /// recorded for it, so on its `--world-border` (the Phase 1 e2e Vaduz
+    /// world: frame 47.14, 9.5215 at scale 1, area -128..127 x -112..111).
+    #[test]
+    fn worldguard_ring_matches_the_built_area() {
+        let dir = std::env::temp_dir().join(format!("meld2-wg-{}", std::process::id()));
+        let world = dir.join("saves/Vaduz");
+        std::fs::create_dir_all(&world).unwrap();
+        std::fs::write(
+            world.join("arnis_one_world.json"),
+            r#"{"origin_lat":47.14,"origin_lon":9.5215,"scale":1.0,"disable_height_limit":true,
+                "areas":[{"min_x":-128,"min_z":-112,"max_x":127,"max_z":111}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("p.toml"),
+            "format = 1\nname = \"V\"\noutput = \"saves\"\n[server]\n[[selection]]\nid = \"vaduz\"\nbbox = [47.1390, 9.5200, 47.1410, 9.5230]\nworld = \"Vaduz\"\n",
+        )
+        .unwrap();
+        let p = Project::load(&dir.join("p.toml")).unwrap();
+        let s = Server::of(&p).unwrap();
+        assert_eq!(s.conf.worlds, ["Vaduz"]);
+        let yml = s.regions_yml("Vaduz").unwrap().unwrap();
+        for want in [
+            "meld-vaduz:",
+            "type: poly2d",
+            "min-y: -2032",
+            "- {x: -128, z: -112}",
+            "- {x: 127, z: 111}",
+        ] {
+            assert!(yml.contains(want), "{want} not in\n{yml}");
+        }
+        assert!(!s.status(5).running && s.request_stop().is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}

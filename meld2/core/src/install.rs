@@ -7,7 +7,7 @@
 
 use crate::arnis::Arnis;
 use anyhow::{bail, Context, Result};
-use sha2::{Digest, Sha256};
+use sha2::{Digest, Sha256, Sha512};
 use std::fmt;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -172,18 +172,7 @@ pub fn install(data: &Path, version: &str) -> Result<PathBuf> {
     );
     eprintln!("downloading {url}");
     let part = dir.join(format!("{}.part", asset.name));
-    let mut body = ureq::get(&url)
-        .call()
-        .with_context(|| format!("downloading {url}"))?
-        .into_body()
-        .into_reader();
-    std::io::copy(&mut body, &mut std::fs::File::create(&part)?)
-        .with_context(|| format!("downloading {url}"))?;
-    let verified = verify(&part, asset.sha256);
-    if verified.is_err() {
-        let _ = std::fs::remove_file(&part);
-    }
-    verified?;
+    download(&url, &part, Sum::Sha256(asset.sha256))?;
     let tmp = dir.join(format!("{EXE}.tmp"));
     match asset.member {
         None => std::fs::rename(&part, &tmp)?,
@@ -206,10 +195,35 @@ pub fn install(data: &Path, version: &str) -> Result<PathBuf> {
     Ok(exe)
 }
 
-/// Fails unless the file's SHA-256 is `expected`.
-pub fn verify(file: &Path, expected: &str) -> Result<()> {
+/// The hash a download must have.
+#[derive(Clone, Copy)]
+pub enum Sum<'a> {
+    Sha256(&'a str),
+    Sha512(&'a str),
+}
+
+/// Downloads `url` to `to` through a `.part` file, kept only if its hash matches.
+pub fn download(url: &str, to: &Path, sum: Sum) -> Result<()> {
+    let part = to.with_extension("part");
+    let mut body = ureq::get(url)
+        .header("User-Agent", "Meld2")
+        .call()
+        .with_context(|| format!("downloading {url}"))?
+        .into_body()
+        .into_reader();
+    std::io::copy(&mut body, &mut std::fs::File::create(&part)?)
+        .with_context(|| format!("downloading {url}"))?;
+    if let Err(e) = verify(&part, sum) {
+        let _ = std::fs::remove_file(&part);
+        return Err(e);
+    }
+    std::fs::rename(&part, to)?;
+    Ok(())
+}
+
+fn digest<D: Digest>(file: &Path) -> Result<String> {
     let mut f = std::fs::File::open(file).with_context(|| format!("opening {}", file.display()))?;
-    let mut hash = Sha256::new();
+    let mut hash = D::new();
     let mut buf = vec![0; 1 << 16];
     loop {
         let n = f.read(&mut buf)?;
@@ -218,10 +232,18 @@ pub fn verify(file: &Path, expected: &str) -> Result<()> {
         }
         hash.update(&buf[..n]);
     }
-    let got = format!("{:x}", hash.finalize());
-    if got != expected {
+    Ok(hash.finalize().iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Fails unless the file has the expected hash.
+pub fn verify(file: &Path, sum: Sum) -> Result<()> {
+    let (name, expected, got) = match sum {
+        Sum::Sha256(e) => ("sha256", e, digest::<Sha256>(file)?),
+        Sum::Sha512(e) => ("sha512", e, digest::<Sha512>(file)?),
+    };
+    if !got.eq_ignore_ascii_case(expected) {
         bail!(
-            "{} has sha256 {got}, expected {expected}: the download is corrupt or not the pinned release",
+            "{} has {name} {got}, expected {expected}: the download is corrupt or not the pinned file",
             file.display()
         );
     }
@@ -329,9 +351,9 @@ mod tests {
         let f = d.join("asset");
         std::fs::write(&f, b"abc").unwrap();
         let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-        verify(&f, abc).unwrap();
+        verify(&f, Sum::Sha256(abc)).unwrap();
         std::fs::write(&f, b"abd").unwrap();
-        assert!(verify(&f, abc)
+        assert!(verify(&f, Sum::Sha256(abc))
             .unwrap_err()
             .to_string()
             .contains("expected"));

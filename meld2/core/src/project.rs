@@ -59,6 +59,8 @@ pub struct Project {
     pub selections: Vec<Selection>,
     #[serde(rename = "bake", default)]
     pub bakes: Vec<Bake>,
+    /// The Minecraft server its worlds are played on (`meld2 server`).
+    pub server: Option<crate::server::Conf>,
     /// The polygon selections as written, before they became parts.
     #[serde(skip)]
     pub shapes: Vec<Selection>,
@@ -209,6 +211,9 @@ impl Project {
             }
             check_bbox(&s.bbox).with_context(|| format!("selection {}", s.id))?;
             args::check(&s.settings).with_context(|| format!("in selection {}", s.id))?;
+        }
+        if let Some(server) = &self.server {
+            server.check(&self.worlds())?;
         }
         let mut bakes = HashSet::new();
         for b in &self.bakes {
@@ -378,6 +383,17 @@ impl Project {
             (u[2] + lat).min(85.0),
             (u[3] + lon).min(180.0),
         ]
+    }
+
+    /// The worlds the selections build, in the order they first appear.
+    pub fn worlds(&self) -> Vec<String> {
+        let mut out: Vec<String> = vec![];
+        for s in &self.selections {
+            if !out.contains(&s.world) {
+                out.push(s.world.clone());
+            }
+        }
+        out
     }
 
     /// The saves folder, resolved against the project file.

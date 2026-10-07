@@ -17,12 +17,17 @@
 //! | POST | `/api/projects/<name>/stop` | asks its run (here or a CLI one) to stop |
 //! | GET | `/api/projects/<name>/plan` | pieces, chunks and size per selection, and the disk verdict |
 //! | GET | `/api/status` | the state of every project Meld knows |
+//! | POST | `/api/projects/<name>/server/setup[?force=1&accept_eula=1&download=0]` | sets its `[server]` folder up |
+//! | POST | `/api/projects/<name>/server/start` | runs the server in this process; console lines as events |
+//! | POST | `/api/projects/<name>/server/stop` | asks it (here or from the CLI) to save and stop |
+//! | GET | `/api/projects/<name>/server[?lines=50]` | running, state, pid and the end of its log |
 //! | GET | `/api/events` | Server-Sent Events: `{project, id, note, ...}` per note |
 
 use anyhow::{bail, Result};
 use meld_core::plan;
 use meld_core::project::Project;
 use meld_core::queue::Note;
+use meld_core::server::Server as McServer;
 use meld_core::state::{self, State};
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -188,6 +193,12 @@ fn handle(ctx: &Arc<Ctx>, mut req: Request) {
         (Method::Post, ["api", "projects", name, "run"]) => run(ctx, name, param(query, "rebuild")),
         (Method::Post, ["api", "projects", name, "stop"]) => stop(ctx, name),
         (Method::Get, ["api", "projects", name, "plan"]) => plan_of(ctx, name),
+        (Method::Get, ["api", "projects", name, "server"]) => server_status(ctx, name, query),
+        (Method::Post, ["api", "projects", name, "server", "setup"]) => {
+            server_setup(ctx, name, query)
+        }
+        (Method::Post, ["api", "projects", name, "server", "start"]) => server_start(ctx, name),
+        (Method::Post, ["api", "projects", name, "server", "stop"]) => server_stop(ctx, name),
         _ => Ok((404, json!({"error": "no such endpoint"}))),
     };
     let r = result.unwrap_or_else(|e| (500, json!({"error": format!("{e:#}")})));
@@ -367,6 +378,64 @@ fn plan_of(ctx: &Ctx, name: &str) -> Result<Reply> {
         json!({"selections": selections, "need_mb": need, "free_mb": free,
                "min_free_mb": p.run.min_free_mb, "disk": verdict}),
     ))
+}
+
+fn server_status(ctx: &Ctx, name: &str, query: &str) -> Result<Reply> {
+    let p = load(ctx, name)?;
+    let lines = param(query, "lines")
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(50);
+    Ok((200, json!(McServer::of(&p)?.status(lines))))
+}
+
+fn server_setup(ctx: &Ctx, name: &str, query: &str) -> Result<Reply> {
+    let p = load(ctx, name)?;
+    let on = |k: &str| param(query, k).is_some_and(|v| v == "1" || v == "true");
+    let download = param(query, "download").is_none_or(|v| v != "0" && v != "false");
+    let mut lines = vec![];
+    match McServer::of(&p)?.setup(on("force"), on("accept_eula"), download, &mut |l| {
+        lines.push(l)
+    }) {
+        Ok(()) => Ok((200, json!({"ok": true, "lines": lines}))),
+        Err(e) => Ok((400, json!({"error": format!("{e:#}"), "lines": lines}))),
+    }
+}
+
+/// Starts the server in a thread of this process. An error in its first
+/// two seconds (no jar, no EULA, port taken, no Java) is the reply.
+fn server_start(ctx: &Arc<Ctx>, name: &str) -> Result<Reply> {
+    let p = load(ctx, name)?;
+    if McServer::of(&p)?.status(0).running {
+        return Ok((409, json!({"error": "the server is already running"})));
+    }
+    let (tx, rx) = mpsc::channel();
+    let (ctx, name) = (Arc::clone(ctx), name.to_string());
+    std::thread::spawn(move || {
+        let result = McServer::of(&p).and_then(|srv| {
+            srv.start(None, &|| false, &mut |line| {
+                ctx.publish(&name, "server", json!({"note": "console", "line": line}))
+            })
+        });
+        let end = match &result {
+            Ok(code) => json!({"note": "server-exit", "code": code}),
+            Err(e) => json!({"note": "server-exit", "error": format!("{e:#}")}),
+        };
+        ctx.publish(&name, "server", end);
+        let _ = tx.send(result);
+    });
+    match rx.recv_timeout(Duration::from_secs(2)) {
+        Ok(Err(e)) => Ok((400, json!({"error": format!("{e:#}")}))),
+        Ok(Ok(code)) => Ok((200, json!({"ok": true, "exited": code}))),
+        Err(_) => Ok((202, json!({"ok": true, "started": true}))),
+    }
+}
+
+fn server_stop(ctx: &Ctx, name: &str) -> Result<Reply> {
+    let p = load(ctx, name)?;
+    match McServer::of(&p)?.request_stop() {
+        Ok(()) => Ok((202, json!({"ok": true}))),
+        Err(e) => Ok((409, json!({"error": format!("{e:#}")}))),
+    }
 }
 
 fn status(ctx: &Ctx) -> Result<Reply> {

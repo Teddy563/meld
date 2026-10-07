@@ -20,6 +20,7 @@ ureq = "3"
 region_converter = { path = "../../region-convert" }
 
 [target.'cfg(windows)'.dependencies]
+junction = "1"
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",

@@ -297,6 +297,9 @@ pub fn run(
     let (bakes, sels) = lanes(project);
     r.run_lanes(bakes.into_iter().map(|b| vec![b]).collect(), 1)?;
     r.run_lanes(sels, project.run.jobs as usize)?;
+    if !r.stopping {
+        r.convert_worlds()?;
+    }
     Ok(r.summary)
 }
 
@@ -341,6 +344,87 @@ impl<'p> Runner<'_, 'p> {
             }
         }
         out
+    }
+
+    /// `[server] format = "blinear"`: each served world whose selections are
+    /// all built converts to its B_Linear copy (`convert:<world>`), unless its
+    /// regions did not change since the last conversion.
+    fn convert_worlds(&mut self) -> Result<()> {
+        let Ok(server) = crate::server::Server::of(self.project) else {
+            return Ok(());
+        };
+        if server.conf.format != crate::server::Format::Blinear {
+            return Ok(());
+        }
+        for world in &server.conf.worlds {
+            let key = format!("convert:{world}");
+            let built = self
+                .project
+                .selections
+                .iter()
+                .filter(|s| &s.world == world)
+                .all(|s| {
+                    self.state
+                        .selections
+                        .get(&s.id)
+                        .is_some_and(|st| st.status == Status::Done)
+                });
+            let src = self.saves.join(world);
+            let dest = crate::convert::sibling(&src);
+            let source = crate::convert::fingerprint(&src)?;
+            let why = if !built {
+                Some("not every selection of the world is built")
+            } else if crate::convert::previous(&dest).is_some_and(|c| c.source == source) {
+                Some("already converted, and the world did not change since")
+            } else {
+                None
+            };
+            if let Some(why) = why {
+                self.summary.skipped += 1;
+                (self.on)(&key, Note::Skipped(why));
+                continue;
+            }
+            let phase = Event::Phase {
+                name: format!("converting {world} to B_Linear in {}", dest.display()),
+                progress: Some(0.0),
+            };
+            (self.on)(&key, Note::Event(&phase));
+            let threads = (self.cores * self.project.run.cpu_target as usize / 100).max(1);
+            let (stop, on) = (self.stop, &mut *self.on);
+            let result =
+                crate::convert::convert(&src, &dest, threads, false, stop, &mut |d, of| {
+                    let progress = 100.0 * d as f64 / of.max(1) as f64;
+                    on(&key, Note::Event(&Event::Progress { progress }));
+                });
+            let st = self.state.selections.entry(key.clone()).or_default();
+            st.runs += 1;
+            st.command = source;
+            match result {
+                Ok(c) => {
+                    st.status = Status::Done;
+                    st.error = None;
+                    st.progress = 100.0;
+                    st.chunks = Some(c.chunks as u64);
+                    self.summary.done += 1;
+                }
+                Err(_) if stop() => {
+                    st.status = Status::Stopped;
+                    self.summary.stopped += 1;
+                    self.stopping = true;
+                }
+                Err(e) => {
+                    st.status = Status::Failed;
+                    st.error = Some(format!("{e:#}"));
+                    self.summary.failed += 1;
+                }
+            }
+            (self.on)(&key, Note::Finished(st));
+            self.state.save(self.dir)?;
+            if self.stopping {
+                break;
+            }
+        }
+        Ok(())
     }
 
     /// Why `sel` cannot build: a bake of its extract did not finish.
@@ -686,6 +770,75 @@ osm_pbf_url = "https://download.geofabrik.de/europe/liechtenstein-latest.osm.pbf
             .iter()
             .any(|a| a.ends_with("liechtenstein-latest.osm.pbf")));
         assert!(bake.iter().any(|a| a == "--prewarm"));
+    }
+
+    /// `[server] format = "blinear"`: a built world converts after the
+    /// builds, and is skipped while it does not change.
+    #[test]
+    fn built_worlds_convert_to_blinear_once() {
+        let dir = std::env::temp_dir().join(format!("meld2-qconv-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        crate::convert::tiny_world(&dir.join("saves/W"));
+        let mut project = Project::parse(
+            "format = 1
+name = \"C\"
+output = \"saves\"
+[server]
+format = \"blinear\"
+[[selection]]
+id = \"a\"
+bbox = [1.0, 2.0, 3.0, 4.0]
+world = \"W\"
+",
+        )
+        .unwrap();
+        project.path = dir.join("c.toml");
+        let state_dir = dir.join("state");
+        // `a` is built already, so no Arnis runs.
+        let mut st = State::default();
+        let command = Step::Build(&project.selections[0])
+            .invocation(&project, &project.output_dir(), Share::default())
+            .args;
+        st.selections.insert("a".into(), st_done(command));
+        st.save(&state_dir).unwrap();
+        let go = || {
+            let mut keys = vec![];
+            let s = run(
+                &project,
+                &Arnis::new("none"),
+                &[],
+                &state_dir,
+                &|| false,
+                &mut |id, n| {
+                    if let Note::Finished(_) | Note::Skipped(_) = n {
+                        keys.push(id.to_string());
+                    }
+                },
+            )
+            .unwrap();
+            (s, keys)
+        };
+        let (s, keys) = go();
+        assert_eq!((s.done, s.skipped), (1, 1), "{keys:?}");
+        assert!(dir
+            .join("saves/W [BLinear]/region/r.0.0.b_linear")
+            .is_file());
+        assert_eq!(
+            State::load(&state_dir).unwrap().selections["convert:W"].chunks,
+            Some(5)
+        );
+        let (s, keys) = go();
+        assert_eq!((s.done, s.skipped), (0, 2), "{keys:?}");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn st_done(command: Vec<String>) -> SelState {
+        SelState {
+            status: Status::Done,
+            command,
+            runs: 1,
+            ..Default::default()
+        }
     }
 
     /// The whole loop against a stand-in Arnis: both selections build, a

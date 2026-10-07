@@ -11,6 +11,7 @@ use meld_core::progress::Event;
 use meld_core::project::Project;
 use meld_core::queue::{self, Note};
 use meld_core::report::Report;
+use meld_core::server::Server;
 use meld_core::state::{self, State};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -92,6 +93,44 @@ enum Cmd {
     /// Which Arnis Meld uses, and installing the pinned release.
     #[command(subcommand)]
     Arnis(ArnisCmd),
+    /// A Leaf or Paper server for the project's worlds, from its `[server]` table.
+    #[command(subcommand)]
+    Server(ServerCmd),
+}
+
+#[derive(Subcommand)]
+enum ServerCmd {
+    /// Create or refresh the server folder: worlds (linked or copied), config,
+    /// WorldGuard regions, datapacks, and the verified server jar and plugins.
+    Setup {
+        project: PathBuf,
+        /// Set up over a folder Meld did not create, and replace copied worlds,
+        /// server.properties, regions.yml and datapacks that exist.
+        #[arg(long)]
+        force: bool,
+        /// You agree to the Minecraft EULA (https://aka.ms/MinecraftEULA).
+        #[arg(long)]
+        accept_eula: bool,
+        /// Write the folder only; download no jar or plugin.
+        #[arg(long)]
+        no_download: bool,
+    },
+    /// Run the server until it stops, printing its console. `meld2 server stop`
+    /// (from another shell, or the API) saves and stops it.
+    Start {
+        project: PathBuf,
+        /// Java to run it with [default: JAVA_HOME, the Modrinth app's, `java`].
+        #[arg(long)]
+        java: Option<PathBuf>,
+    },
+    /// Ask the running server to save and stop, and wait until it has.
+    Stop { project: PathBuf },
+    /// Whether the server runs, and the end of its log.
+    Status {
+        project: PathBuf,
+        #[arg(long, default_value_t = 20)]
+        lines: usize,
+    },
 }
 
 #[derive(Subcommand)]
@@ -166,6 +205,7 @@ fn real_main() -> Result<()> {
             Ok(())
         }
         Cmd::Arnis(cmd) => arnis_cmd(cmd),
+        Cmd::Server(cmd) => server_cmd(cmd),
         Cmd::Convert {
             world,
             out,
@@ -320,6 +360,54 @@ fn resolve(flag: Option<PathBuf>, project: Option<&Project>) -> Result<(Arnis, F
     let arnis = Arnis::new(&found.path);
     let probe = install::probe(&arnis)?;
     Ok((arnis, found, probe))
+}
+
+fn server_cmd(cmd: ServerCmd) -> Result<()> {
+    let (ServerCmd::Setup { project, .. }
+    | ServerCmd::Start { project, .. }
+    | ServerCmd::Stop { project }
+    | ServerCmd::Status { project, .. }) = &cmd;
+    let p = Project::load(project)?;
+    let srv = Server::of(&p)?;
+    match cmd {
+        ServerCmd::Setup {
+            force,
+            accept_eula,
+            no_download,
+            ..
+        } => srv.setup(force, accept_eula, !no_download, &mut |l| println!("{l}")),
+        ServerCmd::Start { java, .. } => {
+            let code = srv.start(java, &|| false, &mut |l| println!("{l}"))?;
+            println!("server exited ({code})");
+            Ok(())
+        }
+        ServerCmd::Stop { .. } => {
+            srv.request_stop()?;
+            println!("asked the server to stop; waiting");
+            let t = std::time::Instant::now();
+            while srv.status(0).running {
+                if t.elapsed() > std::time::Duration::from_secs(90) {
+                    bail!("still running after 90 s");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            println!("stopped");
+            Ok(())
+        }
+        ServerCmd::Status { lines, .. } => {
+            let s = srv.status(lines);
+            if s.running {
+                let pid = s.pid.map_or("?".into(), |p| p.to_string());
+                println!("running ({}), pid {pid}, {}", s.state, s.dir.display());
+            } else {
+                println!("not running, {}", s.dir.display());
+            }
+            for l in s.log {
+                println!("  {l}");
+            }
+            Ok(())
+        }
+    }
 }
 
 fn arnis_cmd(cmd: ArnisCmd) -> Result<()> {
