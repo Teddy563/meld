@@ -1,9 +1,9 @@
 //! Arnis `--progress json` (NDJSON v1). Arnis prints its usual human lines
 //! around the records, so only lines starting `{"v":1,` are records.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Event {
     /// A new status message; `progress` is null for one that leaves the bar alone.

@@ -9,5 +9,7 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+getrandom = "0.2"
 meld-core = { path = "../core" }
 serde_json.workspace = true
+tiny_http = "0.12"

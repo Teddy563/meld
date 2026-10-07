@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meld 2</title>
+<style>
+  :root { --bg: #fff; --fg: #1d1d1f; --mute: #6e6e73; --line: #d2d2d7; --bar: #2f7d4f; --bad: #b3261e; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161617; --fg: #f5f5f7; --mute: #a1a1a6; --line: #3a3a3c; --bar: #4fb477; --bad: #f2867f; } }
+  body { margin: 0 auto; max-width: 960px; padding: 16px; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 18px; } h2 { font-size: 15px; margin: 0 0 6px; }
+  section { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; } td { padding: 3px 6px 3px 0; vertical-align: middle; }
+  .mute { color: var(--mute); } .bad { color: var(--bad); }
+  .bar { height: 6px; background: var(--line); border-radius: 3px; min-width: 80px; }
+  .bar > div { height: 100%; background: var(--bar); border-radius: 3px; }
+  button { font: inherit; margin-right: 6px; }
+  pre { max-height: 240px; overflow: auto; font-size: 12px; background: var(--line); padding: 6px; border-radius: 6px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Meld 2 <span class="mute" id="conn">connecting…</span></h1>
+<div id="projects"></div>
+<h2>Log</h2>
+<pre id="log"></pre>
+<script>
+const token = new URLSearchParams(location.search).get("token") || "";
+const api = (path, opt = {}) =>
+  fetch(path, { ...opt, headers: { "X-Meld-Token": token } }).then(r => r.json());
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const logEl = document.getElementById("log");
+function log(line) {
+  logEl.textContent += line + "\n";
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function refresh() {
+  const list = await api("/api/projects");
+  document.getElementById("projects").innerHTML = list.map(p => {
+    if (p.error) return `<section><h2>${esc(p.name)}</h2><div class="bad">${esc(p.error)}</div></section>`;
+    const rows = Object.entries(p.state || {}).map(([id, s]) => {
+      const pct = Math.max(0, Math.min(100, s.progress || 0));
+      const pieces = s.pieces ? `${s.pieces_done}/${s.pieces} pieces` : "";
+      return `<tr><td>${esc(id)}</td><td>${esc(s.status)}</td><td>${pieces}</td>
+        <td><div class="bar"><div style="width:${pct}%"></div></div></td>
+        <td class="bad">${esc(s.error)}</td></tr>`;
+    }).join("");
+    return `<section><h2>${esc(p.title)} <span class="mute">${esc(p.name)}${p.running ? " · running" : ""}</span></h2>
+      <button onclick="act('${esc(p.name)}','run')">Run</button>
+      <button onclick="act('${esc(p.name)}','stop')">Stop</button>
+      <button onclick="plan('${esc(p.name)}')">Plan</button>
+      <table>${rows || `<tr><td class="mute">${p.selections.length} selection(s), not run yet</td></tr>`}</table></section>`;
+  }).join("") || `<p class="mute">No projects in the workspace yet.</p>`;
+}
+
+async function act(name, what) {
+  const r = await api(`/api/projects/${name}/${what}`, { method: "POST" });
+  log(`${name}: ${what} ${r.error ? "failed: " + r.error : "ok"}`);
+  refresh();
+}
+
+async function plan(name) {
+  const r = await api(`/api/projects/${name}/plan`);
+  if (r.error) return log(`${name}: plan failed: ${r.error}`);
+  r.selections.forEach(s => log(`${name} ${s.id}: ${s.pieces} pieces, ${s.todo_chunks}/${s.chunks} chunks to build, ~${s.est_mb.toFixed(1)} MB`));
+  log(`${name}: disk ${r.disk}, ~${r.need_mb.toFixed(0)} MB to write, ${r.free_mb} MB free`);
+}
+
+const es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+es.onopen = () => (document.getElementById("conn").textContent = "live");
+es.onerror = () => (document.getElementById("conn").textContent = "reconnecting…");
+let pending = null;
+es.onmessage = m => {
+  const e = JSON.parse(m.data);
+  const who = `[${e.project}${e.id ? " " + e.id : ""}]`;
+  if (e.note === "log") log(`${who} ${e.line}`);
+  else if (e.note === "event" && e.event.type === "piece") log(`${who} piece ${e.event.piece + 1}/${e.event.of} ${e.event.state}`);
+  else if (e.note === "event" && e.event.type === "transfer") log(`${who} ${e.event.stage} ${e.event.name} ${e.event.percent.toFixed(0)}%`);
+  else if (e.note === "event" && e.event.type === "error") log(`${who} error: ${e.event.message}`);
+  else if (e.note !== "event") log(`${who} ${e.note}${e.why ? ": " + e.why : ""}${e.error ? ": " + e.error : ""}`);
+  // Redraw at most twice a second while progress streams in.
+  pending = pending || setTimeout(() => { pending = null; refresh(); }, 500);
+};
+refresh().catch(e => log("cannot reach the API: " + e));
+</script>
+</body>
+</html>

@@ -14,6 +14,8 @@ use meld_core::state::{self, State};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+mod serve;
+
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
@@ -46,6 +48,18 @@ enum Cmd {
     Stop { project: PathBuf },
     /// Print an Arnis executable's version and capabilities.
     Caps {
+        #[arg(long)]
+        arnis: Option<PathBuf>,
+    },
+    /// Serve the JSON API and a status page; every request needs the printed token.
+    Serve {
+        /// Address to listen on. Off loopback (e.g. 0.0.0.0:7878), anyone on the
+        /// network who has the token can drive Meld, over plain HTTP.
+        #[arg(long, default_value = "127.0.0.1:7878")]
+        bind: String,
+        /// Folder of `<name>/project.toml` the API serves [default: <data>/workspace].
+        #[arg(long)]
+        dir: Option<PathBuf>,
         #[arg(long)]
         arnis: Option<PathBuf>,
     },
@@ -135,6 +149,26 @@ fn real_main() -> Result<()> {
             Ok(())
         }
         Cmd::Arnis(cmd) => arnis_cmd(cmd),
+        Cmd::Serve { bind, dir, arnis } => {
+            let token = match std::env::var("MELD2_TOKEN") {
+                Ok(t) if t.len() >= 16 => t,
+                Ok(t) if !t.is_empty() => bail!("MELD2_TOKEN must be at least 16 characters"),
+                _ => serve::new_token()?,
+            };
+            let workspace = dir.unwrap_or_else(|| state::data_dir().join("workspace"));
+            std::fs::create_dir_all(&workspace)?;
+            let server = tiny_http::Server::http(&bind)
+                .map_err(|e| anyhow::anyhow!("listening on {bind}: {e}"))?;
+            let addr = server.server_addr().to_ip().context("not an IP address")?;
+            println!("meld2 serve on http://{addr}/?token={token}");
+            println!("workspace: {}", workspace.display());
+            println!("token: {token} (header X-Meld-Token or Authorization: Bearer, or ?token=)");
+            if !addr.ip().is_loopback() {
+                println!("note: reachable from the network; every request needs the token, and traffic is plain HTTP (use a trusted LAN, an SSH tunnel or a TLS proxy)");
+            }
+            serve::serve(server, serve::Ctx::new(workspace, token, arnis));
+            Ok(())
+        }
         Cmd::Import { path, out } => {
             if import_any(&path, &out, 0)? == 0 {
                 bail!(

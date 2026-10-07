@@ -154,7 +154,7 @@ fn scalar(v: &Value) -> Option<String> {
 
 /// What the scheduler hands one job of a shared budget. A selection's own
 /// `threads`, `cpu_target`, `ram_budget_mb` or `workers` wins over it.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize)]
 pub struct Share {
     pub threads: Option<u32>,
     pub ram_budget_mb: Option<u64>,
