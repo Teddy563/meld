@@ -12,6 +12,12 @@ json
 2
 --scale
 0.5
+--ground-level
+-62
+--mode
+geo-terrain
+--height-multiplier
+1
 --seed
 42
 --no-buildings
@@ -48,6 +54,12 @@ json
 4
 --scale
 0.5
+--ground-level
+-62
+--mode
+geo-terrain
+--height-multiplier
+1
 --no-buildings
 --rocks
 --caves

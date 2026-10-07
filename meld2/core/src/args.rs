@@ -143,6 +143,63 @@ pub const SCHEMA: &str = include_str!("settings.json");
 /// Arnis's GUI default for Snow Line Y, sent with Manual when none is set.
 const SNOW_Y: i64 = 120;
 
+/// The settings that fix a One World's frame when it is created, with the
+/// value Meld uses when a project sets none (Arnis's CLI defaults, and the
+/// `def` of their rows in settings.json). Meld always passes them, so a world
+/// never takes its frame from whatever default the Arnis of the day has, and
+/// resetting a row to its default changes nothing on the command line.
+pub fn frame_defaults() -> [(&'static str, Value); 4] {
+    [
+        ("scale", Value::Float(1.0)),
+        ("ground_level", Value::Integer(-62)),
+        ("mode", Value::String("geo-terrain".into())),
+        ("height_multiplier", Value::Float(1.0)),
+    ]
+}
+
+/// `settings` with every frame setting it leaves out at Meld's default.
+pub fn with_frame(settings: &Settings) -> Settings {
+    let mut s = settings.clone();
+    for (k, v) in frame_defaults() {
+        s.entry(k.to_string()).or_insert(v);
+    }
+    s
+}
+
+/// Whether two saved command lines ask Arnis for the same thing. A command
+/// from before Meld passed the frame settings left out the defaults that Arnis
+/// applied anyway, so it still resumes.
+pub fn same_command(a: &[String], b: &[String]) -> bool {
+    let defaults: Vec<(String, String)> = frame_defaults()
+        .iter()
+        .filter_map(|(k, v)| {
+            let o = OPTS.iter().find(|o| o.key == *k)?;
+            Some((o.flag.to_string(), scalar(v)?))
+        })
+        .collect();
+    let strip = |c: &[String]| -> Vec<String> {
+        let mut out = Vec::with_capacity(c.len());
+        let mut i = 0;
+        while i < c.len() {
+            if c.get(i + 1)
+                .is_some_and(|v| defaults.contains(&(c[i].clone(), v.clone())))
+            {
+                i += 2;
+            } else {
+                out.push(c[i].clone());
+                i += 1;
+            }
+        }
+        out
+    };
+    a == b || strip(a) == strip(b)
+}
+
+/// A setting as text, the way it goes on the command line.
+pub fn text(settings: &Settings, key: &str) -> Option<String> {
+    settings.get(key).and_then(scalar)
+}
+
 /// Piece size, in regions per side.
 pub fn unit_regions(settings: &Settings) -> i64 {
     settings
@@ -238,7 +295,7 @@ pub fn build(sel: &Selection, settings: &Settings, saves: &Path, share: Share) -
             caps.push(c);
         }
     };
-    let mut settings = settings.clone();
+    let mut settings = with_frame(settings);
     let is = |s: &Settings, k: &str, v: &str| s.get(k).and_then(scalar).as_deref() == Some(v);
     if is(&settings, "snow_mode", "manual") && !settings.contains_key("snow_y") {
         settings.insert("snow_y".into(), Value::Integer(SNOW_Y));
@@ -527,5 +584,81 @@ snow_mode = \"peaks\"
         assert!(err.contains("cave-style") && err.contains("seed"), "{err}");
         let all: Vec<String> = inv.caps.iter().map(|c| c.to_string()).collect();
         require(&inv, &all).unwrap();
+    }
+
+    /// A frame setting goes on the command line whether the project sets it or
+    /// not, so unsetting one (or resetting it to its default) cannot move a
+    /// world's frame to Arnis's own default.
+    #[test]
+    fn frame_settings_are_always_explicit() {
+        let schema: serde_json::Value = serde_json::from_str(SCHEMA).unwrap();
+        let mut defs = std::collections::HashMap::new();
+        fn walk(v: &serde_json::Value, defs: &mut std::collections::HashMap<String, String>) {
+            match v {
+                serde_json::Value::Object(m) => {
+                    if let (Some(k), Some(d)) = (m.get("k").and_then(|k| k.as_str()), m.get("def"))
+                    {
+                        defs.insert(k.to_string(), d.to_string().trim_matches('"').to_string());
+                    }
+                    m.values().for_each(|x| walk(x, defs));
+                }
+                serde_json::Value::Array(a) => a.iter().for_each(|x| walk(x, defs)),
+                _ => {}
+            }
+        }
+        walk(&schema["sections"], &mut defs);
+        for (k, v) in frame_defaults() {
+            let ours = scalar(&v).unwrap();
+            let def: f64 = defs[k].parse().unwrap_or(f64::NAN);
+            assert!(
+                defs[k] == ours || def == ours.parse::<f64>().unwrap_or(f64::INFINITY),
+                "{k}: Meld passes {ours}, the settings form says {}",
+                defs[k]
+            );
+        }
+        let line = |toml: &str| {
+            let p = Project::parse(&format!(
+                "format = 1
+name = \"F\"
+output = \"s\"
+[[selection]]
+id = \"a\"
+bbox = [44.4, 26.1, 44.41, 26.11]
+world = \"buc\"
+settings = {{ {toml} }}
+"
+            ))
+            .unwrap();
+            build(
+                &p.selections[0],
+                &p.selections[0].settings,
+                Path::new("s"),
+                Share::default(),
+            )
+            .args
+            .join(" ")
+        };
+        let unset = line("");
+        for flag in [
+            "--scale 1",
+            "--ground-level -62",
+            "--mode geo-terrain",
+            "--height-multiplier 1",
+        ] {
+            assert!(unset.contains(flag), "{flag} missing: {unset}");
+        }
+        assert_eq!(line("ground_level = -62, scale = 1.0"), unset);
+        let words = |l: &str| l.split(' ').map(String::from).collect::<Vec<_>>();
+        let before = unset.replace(
+            " --ground-level -62 --mode geo-terrain --height-multiplier 1",
+            "",
+        );
+        assert!(before != unset && same_command(&words(&before), &words(&unset)));
+        let set = line("ground_level = 0");
+        assert!(!same_command(&words(&set), &words(&unset)));
+        assert!(
+            set.contains("--ground-level 0") && !set.contains("-62"),
+            "{set}"
+        );
     }
 }

@@ -53,7 +53,7 @@ pub fn decide(prev: Option<&SelState>, command: &[String]) -> Decision {
     let Some(prev) = prev else {
         return Decision::Run;
     };
-    let same = prev.command == command;
+    let same = args::same_command(&prev.command, command);
     match prev.status {
         Status::Done if same => Decision::Skip("already built"),
         Status::Done => Decision::Skip(
@@ -329,7 +329,10 @@ impl<'p> Runner<'_, 'p> {
                     None => decide(prev, &command),
                 },
                 // A cache step is redone unless it finished with this very command.
-                _ if prev.is_some_and(|p| p.status == Status::Done && p.command == command) => {
+                _ if prev.is_some_and(|p| {
+                    p.status == Status::Done && args::same_command(&p.command, &command)
+                }) =>
+                {
                     Decision::Skip("already done")
                 }
                 _ => Decision::Run,
