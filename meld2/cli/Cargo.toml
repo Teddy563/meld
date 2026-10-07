@@ -10,3 +10,4 @@ repository.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 meld-core = { path = "../core" }
+serde_json.workspace = true

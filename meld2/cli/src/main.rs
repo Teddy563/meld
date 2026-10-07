@@ -3,6 +3,7 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
 use meld_core::arnis::Arnis;
+use meld_core::import;
 use meld_core::install::{self, Found, Probe};
 use meld_core::plan::{self, Disk};
 use meld_core::progress::Event;
@@ -47,6 +48,15 @@ enum Cmd {
     Caps {
         #[arg(long)]
         arnis: Option<PathBuf>,
+    },
+    /// Convert Meld 1 projects (a project folder, its `projects/` folder or
+    /// the data folder) and presets to Meld 2 project files. Each starts a new world.
+    Import {
+        /// A Meld 1 project folder (with project.json), a folder of them, or a preset .json.
+        path: PathBuf,
+        /// Where to write `<slug>/project.toml` and `presets/<slug>.toml`.
+        #[arg(long, default_value = ".")]
+        out: PathBuf,
     },
     /// Which Arnis Meld uses, and installing the pinned release.
     #[command(subcommand)]
@@ -125,7 +135,99 @@ fn real_main() -> Result<()> {
             Ok(())
         }
         Cmd::Arnis(cmd) => arnis_cmd(cmd),
+        Cmd::Import { path, out } => {
+            if import_any(&path, &out, 0)? == 0 {
+                bail!(
+                    "no Meld 1 project.json or preset found in {}",
+                    path.display()
+                );
+            }
+            Ok(())
+        }
     }
+}
+
+/// Imports what `path` holds, looking two folders down (data dir, then
+/// `projects/`, then a project); returns how many it wrote.
+fn import_any(path: &Path, out: &Path, depth: u32) -> Result<usize> {
+    let read = |p: &Path| -> Result<serde_json::Value> {
+        let text =
+            std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display()))?;
+        serde_json::from_str(&text).with_context(|| format!("in {}", p.display()))
+    };
+    let slug = |p: &Path| {
+        p.file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "imported".into())
+    };
+    if path.is_file() {
+        let json = read(path)?;
+        if json.get("meld_preset").is_some() {
+            let imported = import::preset(&json)?;
+            let to = out.join("presets").join(format!("{}.toml", slug(path)));
+            return save_import(path, &to, imported).map(|_| 1);
+        }
+        let imported = import::project(&json, None)?;
+        return save_import(path, &out.join(slug(path)).join("project.toml"), imported).map(|_| 1);
+    }
+    let pj = path.join("project.json");
+    if pj.is_file() {
+        let name = slug(path);
+        // The gallery folder, from the projects folder's _org.json.
+        let org = path
+            .parent()
+            .map(|d| d.join("_org.json"))
+            .filter(|o| o.is_file())
+            .and_then(|o| read(&o).ok());
+        let folder = org.as_ref().and_then(|o| o["assign"][&name].as_str());
+        let mut imported = import::project(&read(&pj)?, folder)?;
+        if let Ok(grid) = read(&path.join("grid.json")) {
+            let cells = grid.as_object().map_or(0, |g| g.len());
+            imported.notes.push(format!(
+                "grid.json: {cells} cell(s) of the Meld 1 world are not carried; Meld 2 builds by pieces"
+            ));
+        }
+        save_import(&pj, &out.join(&name).join("project.toml"), imported)?;
+        return Ok(1);
+    }
+    let mut n = 0;
+    if depth < 2 {
+        let mut entries: Vec<PathBuf> = std::fs::read_dir(path)
+            .with_context(|| format!("reading {}", path.display()))?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .collect();
+        entries.sort();
+        for e in entries {
+            let preset = e.extension().is_some_and(|x| x == "json")
+                && read(&e).is_ok_and(|j| j.get("meld_preset").is_some());
+            if e.is_dir() || preset {
+                n += import_any(&e, out, depth + 1)?;
+            }
+        }
+    }
+    Ok(n)
+}
+
+/// Writes one import, never over an existing file, and says what became of each key.
+fn save_import(from: &Path, to: &Path, imported: import::Imported) -> Result<()> {
+    if to.exists() {
+        bail!("{} exists; move it or pick another --out", to.display());
+    }
+    std::fs::create_dir_all(to.parent().unwrap_or(Path::new(".")))?;
+    std::fs::write(to, &imported.toml)?;
+    println!("{} -> {}", from.display(), to.display());
+    let list = |what: &str, keys: &[String]| {
+        if !keys.is_empty() {
+            println!("  {what} ({}): {}", keys.len(), keys.join(", "));
+        }
+    };
+    list("mapped", &imported.mapped);
+    list("dropped on purpose", &imported.dropped);
+    list("NOT MAPPED", &imported.unmapped);
+    for note in &imported.notes {
+        println!("  note: {note}");
+    }
+    Ok(())
 }
 
 /// The project's `arnis`, resolved against the project file.
