@@ -147,6 +147,8 @@ jobs:
           v=${{ steps.v.outputs.version }}
           shopt -s nullglob
           for f in $b/nsis/*.exe; do cp "$f" "../../dist/Meld-$v-windows-x86_64-setup.exe"; done
+          # The plain app exe, no installer needed (WebView2 ships with Windows 10/11).
+          for f in ../target/${{ matrix.target }}/release/meld-gui.exe; do cp "$f" "../../dist/Meld-$v-windows-x86_64.exe"; done
           for f in $b/deb/*.deb; do cp "$f" "../../dist/Meld-$v-linux-x86_64.deb"; done
           for f in $b/appimage/*.AppImage; do cp "$f" "../../dist/Meld-$v-linux-x86_64.AppImage"; done
           for f in $b/dmg/*.dmg; do cp "$f" "../../dist/Meld-$v-macos-universal.dmg"; done
