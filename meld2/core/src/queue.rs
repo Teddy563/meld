@@ -172,10 +172,11 @@ pub enum Step<'a> {
 }
 
 impl Step<'_> {
-    /// The CPU share it runs at: `bake_cpu` for bakes and prewarms when set.
+    /// The CPU share it runs at: `bake_cpu` for bakes and prewarms, 75 % unset
+    /// (Arnis's Bake CPU Usage default).
     pub fn cpu_target(&self, run: &crate::project::Budget) -> u32 {
         match self {
-            Step::Bake(_) | Step::Prewarm(_) => run.bake_cpu.unwrap_or(run.cpu_target),
+            Step::Bake(_) | Step::Prewarm(_) => run.bake_cpu.unwrap_or(75),
             Step::Build(_) => run.cpu_target,
         }
     }
@@ -958,7 +959,10 @@ world = "W2"
         let w1: Vec<_> = calls.lines().filter(|l| l.contains(" W1 ")).collect();
         assert_eq!(w1.len(), 2, "{calls}");
         assert!(w1[0].ends_with("--prewarm ") && !w1[1].contains("--prewarm"));
-        assert!(notes.contains(&format!("b tree {}", cfg!(windows))), "{notes:?}");
+        assert!(
+            notes.contains(&format!("b tree {}", cfg!(windows))),
+            "{notes:?}"
+        );
         let s = State::load(&state_dir).unwrap();
         assert_eq!(s.selections["a"].pieces_done, 2);
         assert_eq!(s.selections["b"].chunks, Some(7));

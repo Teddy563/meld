@@ -112,6 +112,7 @@ const OPTS: &[Opt] = &[
     opt("osm_pbf", "--osm-pbf", Some("osm-pbf"), Val),
     opt("osm_pbf_url", "--osm-pbf-url", Some("osm-pbf"), Val),
     opt("osm_tiles_url", "--osm-tiles-url", Some("local-tile-archive"), Val),
+    opt("no_tile_archive", "--no-tile-archive", None, Switch),
     opt("overpass_url", "--overpass-url", Some("overpass-url"), Val),
     // process
     opt("workers", "--one-world-workers", Some("one-world-workers"), Val),
@@ -135,12 +136,12 @@ const EXTRA_ARGS: &str = "extra_args";
 /// Piece size when a project does not set one. Pieces are what makes a job resumable.
 pub const DEFAULT_UNIT_REGIONS: i64 = 4;
 
-/// Every key a selection may set, with whether it is a switch, for forms.
-pub fn keys() -> Vec<(&'static str, bool)> {
-    let mut keys: Vec<_> = OPTS.iter().map(|o| (o.key, o.kind != Val)).collect();
-    keys.extend([(UNIT_REGIONS, false), (PREWARM, true), (SNAP, false)]);
-    keys
-}
+/// The settings form: Arnis at Scale's Settings page over these keys, served
+/// at `/api/options`. `schema_covers_every_setting` keeps it in step with `OPTS`.
+pub const SCHEMA: &str = include_str!("settings.json");
+
+/// Arnis's GUI default for Snow Line Y, sent with Manual when none is set.
+const SNOW_Y: i64 = 120;
 
 /// Piece size, in regions per side.
 pub fn unit_regions(settings: &Settings) -> i64 {
@@ -164,8 +165,11 @@ pub fn check(settings: &Settings) -> Result<()> {
             // height and region format (Arnis y_bounds.rs, --region-format help)
             // and is Earth at rotation 0 (validate_args). B_Linear comes from a
             // conversion after the build (`[server] format = "blinear"`).
-            "min_y" | "max_y" | "region_format" | "rotation" | "body" => {
+            "min_y" | "max_y" | "region_format" | "rotation" | "body" | "snow_percent" => {
                 bail!("{key}: Arnis 3.4 refuses it with --one-world, which Meld 2 builds")
+            }
+            "snow_mode" if value.as_str() == Some("peaks") => {
+                bail!("snow_mode = \"peaks\": a One World refuses it; use \"manual\" with snow_y")
             }
             _ => match OPTS.iter().find(|o| o.key == key) {
                 Some(o) if o.kind == Val => scalar(value).is_some(),
@@ -234,8 +238,13 @@ pub fn build(sel: &Selection, settings: &Settings, saves: &Path, share: Share) -
             caps.push(c);
         }
     };
+    let mut settings = settings.clone();
+    let is = |s: &Settings, k: &str, v: &str| s.get(k).and_then(scalar).as_deref() == Some(v);
+    if is(&settings, "snow_mode", "manual") && !settings.contains_key("snow_y") {
+        settings.insert("snow_y".into(), Value::Integer(SNOW_Y));
+    }
     for o in OPTS {
-        let Some(v) = settings.get(o.key) else {
+        let Some(v) = settings.get(o.key).filter(|_| wanted(o.key, &settings)) else {
             continue;
         };
         match o.kind {
@@ -263,6 +272,23 @@ pub fn build(sel: &Selection, settings: &Settings, saves: &Path, share: Share) -
         args.extend(extra.iter().filter_map(Value::as_str).map(String::from));
     }
     Invocation { args, caps }
+}
+
+/// Whether a key goes on the command line beside the others. Arnis takes
+/// these only with another, and its GUI sends nothing for a control its
+/// parent disables; a value inherited from `[defaults]` must not break a run.
+fn wanted(key: &str, s: &Settings) -> bool {
+    let is = |k: &str, v: &str| s.get(k).and_then(scalar).as_deref() == Some(v);
+    match key {
+        "snow_y" => is("snow_mode", "manual"),
+        "grass_mix" => is("grass_texture", "true") || is("land_texture", "true"),
+        "land_mix" => is("land_texture", "true"),
+        "osm_pbf_url" => s.contains_key("osm_pbf"),
+        "tree_pack_mode" => s.contains_key("tree_pack_dir"),
+        // Arnis refuses both; Threads wins, as in its GUI.
+        "cpu_target" => !s.contains_key("threads"),
+        _ => true,
+    }
 }
 
 /// The prewarm of `inv`: the same options plus `--prewarm`, which fills the
@@ -344,8 +370,8 @@ scale = 0.5
 buildings = false
 caves = true
 cave_style = "vanilla"
-snow_mode = "peaks"
-snow_percent = 8.5
+snow_mode = "manual"
+land_mix = "prairie"
 rocks = true
 bushes = false
 map_item = false
@@ -361,7 +387,7 @@ settings = { unit_regions = 2, seed = 42, extra_args = ["--debug"] }
 id = "b"
 bbox = [47.15, 9.52, 47.16, 9.53]
 world = "Alps World"
-settings = { threads = 3 }
+settings = { threads = 3, cpu_target = 50, snow_y = 150 }
 "#;
 
     /// The exact command lines, so any change to them is a visible diff.
@@ -384,6 +410,111 @@ settings = { threads = 3 }
         let got = got.join("\n\n") + "\n";
         let golden = include_str!("../tests/fixtures/golden-args.txt").replace("\r\n", "\n");
         assert_eq!(got, golden, "\n--- got ---\n{got}");
+    }
+
+    /// Every setting Meld knows is in the form or hidden with a reason, and
+    /// the form names no key Meld would refuse.
+    #[test]
+    fn schema_covers_every_setting() {
+        fn walk<'a>(v: &'a serde_json::Value, seen: &mut Vec<&'a str>) {
+            match v {
+                serde_json::Value::Object(m) => {
+                    if let Some(k) = m.get("k").and_then(|k| k.as_str()) {
+                        if !k.starts_with('@') && !m.contains_key("keys") {
+                            seen.push(k);
+                        }
+                    }
+                    if let Some(keys) = m.get("keys").and_then(|k| k.as_object()) {
+                        seen.extend(keys.keys().map(String::as_str));
+                    }
+                    m.values().for_each(|x| walk(x, seen));
+                }
+                serde_json::Value::Array(a) => a.iter().for_each(|x| walk(x, seen)),
+                _ => {}
+            }
+        }
+        let schema: serde_json::Value = serde_json::from_str(SCHEMA).unwrap();
+        let mut seen = vec![];
+        walk(&schema["sections"], &mut seen);
+        let hidden = schema["hidden"].as_object().unwrap();
+        let run = [
+            "jobs",
+            "cpu_target",
+            "ram_budget_mb",
+            "min_free_mb",
+            "bake_cpu",
+        ];
+        let known: Vec<&str> = OPTS
+            .iter()
+            .map(|o| o.key)
+            .chain([UNIT_REGIONS, PREWARM, SNAP, EXTRA_ARGS])
+            .collect();
+        for k in &known {
+            assert!(
+                seen.contains(k) || hidden.contains_key(*k),
+                "{k} is neither in settings.json nor hidden"
+            );
+        }
+        for k in &seen {
+            assert!(
+                known.contains(k) || run.contains(k),
+                "settings.json names {k}, which Meld does not know"
+            );
+        }
+        // The server rows are [server] keys.
+        for row in schema["server"].as_array().unwrap() {
+            let k = row["k"].as_str().unwrap();
+            let conf: Result<crate::server::Conf, _> = toml::from_str(&format!(
+                "{k} = {}",
+                toml::Value::try_from(&row["def"]).map_or("[]".into(), |v| v.to_string())
+            ));
+            assert!(conf.is_ok(), "[server] {k}: {conf:?}");
+        }
+    }
+
+    /// A dependent goes only with its parent, as Arnis's GUI sends it.
+    #[test]
+    fn dependents_follow_their_parent() {
+        let args = |toml: &str| {
+            let p = Project::parse(&format!(
+                "format = 1
+name = \"D\"
+output = \"s\"
+[[selection]]
+id = \"a\"
+bbox = [47.1, 9.5, 47.11, 9.51]
+world = \"W\"
+settings = {{ {toml} }}
+"
+            ))
+            .unwrap();
+            build(
+                &p.selections[0],
+                &p.selections[0].settings,
+                Path::new("s"),
+                Share::default(),
+            )
+            .args
+            .join(" ")
+        };
+        assert!(args(r#"snow_mode = "manual""#).contains("--snow-y 120"));
+        assert!(!args("snow_y = 90").contains("--snow-y"));
+        let a = args("threads = 3, cpu_target = 50");
+        assert!(
+            a.contains("--threads 3") && !a.contains("--cpu-target"),
+            "{a}"
+        );
+        assert!(!args(r#"land_mix = "prairie""#).contains("--land-mix"));
+        assert!(args(r#"land_texture = true, land_mix = "prairie""#).contains("--land-mix prairie"));
+        assert!(Project::parse(
+            "format = 1
+name = \"D\"
+output = \"s\"
+[defaults]
+snow_mode = \"peaks\"
+"
+        )
+        .is_err());
     }
 
     #[test]

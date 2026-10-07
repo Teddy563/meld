@@ -555,3 +555,168 @@ Paths are compared after canonicalising, so `..` cannot dodge the check. A PUT t
 - Paper and Voxy runs;
 - serving Leaflet locally for offline maps;
 - confining `output`, `[server] dir` and datapack paths over the API to the workspace: today they can name any folder the user can write. That is not program execution, but it needs fixing before `serve` leaves a trusted LAN.
+
+## 10. Phase 6: settings parity with Arnis, and the panel
+
+The 2.0.0-beta.1 desktop app was "not that intuitive, and the settings don't correlate with Arnis". This pass makes the settings rail Arnis at Scale's Settings page (`arnis-scale-phase-6`: `src/gui/index.html`, `js/main.js`), row for row, and reworks the rail around the five steps of a build.
+
+**One table.** The form is `core/src/settings.json` (`args::SCHEMA`), served at `/api/options` and rendered by the page; the hand-written per-field table in the page is gone. A row holds Arnis's label, help line, tooltip, control, default, icon and dependency (`on`: enabled when; `show`: shown when) over a Meld key. `schema_covers_every_setting` fails when a key in `args::OPTS` is neither in the table nor under `hidden` with a reason, or when the table names a key Meld does not know; the `[server]` rows are checked against `server::Conf`.
+
+**Dependencies as Arnis sends them.** Arnis's GUI sends nothing for a control its parent disables. `args::build` now does the same for the keys Arnis refuses alone, so a value inherited from `[defaults]` cannot break a run: Snow Line Y only with Manual (and 120 when Manual has none), Grass Mix only with Grass or Land Texture, Land Mix only with Land Texture, Geofabrik Extract only with a PBF File, Tree Pack Mode only with a folder, and Threads wins over CPU Usage. `snow_mode = "peaks"` and `snow_percent` are refused on load like `min_y`: a One World refuses them. Bake CPU Usage defaults to 75 % (Arnis's default; it was `cpu_target`). `no_tile_archive` is new (Source: Overpass).
+
+### 10.1 Mapping: every Arnis setting to Meld 2
+
+Status: **same** (section, order, label, help, control, default and dependency as Arnis), **different** (in both; the difference is named), **missing** (Arnis only; hidden in Meld, the reason given), **Meld-only** (no row in Arnis's GUI; badged *Meld* or *CLI* in the rail). Meld keys are `[defaults]` / selection `settings` unless marked `[run]`; `@` is a project or selection field, not a setting.
+
+| Arnis section | Arnis label | Arnis control, default | Meld key | Meld control, default | Status |
+|---|---|---|---|---|---|
+| World | Game Mode | cards, Creative | `gamemode` | cards, Creative | same |
+| World | World Time | slider (clock), 12:00 | `world_time` | slider (clock), 12:00 = 6000 ticks | same |
+| World | World Type | segmented, Void | `world_type` | segmented, Void | same |
+| World | World Map Item | switch, on | `map_item` | switch, on | same |
+| World | Custom World Name | switch, off (then a name per run) | `@world` | text, per selection | different: every Meld selection names its One World |
+| World | One World | switch, off | — | — | missing: always on in Meld (section notice) |
+| Generation | Generation Mode | cards, Objects + Terrain | `mode` | cards, Objects + Terrain | same |
+| Generation | Additional Buildings | switch, on | `overture` | switch, on | same |
+| Generation | 3D Models & Props | switch, on | `use_3d` | switch, on | same |
+| Generation | Interior Generation | switch, off | `interior` | switch, off | same |
+| Generation | Signage | segmented, Basic | `signage` | segmented, Basic | same |
+| Terrain & Nature | Terrain Height | slider 0.25–4, 1.00× | `height_multiplier` | slider 0.25–4, 1.00× | same |
+| Terrain & Nature | Fill Ground | switch, off (off turns Caves off) | `fillground` | switch, off, same coupling | same |
+| Terrain & Nature | Caves | switch, off (on turns Fill Ground on) | `caves` | switch, off, same coupling | same |
+| Terrain & Nature | Real Tree Cover | switch, on | `canopy_height` | switch, on | same |
+| Terrain & Nature | Legacy trees | switch, off | `legacy_trees` | switch, off | same |
+| Terrain & Nature | Max Tree Size | segmented, Giant | `max_tree_size` | segmented, Giant | same (was a radio list with a picture) |
+| Building Facades | Facade Source | cards, Off | `building_facades` + `mapillary_facades` | cards, Off | same (one control over two keys) |
+| Building Facades | Mapillary Token | password field | — | note: `MAPILLARY_TOKEN` in Meld's environment | different: a credential stays out of the project file |
+| Building Facades | Facade Mode | segmented, Photos; shown for Mapillary | `mapillary_facade_mode` | same | same |
+| Building Facades | Facade Detail | segmented, Standard; shown unless Off | `facade_detail` | same | same |
+| Building Facades | Precompute Area | button | — | — | missing: an Arnis GUI action |
+| Map & Input | Bounding Box | text | `@bbox` | text, per selection; a polygon is read-only and says why | different: the map draws it |
+| Map & Input | World Scale | slider 0.05–2.5, 1.00 | `scale` | slider 0.05–2.5, 1.00 | same |
+| Map & Input | Rotation Angle | number, 0 | — | — | missing: One World refuses rotation |
+| Map & Input | Map Theme | select, Standard | — | — | missing: Meld's map is OpenStreetMap only |
+| Map & Input | Custom Map Source | text | — | — | missing (with Map Theme) |
+| Application | Language | select | — | — | missing: Meld is English only |
+| Application | Java Save Path | folder | `@output` | text, `saves` beside the project file | different: per project, relative |
+| Application | Bedrock Save Path | folder | — | — | missing: One World is Java only |
+| Application | Luanti Save Path | folder | — | — | missing: One World is Java only |
+| Application | Anonymous Crash Reports | switch, off | — | — | missing: Meld sends nothing |
+| Application | Clear Cache | button | — | — | missing: an Arnis GUI action |
+| Application | Mini Mode | switch, off | — | — | missing: the tray does it |
+| Advanced | Extend build height | switch, off | `disable_height_limit` | switch, off | same |
+| Advanced | Legacy Terrain | switch, off | `aws_only_elevation` | switch, off | same |
+| Advanced | Bake lighting | switch, off | `bake_lighting` | switch, off | same |
+| Advanced | Pre-generate Voxy LOD | switch, off | `voxy_lod` | switch, off | same |
+| Advanced | Luanti | switch, off | — | — | missing: One World is Java only |
+| Extra Features | Extra Features | switch, off | — | — | missing: always on in Meld (section notice) |
+| Extra Features › Performance | CPU Usage | slider 0–100, Auto; not with Threads | `cpu_target` (`[run]` on the project) | slider 0–100, Auto; not with Threads | same |
+| Extra Features › Performance | Threads | number, 0; not with CPU Usage | `threads` | number, 0; not with CPU Usage | same |
+| Extra Features › Performance | Memory Budget | number MB, 0 | `ram_budget_mb` (`[run]` on the project) | number MB, 0 | same |
+| Extra Features › Performance | Parallel Downloads | number 1–32, 16 | `max_downloads` | number 1–32, 16 | same |
+| Extra Features › Performance | Big Worlds | switch, on | — | — | missing: always on (Meld builds in pieces) |
+| Extra Features › Performance | Parallel Workers | select, Auto | `workers` | select, Auto | same |
+| Extra Features › Performance | Cell Size | select 2x2/4x4/8x8, 4x4 | `unit_regions` | select 2x2/4x4/8x8, 4x4 (another value in the file shows as such) | same |
+| Extra Features › Performance | Selection Snap | select, Fit Inside | `snap` | select Off/Fit Inside/Cover, Off | different: Meld keeps Off (the box as drawn) as its default, so existing projects build the same area |
+| Extra Features › Performance | Square Selection | switch, off | — | — | missing: a draw-time aid of Arnis's map |
+| Extra Features › Terrain | Snow | radio, Realistic | `snow_mode` | radio Realistic/Manual/Off, Realistic | different: Peaks is not offered, a One World refuses it |
+| Extra Features › Terrain | Snow Cap Share | slider, 6% (Peaks only) | `snow_percent` | — | missing: Peaks only (hidden, refused on load) |
+| Extra Features › Terrain | Snow Line Y | number, 120 (Manual only) | `snow_y` | number, 120, shown for Manual | same |
+| Extra Features › Terrain | Rocks | switch, off | `rocks` | switch, off | same |
+| Extra Features › Terrain | Bushes | switch, off | `bushes` | switch, off | same |
+| Extra Features › Terrain | Rock Density | slider 0–0.2, 0.02; needs Rocks | `rock_density` | same | same |
+| Extra Features › Terrain | Bush Density | slider 0–0.2, 0.05; needs Bushes | `bush_density` | same | same |
+| Extra Features › Roads | Road Detail | radio, Max | `road_detail` | radio, Max | same |
+| Extra Features › Roads | No Buildings | switch, off | `buildings` | switch, off (on writes `false`) | same |
+| Extra Features › Roads | Chest Loot Table | file, built-in; needs Interior | `loot_table` | text, built-in; needs Interior | different: no Browse button in a web page |
+| Extra Features › Fields | Field Layout | radio, Classic | `field_mix` | radio, Classic | same |
+| Extra Features › Fields | Farm Crops | rows from the layout | `farm_crops` | rows from the layout | same (was a text field) |
+| Extra Features › Fields | Parcel Size | slider 25–400, 100%; needs parcels | `field_scale` | same | same |
+| Extra Features › Trees | Tree Realm | realm grid, Auto | `tree_realm` | realm grid, Auto | same |
+| Extra Features › Trees | Tree Sizes | five rows, 100% | `tree_size_weights` | five rows 0–100, 100% | same |
+| Extra Features › Caves & Water | Cave Style | radio, All Mix; needs Caves | `cave_style` | same | same |
+| Extra Features › Caves & Water | Ores | radio, Normal; needs Caves | `cave_ores` | same | same |
+| Extra Features › Caves & Water | Cave Biomes | eight rows from the style; needs Caves | `cave_biomes` | same | same |
+| Extra Features › Caves & Water | Cave Seed | number, Default; needs Caves | `cave_seed` | same | same |
+| Extra Features › Caves & Water | Cave Datum Y | number step 16, Default; needs Caves | `cave_datum_y` | same | same |
+| Extra Features › Caves & Water | Climate Sampling | radio, Origin | `climate_mode` | radio, Origin | same |
+| Extra Features › Caves & Water | Climate Map | button | — | — | missing: an Arnis GUI action |
+| Extra Features › Caves & Water | River Bed | radio, Off | `river_bed` | radio, Off | same |
+| Extra Features › Caves & Water | Water Detail | radio, Default | `water_detail` | radio, Default | same |
+| Extra Features › Experimental | Region Format | select, Anvil | — | — | missing: One World refuses it; `[server] format = "blinear"` converts after the build |
+| Extra Features › Experimental | B_Linear Level | number, 6 | — | — | missing (with Region Format) |
+| Extra Features › Experimental | Grass Texture | switch, off | `grass_texture` | switch, off | same |
+| Extra Features › Experimental | Grass Mix | preset + rows, Default; needs a texture | `grass_mix` | preset + rows, Default | same (was a text field) |
+| Extra Features › Experimental | Land Texture | switch, off | `land_texture` | switch, off | same |
+| Extra Features › Experimental | Land Mix | preset + rows, Patchwork; needs Land Texture | `land_mix` | preset + rows, Patchwork | same (was a text field) |
+| Extra Features › Experimental | World Floor | number, Auto | — | — | missing: One World fixes its height |
+| Extra Features › Experimental | World Ceiling | number, Auto | — | — | missing: One World fixes its height |
+| Extra Features › Experimental | World Seed | number, Default | `seed` | number, Default | same |
+| Extra Features › Experimental | Props | select, Auto | `props` | select, Auto | same |
+| Extra Features › Experimental | Prop Families | 15 checkboxes, all (Custom) | `props` | 15 checkboxes, all, under Custom | same |
+| Extra Features › Experimental | Props Minimum Scale | number, Off; not with None | `props_min_scale` | same | same |
+| Extra Features › Experimental | Tree Pack Folder | folder | `tree_pack_dir` | text | different: no Browse button |
+| Extra Features › Experimental | Tree Pack Mode | select, Add; needs a folder | `tree_pack_mode` | same | same |
+| Extra Features › Experimental | Tree Pack Layout | two buttons | — | — | missing: an Arnis GUI action |
+| Extra Features › Experimental | World Border | switch, off | `world_border` | switch, off | same |
+| Extra Features › Experimental | Redraw One World Map | button | — | — | missing: an Arnis GUI action |
+| OSM Data Source | Download Plan | panel + button | — | Plan in the Generate card | different: Meld's Plan (pieces, size, disk) |
+| OSM Data Source | Source | select, Arnis Tile Archive | `osm_pbf` + `no_tile_archive` | select Archive/Overpass/Region Download, Archive | different: Local File and Local Archive are not offered (no `--file`, no arnis-tiles) |
+| OSM Data Source | Archive URL | text; Archive | `osm_tiles_url` | text; Archive | same |
+| OSM Data Source | Archive Folder | folder; Local Archive | `osm_tiles_url` | — | different: a folder goes in Archive URL |
+| OSM Data Source | arnis-tiles Path | text | — | — | missing: Meld does not run arnis-tiles |
+| OSM Data Source | Overpass Servers | text; Overpass | `overpass_url` | text; Overpass | same |
+| OSM Data Source | Local File | file; Local File | — | — | missing (with that source) |
+| OSM Data Source | PBF File | file, Geofabrik; Region Download | `osm_pbf` | text, Geofabrik; Region Download | same |
+| OSM Data Source | Bake Selection | button | `[[bake]]` | a list of bakes, run before the builds | different: a step of the run |
+| OSM Data Source | Bake CPU Usage | slider 10–100, 75% | `bake_cpu` (`[run]`) | slider 10–100, 75% | same (Meld's default was CPU Usage) |
+| OSM Data Source | Offline Mode | switch, off | `offline` | switch, off | same |
+| OSM Data Source | Download Area For Offline Use | button | `prewarm` | switch, off | different: a download step before each build |
+| OSM Data Source | Warm Caches Before Building Pieces | switch, off; not offline | `prewarm_first` | same | same |
+| OSM Data Source | Storage | panel | — | — | missing: an Arnis GUI view |
+| — | — | — | `@id` (World) | text, selection | Meld-only: the selection's name |
+| — | — | — | `overture_source` (Generation) | select, Auto | Meld-only (CLI) |
+| — | — | — | `facade_px` (Building Facades) | number, 16 | Meld-only (CLI) |
+| — | — | — | `origin` (Map & Input) | text, Auto | Meld-only (CLI): pins the One World frame |
+| — | — | — | `ground_level` (Map & Input) | number, -62 | Meld-only (CLI) |
+| — | — | — | `@name` (Application) | text | Meld-only: the project's title |
+| — | — | — | `extra_args` (Advanced) | text | Meld-only: flags Meld does not model |
+| — | — | — | `jobs` (`[run]`, Performance) | number, 1 | Meld-only: selections at once |
+| — | — | — | `min_free_mb` (`[run]`, Performance) | number MB, 1024 | Meld-only: the disk check |
+| — | — | — | `osm_pbf_url` (OSM, Region Download) | text | Meld-only: pins the Geofabrik extract for bakes |
+| — | — | — | `[server]` (12 rows, Server card) | rendered from the same table | Meld-only |
+
+**Counts:** 104 Arnis rows (actions such as buttons included): same 65, different 13, missing 26; Meld-only 11 (the last counting the `[server]` card as one).
+
+### 10.2 The panel
+
+- **Flow.** The Generate card shows the five steps (Project, Draw, Settings, Plan, Generate) with the current one ringed, one line on what to do next (with links: Projects; draw a rectangle or polygon), and the next action as the yellow button: Plan before a plan, Generate after it, Stop while running, Resume after a stop. Every disabled button says why. The Plan's per-selection text moved into the Selections list and the left Build card.
+- **Selections**: name, world, size in km, pieces (after a Plan), status with progress, and how many values it overrides. A click picks it on the map and for the settings (a second click goes back to all selections). Empty state: "No selections yet. Draw a rectangle or a polygon"; both links start the drawing tool.
+- **Settings for**: all selections (the project's `[defaults]`) or one, with the override count in the picker. In a selection, an overridden row is yellow with "Overrides All selections: X" and Reset; Reset all clears the selection's overrides. On the project, a row changed from Arnis's default shows that default and Reset, and "Overridden in s2" names the selections that differ. *Changed only* filters to those rows.
+- **Search** hides the rows that do not match and the groups and sections left empty, and says when nothing matches. Sections and groups remember being open (local storage; a search does not change it, and an edit no longer closes them).
+- **No dead ends**: a disabled row greys and says why (Arnis's own help when it says so, else "Requires Caves (Terrain & Nature)."); a hidden row cannot apply (another source's field, Snow Line Y without Manual).
+- **Left**: Build (progress weighted over every planned piece, pieces and steps, ETA, size and disk), Workers, Log (with the live-events chip, which used to sit on Build).
+- **Arnis / Server** cards show their state and next action on the head (ready / missing, Install; not set up / stopped / running), above the settings; Arnis opens itself when missing.
+- **Advanced: Project File** is the last card, collapsed: the TOML editor.
+- **Layout**: one spacing scale (4/8/12/16) and one radius scale (6/8/10/12), which are Arnis's literals; rails of 300/384 px (264/360 below 1280 wide, 320/440 from 1800), with Leaflet's controls, the coordinates and the Projects dialog placed from them; icons 16 px in text and buttons, 18 in card heads, 20 in rows; preview pictures float so mix lists get the full width; the map fits selections between the rails; no horizontal scroll at 1000, 1280, 1600 or 1920 (checked in the shots).
+
+### 10.3 Ponytail audit
+
+| Finding | Verdict |
+|---|---|
+| The page's hand-written `SECTIONS` table (per field, in JS) beside `/api/options`' key list: two tables that drift | APPLIED: one `settings.json`, rendered by the page, checked by a test |
+| "Other Arnis Settings" for keys the table lacked | APPLIED: the drift test replaces it |
+| `args::keys()`, used only by `/api/options` | APPLIED: removed |
+| The server form's own field table and render loop (`SRV`), a copy of the settings tile code | APPLIED: its rows are in `settings.json` and render through the same `tile()` and change handler |
+| Per-type `wire()` handlers bound again on every render | APPLIED: one delegated change/input/click handler per container |
+| `SECTIONS_PREVIEWS` filled during rendering, plus a preview lambda per block | APPLIED: a `PICTURE` map keyed by block |
+| `openProject(name, keep, fresh)` with two booleans | APPLIED: `openProject(name, fresh)`; the map fits only on the first open |
+| 13 unused Lucide symbols in the sprite | APPLIED: removed |
+| Duplicated wordmark comment, two `*` rules, unused `.search-hit`, `.group-head` and `.mix-list.rows` | APPLIED: removed |
+| `/api/status`, not used by the page | SKIPPED: public API, the only view of projects run from the CLI outside the workspace |
+| `param()`'s hand-rolled percent decoding | SKIPPED: a few lines instead of a URL crate |
+| Constant-time token compare | SKIPPED: security |
+| The `files!` macro in `assets.rs` | SKIPPED: it is the embed list, and every picture is used (`tree-size-*` by the Tree Sizes picture, `grass-mix-*`/`land-mix-*` by the mixes) |
+| `serve.rs`'s `arnis()` and `meld2 arnis status` both probing Arnis | SKIPPED: one JSON, one text; sharing would add a type for two callers |
+
+**e2e in the real window** (`work/meld2-e2e/p6ux/`: `drive.cjs` over WebView2's debugging port, p5's `win.ps1` for the 1600×900 client; fresh `MELD2_HOME` with the pinned Arnis 3.4.0-beta.1): no project (step 1, Projects link) → new `p6ux` (step 2, draw hint) → a rectangle started from the hint's link (Vaduz) and a polygon from the toolbar (Schaan) → project default Cell Size 2x2 → s1 picked from the list, World Name Vaduz, Signage None marked "Overrides All selections: Basic", Reset removed it, set again, *Changed only* showed only it → s2 Schaan; Cave Style greyed "Requires Caves (Terrain & Nature)."; search "cave" left only the cave rows → Plan: 8 pieces, 63 MB, disk ok, the primary moved to Generate → Generate, Stop after 2 of s1's 4 pieces (Resume became the primary) → app restarted, Resume: s1's pieces 2 and 3 skipped, 1 and 4 built, then s2's two parts; 8/8 pieces, 0 chunks missing. No page errors. Screenshots `real-*.png`; before/after at 1000/1280/1600/1920 `before-*.png` / `after-*.png`; `compare-caves-and-water.png`.

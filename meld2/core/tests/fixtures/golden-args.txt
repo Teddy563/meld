@@ -20,9 +20,9 @@ json
 --cave-style
 vanilla
 --snow-mode
-peaks
---snow-percent
-8.5
+manual
+--snow-y
+120
 --map-item
 false
 --one-world-workers
@@ -54,9 +54,9 @@ json
 --cave-style
 vanilla
 --snow-mode
-peaks
---snow-percent
-8.5
+manual
+--snow-y
+150
 --map-item
 false
 --one-world-workers

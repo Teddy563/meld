@@ -36,7 +36,7 @@
 //! | GET | `/api/cache`; POST `/api/cache/clear?what=P\|all` | the Arnis cache's parts and sizes; empty one |
 //! | POST | `/api/bench` | starts a bench (`meld_core::bench::Request` as JSON) |
 //! | GET | `/api/bench[/<id>]` | the benches; one report |
-//! | GET | `/api/options` | the setting keys a selection may use, for forms |
+//! | GET | `/api/options` | the settings form: Arnis's sections, rows and defaults over Meld's keys (`core/src/settings.json`) |
 //! | GET | `/api/arnis` | which Arnis Meld would use, its version and capabilities |
 //! | POST | `/api/arnis/install` | downloads and verifies the pinned Arnis |
 //! | GET | `/api/events` | Server-Sent Events: `{project, id, note, ...}` per note |
@@ -226,7 +226,9 @@ fn handle(ctx: &Arc<Ctx>, mut req: Request) {
         (Method::Get, ["api", "events"]) => return events(ctx, req),
         (Method::Get, ["api", "status"]) => status(ctx),
         (Method::Get, ["api", "projects"]) => list(ctx),
-        (Method::Get, ["api", "options"]) => Ok((200, options())),
+        (Method::Get, ["api", "options"]) => serde_json::from_str(meld_core::args::SCHEMA)
+            .map(|v| (200, v))
+            .map_err(Into::into),
         (Method::Get, ["api", "arnis"]) => arnis(ctx),
         (Method::Post, ["api", "arnis", "install"]) => arnis_install(),
         (Method::Get, ["api", "system"]) => Ok((200, system_now(ctx))),
@@ -922,14 +924,6 @@ fn bench_get(id: &str) -> Result<Reply> {
     }
 }
 
-fn options() -> Value {
-    let keys: Vec<Value> = meld_core::args::keys()
-        .into_iter()
-        .map(|(key, switch)| json!({"key": key, "switch": switch}))
-        .collect();
-    json!(keys)
-}
-
 /// Which Arnis a run would use (never downloads), with its version and capabilities.
 fn arnis(ctx: &Ctx) -> Result<Reply> {
     let data = state::data_dir();
@@ -1072,10 +1066,7 @@ mod tests {
             "{body}"
         );
         let (code, body) = call(&addr, "GET", "/api/options", t, "");
-        assert!(
-            code == 200 && body.contains(r#""key":"caves","switch":true"#),
-            "{body}"
-        );
+        assert!(code == 200 && body.contains(r#""k":"caves""#), "{body}");
         assert_eq!(call(&addr, "GET", "/api/projects/..%2Fx", t, "").0, 400);
         assert_eq!(call(&addr, "POST", "/api/projects/nope/run", t, "").0, 404);
         let (code, body) = call(&addr, "GET", "/api/projects/api", t, "");
