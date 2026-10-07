@@ -1,0 +1,12 @@
+[package]
+name = "meld2"
+description = "Meld 2 command line: build projects of many selections through Arnis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+meld-core = { path = "../core" }
