@@ -226,24 +226,27 @@
   .stat b { color: var(--ui-text); font-weight: 600; }
   .report { display: flex; flex-direction: column; gap: var(--sp-1); background: var(--ui-tile); border: 1px solid var(--ui-tile-border); border-radius: var(--r-lg); padding: 10px var(--sp-3); }
   .report .big { font-size: 22px; font-weight: 700; color: var(--ui-accent); font-variant-numeric: tabular-nums; line-height: 1.2; }
-  .bar { height: 8px; background: var(--ui-field); border-radius: 4px; overflow: hidden; }
-  .bar > i { display: block; height: 100%; background: var(--run); width: 0; transition: width .3s ease; }
-  .bar > i.ok { background: var(--ok); } .bar > i.bad { background: var(--ui-danger); }
+  /* Arnis's progress bar: a pill, the fill with a drifting sheen while it moves. */
+  .bar { height: 10px; background: var(--ui-field); border-radius: 5px; overflow: hidden; position: relative; }
+  .bar > i { display: block; height: 100%; background: var(--ui-accent); width: 0; transition: width .4s; position: relative; overflow: hidden; border-radius: 5px; }
+  .bar > i::after { content: ""; position: absolute; inset: 0; pointer-events: none; background-image: repeating-linear-gradient(45deg, transparent 0, transparent 6px, rgba(255,255,255,.18) 8px, rgba(255,255,255,.18) 11px, transparent 13px, transparent 16px); animation: bar-sheen 2s linear infinite; }
+  .bar > i.ok { background: var(--ok); } .bar > i.bad { background: var(--ui-danger); } .bar > i.idle { background: var(--ui-muted); }
+  .bar > i.ok::after, .bar > i.bad::after, .bar > i.idle::after { animation: none; background: none; }
+  @keyframes bar-sheen { from { background-position: 0 0; } to { background-position: 22.627px 0; } }
+  @media (prefers-reduced-motion: reduce) { .bar > i::after { animation: none; } }
+  .barrow { display: flex; align-items: center; gap: var(--sp-2); }
+  .barrow .bar { flex: 1; }
+  .barrow .pct { flex: none; min-width: 46px; text-align: right; font-size: 12px; font-weight: 700; color: var(--ui-accent); font-variant-numeric: tabular-nums; }
   .chip { flex: none; padding: 1px var(--sp-2); font-size: 11.5px; line-height: 18px; border-radius: 9px; background: rgba(255,255,255,.08); color: var(--ui-muted); white-space: nowrap; }
   .chip:empty { display: none; }
   .chip.st-running { background: rgba(254,204,68,.16); color: var(--ui-accent); }
   .chip.st-done { background: rgba(76,175,80,.16); color: #7fd283; }
   .chip.st-failed { background: rgba(207,102,121,.18); color: var(--err); }
-  .wjob { display: flex; gap: 10px; align-items: flex-start; padding: var(--sp-2) 0; border-top: 1px solid rgba(255,255,255,.07); }
-  .wnum { flex: none; min-width: 40px; text-align: center; font-size: 12px; font-weight: 700; padding: var(--sp-1) 6px; border-radius: var(--r-sm); color: var(--ui-on-accent); background: var(--ui-muted); font-variant-numeric: tabular-nums; }
-  .wnum.running { background: var(--ui-accent); } .wnum.done, .wnum.skipped { background: var(--ok); } .wnum.failed { background: var(--ui-danger); color: #fff; }
+  .wjob { padding: var(--sp-2) 0; border-top: 1px solid rgba(255,255,255,.07); }
   .wjbody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
   .wjtop { display: flex; justify-content: space-between; gap: 6px; font-size: 13px; }
   .wjpct { font-weight: 700; color: var(--ui-accent); font-variant-numeric: tabular-nums; }
   .wjmsg { font-size: 11.5px; color: var(--ui-muted); overflow-wrap: anywhere; }
-  .pieces { display: flex; flex-wrap: wrap; gap: 2px; }
-  .pieces i { width: 8px; height: 8px; border-radius: 2px; background: var(--plan); }
-  .pieces i.start, .pieces i.retry { background: var(--run); } .pieces i.done, .pieces i.skipped { background: var(--ok); } .pieces i.failed { background: var(--ui-danger); }
   #log { font: 11px/1.45 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; color: var(--ui-muted); white-space: pre-wrap; max-height: 260px; overflow-y: auto; overflow-wrap: anywhere; }
   #log:empty::before { content: "What a run says appears here."; color: var(--ui-faint); }
   .legend { display: flex; flex-wrap: wrap; gap: var(--sp-1) 10px; font-size: 11.5px; color: var(--ui-muted); }
@@ -270,10 +273,13 @@
   .wtop { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
   .wtop .sub { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ovr-n { color: var(--ui-accent); white-space: nowrap; }
-  #targetBar { position: sticky; top: calc(-1 * var(--sp-3)); z-index: 2; margin: 0 calc(-1 * var(--sp-3)); padding: 10px var(--sp-3); background: var(--ui-sidebar); border-top: 1px solid var(--ui-card-border); border-bottom: 1px solid var(--ui-card-border); display: flex; flex-direction: column; gap: var(--sp-2); }
+  /* The search stays on top while the rail scrolls; "Settings for" sticks just under it. */
+  #railHead { --head-h: calc(var(--field-h) + 2 * var(--sp-2) + 1px); position: sticky; top: calc(-1 * var(--sp-3)); z-index: 3; margin: calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) 0; padding: var(--sp-2) var(--sp-3); background: var(--ui-sidebar); border-bottom: 1px solid var(--ui-card-border); display: flex; align-items: center; gap: var(--sp-2); min-height: var(--head-h); box-sizing: border-box; }
+  #railHead #railSearch { flex: 1; width: auto; height: var(--field-h); border-radius: var(--r-md); }
+  #targetBar { position: sticky; top: calc(-1 * var(--sp-3) + var(--field-h) + 2 * var(--sp-2) + 1px); z-index: 2; margin: 0 calc(-1 * var(--sp-3)); padding: 10px var(--sp-3); background: var(--ui-sidebar); border-top: 1px solid var(--ui-card-border); border-bottom: 1px solid var(--ui-card-border); display: flex; flex-direction: column; gap: var(--sp-2); }
   #targetBar.on-sel { box-shadow: inset 3px 0 0 var(--ui-accent); }
   #targetBar .row > span { flex: none; font-size: 13px; color: var(--ui-muted); }
-  #targetBar select, #railSearch { flex: 1; width: auto; }
+  #targetBar select { flex: 1; width: auto; }
   #targetBar.on-sel select { border-color: var(--ui-accent); }
   .target-note { font-size: 12px; line-height: 1.45; color: var(--ui-muted); }
   .target-note:empty { display: none; }
@@ -383,7 +389,7 @@
       <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-hard-drive"/></svg></span><div><h3>Build</h3><p id="projLine">No project open.</p></div><span id="runChip" class="chip"></span></div>
       <div class="report">
         <div><span id="runPct" class="big">–</span> <span class="sub">built</span></div>
-        <div class="bar"><i id="runBar"></i></div>
+        <div class="barrow"><div class="bar"><i id="runBar"></i></div></div>
         <div class="stat" id="runLine">Open a project to see its progress.</div>
         <div class="stat" id="etaLine"></div>
         <div class="stat" id="estLine"></div>
@@ -412,6 +418,7 @@
   <div id="credit">Arnis by <a href="https://github.com/louis-e/arnis" target="_blank" rel="noopener">louis-e</a> · Meld by <a href="https://github.com/Teddy563/meld" target="_blank" rel="noopener">Teddy563</a></div>
 
   <div id="side">
+    <div id="railHead"><input id="railSearch" type="search" placeholder="Search settings…" autocomplete="off" aria-label="Search settings"><label class="chk" title="Show only the values set here"><input type="checkbox" id="onlySet">Changed only</label></div>
     <div class="card" id="cardRun">
       <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-play"/></svg></span><div><h3>Generate</h3><p>Five steps to a world</p></div></div>
       <div class="card-body">
@@ -447,7 +454,6 @@
     <div id="targetBar">
       <div class="row"><span>Settings for</span><select id="target" aria-label="Settings for"></select></div>
       <div id="targetNote" class="target-note"></div>
-      <div class="row"><input id="railSearch" type="search" placeholder="Search settings…" autocomplete="off" aria-label="Search settings"><label class="chk" title="Show only the values set here"><input type="checkbox" id="onlySet">Changed only</label></div>
     </div>
     <div id="settingsCards" style="display:contents"></div>
     <div class="empty" id="searchEmpty" hidden></div>
@@ -1075,7 +1081,7 @@ function renderSelections() {
       <i class="dot" style="background:${colour[st]}"></i>
       <div class="wmain"><div class="wtop"><b>${esc(s.id)}</b><span class="sub">${esc(s.world)}</span><span class="chip st-${st}">${STATUS[st]}${st === "running" || (pct > 0 && pct < 100) ? ` ${pct.toFixed(0)} %` : ""}</span></div>
         <div class="sub">${sizeOf(s)}${n ? ` · <span class="ovr-n">${plural(n, "override")}</span>` : ""}</div>
-        ${pct > 0 && pct < 100 ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}</div>
+        <div class="barrow"><div class="bar"><i class="${st === "done" ? "ok" : st === "failed" ? "bad" : st === "running" ? "" : "idle"}" style="width:${st === "done" ? 100 : pct}%"></i></div><span class="pct">${(st === "done" ? 100 : pct).toFixed(0)} %</span></div></div>
       <button class="icon-only danger" data-del="${esc(s.id)}" title="Delete ${esc(s.id)} (its built world stays on disk)">${icon("trash")}</button></div>`;
   }).join("") : `<div class="empty">No selections yet. Draw a <button type="button" class="link" data-draw="rectangle">rectangle</button> or a <button type="button" class="link" data-draw="polygon">polygon</button> on the map.</div>`;
   renderTargets();
@@ -1167,7 +1173,7 @@ function renderBuild() {
   $("runPct").textContent = `${(f * 100).toFixed(1)} %`;
   $("runLine").innerHTML = ids.length ? `${done}/${of} pieces · ${ids.filter((i) => ["done", "skipped"].includes(statusOf(i))).length}/${ids.length} steps` : "Not built yet.";
   $("runBar").style.width = `${f * 100}%`;
-  $("runBar").className = f >= 1 ? "ok" : "";
+  $("runBar").className = f >= 1 ? "ok" : state === "failed" ? "bad" : cur.running ? "" : "idle";
   $("etaLine").textContent = cur.running && runStart && f > 0.01 && f < 1 ? `elapsed ${dur((Date.now() - runStart) / 1000)} · about ${dur(((Date.now() - runStart) / 1000) * (1 - f) / f)} left` : cur.running ? "elapsed …" : "";
   $("estLine").innerHTML = lastPlan
     ? `Size <b>~${mb(lastPlan.need_mb)}</b> · ${plural(lastPlan.selections.reduce((n, s) => n + s.pieces, 0), "piece")} · disk <b class="${lastPlan.disk === "short" ? "bad" : lastPlan.disk === "tight" ? "" : "good"}">${esc(lastPlan.disk)}</b>, ${mb(lastPlan.free_mb)} free${lastPlan.stale ? " (before the last change)" : ""}`
@@ -1178,14 +1184,17 @@ function renderBuild() {
   $("workersCount").textContent = running ? `${running} running` : "idle";
   $("workersCount").className = "chip" + (running ? " st-running" : "");
   $("workersState").innerHTML = rows.length ? rows.map(([id, l]) => {
-    const pieces = l.pieces || {};
-    const strip = l.of ? `<div class="pieces">${Array.from({ length: Math.min(l.of, 300) }, (_, i) => `<i class="${pieces[i] || ""}" title="piece ${i + 1}${pieces[i] ? ": " + pieces[i] : ""}"></i>`).join("")}</div>` : "";
-    const pd = Object.values(pieces).filter((x) => x === "done" || x === "skipped").length;
-    const cls = l.status === "done" || l.status === "skipped" ? "ok" : l.status === "failed" ? "bad" : "";
-    return `<div class="wjob"><div class="wnum ${esc(l.status)}">${l.of ? `${pd}/${l.of}` : "–"}</div><div class="wjbody">
-      <div class="wjtop"><span>${esc(id)}</span><span class="wjpct">${(l.pct || 0).toFixed(1)}%</span></div>
-      <div class="bar"><i class="${cls}" style="width:${Math.min(100, l.pct || 0)}%"></i></div>
-      <div class="wjmsg">${esc(l.status)}${l.msg ? " · " + esc(l.msg) : ""}${l.error ? ` · <span class="bad">${esc(l.error)}</span>` : ""}</div>${strip}</div></div>`;
+    const pieces = Object.values(l.pieces || {});
+    const pd = pieces.filter((x) => x === "done" || x === "skipped").length;
+    const busy = pieces.filter((x) => x === "start" || x === "retry").length;
+    const pct = Math.min(100, l.pct || 0);
+    const cls = l.status === "done" || l.status === "skipped" ? "ok" : l.status === "failed" ? "bad" : l.status === "running" ? "" : "idle";
+    const eta = l.status === "running" && l.t0 && pct > 1 && pct < 100 ? `ETA ${dur(((Date.now() - l.t0) / 1000) * (100 - pct) / pct)}` : "";
+    const facts = [l.of ? `pieces ${pd}/${l.of}` : "", eta, l.status === "running" && busy ? plural(busy, "worker") : "", l.status !== "running" ? STATUS[l.status] || l.status : ""].filter(Boolean).join(" · ");
+    return `<div class="wjob"><div class="wjbody">
+      <div class="wjtop"><span>${esc(id)}</span></div>
+      <div class="barrow"><div class="bar"><i class="${cls}" style="width:${pct}%"></i></div><span class="pct">${pct.toFixed(0)} %</span></div>
+      <div class="wjmsg">${facts}${l.error ? ` · <span class="bad">${esc(l.error)}</span>` : ""}</div></div></div>`;
   }).join("") : `<div class="stat">Idle. Generate shows each Arnis job here.</div>`;
 }
 $("tomlSave").onclick = async () => {
@@ -1318,7 +1327,7 @@ function onEvent(e) {
   switch (e.note) {
     case "log": logLine(e.project, e.line); break;
     case "started":
-      L[e.id] = { status: "running", pct: 0, of: 0, pieces: {}, msg: e.resumed ? "resuming" : "starting" };
+      L[e.id] = { status: "running", pct: 0, of: 0, pieces: {}, msg: e.resumed ? "resuming" : "starting", t0: Date.now() };
       if (cur && cur.name === e.project) { cur.running = true; runStart = runStart || Date.now(); }
       logLine(e.project, `${who} ${e.resumed ? "resuming" : "starting"} (pid ${e.pid}, ${e.share.threads || "?"} threads)`);
       break;
@@ -1362,7 +1371,10 @@ route();
      One block, appended; it adds its cards to #sideL / #side and a Leaflet control,
      and uses the page's api(), esc(), $, map, cur and openProject(). -->
 <style id="meld2-extras-css">
-  #x-spark { width: 100%; height: 46px; display: block; margin-top: 6px; }
+  .x-sys { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 6px; }
+  .x-sysl { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ui-muted); }
+  .x-sysl span:last-child { color: var(--ui-text); font-variant-numeric: tabular-nums; }
+  .x-spark { width: 100%; height: 14px; display: block; }
   .x-search { background: var(--ui-card, #2a2a2a); padding: 4px; border-radius: 6px; width: 260px; }
   .x-search input { width: 100%; box-sizing: border-box; }
   .x-search div { cursor: pointer; font-size: 12px; padding: 3px 4px; color: var(--ui-text, #ddd); }
@@ -1382,35 +1394,32 @@ route();
     return d;
   };
 
-  // ---- System: CPU, RAM, disk now and the last five minutes (Meld 1's left rail) ----
+  // ---- System: CPU, RAM and disk now, each with its last five minutes (Meld 1's left rail) ----
+  const sysRow = (k, label) => `<div class="x-sys"><div class="x-sysl"><span>${label}</span><span id="x-${k}">–</span></div>
+     <div class="bar"><i id="x-${k}b" class="idle"></i></div><canvas id="x-${k}s" class="x-spark"></canvas></div>`;
   $("sideL").appendChild(card("cardSystem", "monitor", "System", "CPU, memory and disk",
-    `<div class="stat" id="x-cpu">CPU –</div><div class="bar"><i id="x-cpub"></i></div>
-     <div class="stat" id="x-ram">RAM –</div><div class="bar"><i id="x-ramb" class="ok"></i></div>
-     <div class="stat" id="x-disk">Disk –</div>
-     <canvas id="x-spark" title="CPU (gold) and RAM (green), last five minutes"></canvas>
-     <div class="stat" id="x-update"></div>`));
+    sysRow("cpu", "CPU") + sysRow("ram", "RAM") + sysRow("disk", "Disk") + `<div class="stat" id="x-update"></div>`));
   const gb = (mb) => (mb / 1024).toFixed(1);
-  function spark(hist) {
-    const cv = $("x-spark"), w = cv.clientWidth || 240, h = 46, dpr = window.devicePixelRatio || 1;
+  function spark(id, vals) {
+    const cv = $(id), w = cv.clientWidth || 240, h = 14, dpr = window.devicePixelRatio || 1;
     cv.width = w * dpr; cv.height = h * dpr;
     const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
-    const line = (vals, color) => {
-      if (vals.length < 2) return;
-      const step = w / 149;
-      g.beginPath();
-      vals.forEach((v, i) => { const x = w - (vals.length - 1 - i) * step, y = h - (v / 100) * (h - 2) - 1; i ? g.lineTo(x, y) : g.moveTo(x, y); });
-      g.strokeStyle = color; g.lineWidth = 1.5; g.stroke();
-    };
-    line(hist.map((s) => s.ram_total_mb ? 100 * s.ram_used_mb / s.ram_total_mb : 0), "#86b45a");
-    line(hist.map((s) => s.cpu_pct || 0), "#e3a417");
+    if (vals.length < 2) return;
+    const step = w / 149;
+    g.beginPath();
+    vals.forEach((v, i) => { const x = w - (vals.length - 1 - i) * step, y = h - (Math.min(100, v) / 100) * (h - 2) - 1; i ? g.lineTo(x, y) : g.moveTo(x, y); });
+    g.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--ui-accent") || "#fecc44"; g.globalAlpha = .7; g.lineWidth = 1.25; g.stroke();
   }
+  function bar(k, pct, text) { $(`x-${k}`).textContent = text; $(`x-${k}b`).style.width = pct + "%"; $(`x-${k}b`).className = ""; }
   async function system() {
     try {
-      const s = await api("/api/system"), n = s.now;
-      if (n.cpu_pct != null) { $("x-cpu").textContent = `CPU ${n.cpu_pct.toFixed(0)} % · ${s.cores} threads`; $("x-cpub").style.width = n.cpu_pct + "%"; }
-      if (n.ram_total_mb) { $("x-ram").textContent = `RAM ${gb(n.ram_used_mb)} / ${gb(n.ram_total_mb)} GB`; $("x-ramb").style.width = (100 * n.ram_used_mb / n.ram_total_mb) + "%"; }
-      if (n.disk_total_mb) $("x-disk").textContent = `Disk ${gb(n.disk_free_mb)} GB free of ${gb(n.disk_total_mb)} GB`;
-      spark(s.history);
+      const s = await api("/api/system"), n = s.now, h = s.history;
+      if (n.cpu_pct != null) bar("cpu", n.cpu_pct, `${n.cpu_pct.toFixed(0)} % · ${s.cores} threads`);
+      if (n.ram_total_mb) bar("ram", 100 * n.ram_used_mb / n.ram_total_mb, `${gb(n.ram_used_mb)} / ${gb(n.ram_total_mb)} GB`);
+      if (n.disk_total_mb) bar("disk", 100 * (1 - n.disk_free_mb / n.disk_total_mb), `${(n.disk_free_mb / 1024).toFixed(0)} GB free`);
+      spark("x-cpus", h.map((x) => x.cpu_pct || 0));
+      spark("x-rams", h.map((x) => x.ram_total_mb ? 100 * x.ram_used_mb / x.ram_total_mb : 0));
+      spark("x-disks", h.map((x) => x.disk_total_mb ? 100 * (1 - x.disk_free_mb / x.disk_total_mb) : 0));
     } catch (_) { /* the next poll tries again */ }
   }
   system(); setInterval(system, 2000);
