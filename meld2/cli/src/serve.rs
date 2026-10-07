@@ -10,7 +10,8 @@
 //!
 //! | Method | Path | |
 //! |---|---|---|
-//! | GET | `/` | the status page |
+//! | GET | `/` | the page |
+//! | GET | `/assets/<name>` | its images (no token: public, fixed, built in) |
 //! | GET | `/api/projects` | projects in the workspace, with their state |
 //! | GET, PUT | `/api/projects/<name>` | `{name, path, toml, model, parts, state}`; PUT takes the TOML or the `model` JSON, checked first |
 //! | POST | `/api/projects/<name>/run[?rebuild=a,b\|all]` | starts a run in the server |
@@ -175,6 +176,19 @@ fn handle(ctx: &Arc<Ctx>, mut req: Request) {
         .iter()
         .map(|h| (h.field.to_string(), h.value.to_string()))
         .collect();
+    // The page's images are public and fixed: no token, so <img> can load them.
+    if let Some(bytes) = path.strip_prefix("/assets/").and_then(crate::assets::get) {
+        let h = [
+            Header::from_bytes("Content-Type", "image/webp").unwrap(),
+            Header::from_bytes("Cache-Control", "max-age=86400").unwrap(),
+        ];
+        let mut r = Response::from_data(bytes);
+        for x in h {
+            r.add_header(x);
+        }
+        let _ = req.respond(r);
+        return;
+    }
     if !authorized(&headers, query, &ctx.token) {
         let _ = req.respond(reply((401, json!({"error": "missing or wrong token"}))));
         return;
@@ -329,7 +343,8 @@ fn read(ctx: &Ctx, name: &str) -> Result<Reply> {
             let parts: Vec<Value> = p
                 .selections
                 .iter()
-                .filter(|s| s.part_of.is_some())
+                // Polygon parts, and bbox selections snapped to whole pieces.
+                .filter(|s| s.part_of.is_some() || p.settings_for(s).contains_key("snap"))
                 .map(|s| json!({"id": s.id, "bbox": s.bbox, "part_of": s.part_of}))
                 .collect();
             (state_of(&p), json!(parts), Value::Null)
@@ -621,8 +636,9 @@ mod tests {
             body.len()
         )
         .unwrap();
-        let mut out = String::new();
-        s.read_to_string(&mut out).unwrap();
+        let mut raw = vec![];
+        s.read_to_end(&mut raw).unwrap();
+        let out = String::from_utf8_lossy(&raw);
         let code = out[9..12].parse().unwrap();
         let body = out
             .split_once("\r\n\r\n")
@@ -645,6 +661,11 @@ mod tests {
 
         assert_eq!(call(&addr, "GET", "/api/projects", None, "").0, 401);
         assert_eq!(call(&addr, "GET", "/", None, "").0, 401);
+        assert_eq!(call(&addr, "GET", "/assets/hero-m.webp", None, "").0, 200);
+        assert_eq!(
+            call(&addr, "GET", "/assets/..%2Fsrc%2Fserve.rs", None, "").0,
+            401
+        );
         assert_eq!(
             call(&addr, "GET", "/api/projects", t, ""),
             (200, "[]".into())

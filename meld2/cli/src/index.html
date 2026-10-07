@@ -9,146 +9,332 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
 <style>
-  /* Meld 1.9.9's layout and styles (web/index.html), with the Arnis accent #fecc44. */
-  @font-face { font-family:'Monocraft'; src:url('https://cdn.jsdelivr.net/gh/IdreesInc/Monocraft@main/dist/Monocraft-ttf/Monocraft.ttf') format('truetype'); font-weight:400 700; font-display:swap; }
-  :root { --bg:#0b0a08; --line:rgba(255,255,255,.10); --fg:#f0e9da; --mut:#9a9079;
-          --acc:#fecc44; --acc2:#ffd970; --ok:#86b45a; --run:#cf9f3c; --bad:#cf5a3e; --plan:#6b6253;
-          --pixel:'Monocraft','system-ui',sans-serif;
-          --glass:#121110; --raise:rgba(255,255,255,.05); --hair:rgba(255,255,255,.14); --hair2:rgba(255,255,255,.07);
-          --ring:0 0 0 1px rgba(0,0,0,.55); color-scheme:dark; }
-  * { box-sizing:border-box; }
-  html,body { margin:0; height:100%; overflow:hidden; font:14px/1.45 system-ui,Segoe UI,sans-serif; background:var(--bg); color:var(--fg); }
-  #app { position:relative; height:100vh; width:100vw; overflow:hidden; }
-  #map { position:absolute; inset:0; z-index:1; background:var(--bg); }
-  .leaflet-container { background:var(--bg); }
-  .leaflet-top.leaflet-left, .leaflet-bottom.leaflet-left { margin-left:312px; }
-  .leaflet-top.leaflet-right, .leaflet-bottom.leaflet-right { margin-right:352px; }
+  /* The frame is Meld 1.9.9's (web/index.html): status rail left, full-bleed map,
+     settings rail right. The components and colours are Arnis at Scale's
+     (src/gui/css on arnis-scale-phase-6, docs/09-ARNIS-UI-BRAND-GUIDE.md). */
+  :root {
+    --primary-accent: #fecc44; --ui-accent: #fecc44; --accent-dark: #e6b73d; --ui-on-accent: #1c1c1c;
+    --ui-bg: #333333; --ui-sidebar: #2a2a2a; --ui-card: #3a3a3a; --ui-card-border: #444444;
+    --ui-tile: #424242; --ui-tile-hover: #484848; --ui-tile-border: #4d4d4d;
+    --ui-field: #2c2c2c; --ui-field-border: #5a5a5a;
+    --ui-text: #f2f2f2; --ui-muted: #b8b8b8; --ui-faint: #8f8f8f; --ui-link: #ffd970;
+    --ui-danger: #cf6679; --ok: #4caf50; --err: #fa7878; --run: #fecc44; --plan: #6b6b6b;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font: 14px/1.45 Inter, Avenir, Helvetica, Arial, sans-serif; background: var(--ui-bg); color: var(--ui-text); }
+  #app { position: relative; height: 100vh; width: 100vw; overflow: hidden; }
+  #map { position: absolute; inset: 0; z-index: 1; background: var(--ui-bg); }
+  .leaflet-container { background: var(--ui-bg); }
+  .leaflet-top.leaflet-left, .leaflet-bottom.leaflet-left { margin-left: 312px; }
+  .leaflet-top.leaflet-right, .leaflet-bottom.leaflet-right { margin-right: 392px; }
   .leaflet-tile { filter: brightness(0.78) saturate(0.9) contrast(1.04); }
-  #side { position:absolute; top:0; right:0; bottom:0; width:340px; z-index:15; border-left:1px solid var(--hair);
-          background:#0d0c0a; box-shadow:inset 1px 0 0 rgba(255,255,255,.04); overflow-y:auto; overflow-x:hidden; padding:14px;
-          display:flex; flex-direction:column; }
-  #sideL { position:absolute; top:0; left:0; bottom:0; width:300px; z-index:15; border-right:1px solid var(--hair);
-           background:#0d0c0a; box-shadow:inset -1px 0 0 rgba(255,255,255,.04); overflow-y:auto; overflow-x:hidden; padding:14px; }
-  * { scrollbar-width: thin; scrollbar-color: var(--acc) #060504; }
-  ::-webkit-scrollbar { width:10px; height:10px; }
-  ::-webkit-scrollbar-track { background:#060504; }
-  ::-webkit-scrollbar-thumb { background:var(--acc); border-radius:0; border:2px solid #060504; }
-  .wordmark { font-family:var(--pixel); font-weight:700; font-size:46px; line-height:1; color:var(--acc); letter-spacing:.06em; text-shadow:3px 3px 0 #3a2c08; }
-  .icon { width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; vertical-align:-2px; margin-right:6px; flex:none; }
-  .sub { color:var(--mut); font-size:12px; margin-bottom:12px; }
-  .card { background:transparent; border:0; padding:10px 2px; margin-bottom:0; border-bottom:1px solid var(--hair2); }
-  .card h2 { font-family:var(--pixel); font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--acc2); margin:0 0 9px; }
-  .card h2 + .stat, .card h2 + .sub { margin-top:6px; }
-  #side .card > h2 { cursor:pointer; user-select:none; margin:0 -14px 9px; padding:7px 14px; display:flex; align-items:center; transition:background .12s, color .12s; }
-  #side .card > h2:hover { background:rgba(254,204,68,.07); color:#ffe08a; }
-  #side .card > h2::before { content:''; flex:none; width:0; height:0; margin:0 9px 0 0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:9px solid var(--acc); transition:transform .15s ease; }
-  #side .card.collapsed > h2 { margin-bottom:0; }
-  #side .card.collapsed > h2::before { transform:rotate(-90deg); }
-  #side .card.collapsed > :not(h2) { display:none; }
-  #side .card:last-of-type { border-bottom:0; }
-  .stepnum { display:inline-block; color:var(--acc2); font-size:10px; border:1px solid #5a4a1e; padding:0 5px; margin-right:7px; font-family:var(--pixel); }
-  #side a, #sideL a { color:var(--acc2); text-underline-offset:2px; }
-  label { display:flex; justify-content:space-between; align-items:center; gap:8px; margin:8px 0; font-size:13px; }
-  .i { color:var(--mut); cursor:help; font-size:11px; border:1px solid var(--line); display:inline-block; font-style:normal; font-family:system-ui,Segoe UI,sans-serif; border-radius:50%; width:15px; height:15px; text-align:center; line-height:13px; flex:none; }
-  label .lt { display:flex; align-items:center; gap:6px; min-width:0; }
-  input,select,textarea { background:rgba(0,0,0,.30); color:var(--fg); border:1px solid var(--hair); padding:5px 8px; width:120px; font:inherit; }
-  select { background:#151209; }
-  select option { background:#151209; color:var(--fg); }
-  input::placeholder { color:#6f6757; }
-  input:focus,select:focus,textarea:focus { outline:none; border-color:var(--acc); box-shadow:0 0 0 1px rgba(254,204,68,.6); }
-  button { display:inline-flex; align-items:center; justify-content:center; background:#141416; color:var(--acc2); border:1px solid var(--hair); padding:8px 10px; font-family:var(--pixel); font-weight:700; letter-spacing:.02em; cursor:pointer; width:100%; margin-top:6px; font-size:13px; }
-  button:hover { border-color:var(--acc); background:#1a1a1d; }
-  button:active { transform:translateY(1px); }
-  button.sec { background:var(--raise); color:var(--fg); }
-  button.sec:hover { border-color:var(--acc); color:var(--acc2); background:rgba(254,204,68,.10); }
-  button.go { background:var(--acc); color:#1a1408; border-color:var(--acc); }
-  button.go:hover { background:var(--acc2); border-color:var(--acc2); color:#1a1408; }
-  button.xbtn { background:var(--bad); color:#fff; }
-  button.small { width:auto; margin:0; padding:3px 8px; font-size:11px; }
-  button:disabled { opacity:.5; cursor:not-allowed; }
-  input[type=checkbox] { appearance:none; -webkit-appearance:none; width:18px; height:18px; margin:0; padding:0; border:1px solid var(--hair); background:rgba(0,0,0,.30) center/12px no-repeat; cursor:pointer; flex:0 0 auto; }
-  input[type=checkbox]:hover { border-color:var(--acc); }
-  input[type=checkbox]:checked { border-color:#9a6a12; background-color:var(--acc); background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23241a02' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-6.5'/%3E%3C/svg%3E"); }
-  .row { display:flex; gap:6px; align-items:center; }
-  .row button { margin-top:0; }
-  .chip { display:inline-block; padding:2px 7px; font-size:10px; font-family:var(--pixel); letter-spacing:.04em; text-transform:uppercase; background:rgba(0,0,0,.30); border:1px solid var(--hair); }
-  details.drawer { border:none; background:transparent; margin:7px 0; }
-  details.drawer > summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:6px; user-select:none; font-size:12px; font-weight:700; color:var(--fg); padding:8px 10px; border:1px solid var(--hair); background:var(--raise); }
-  details.drawer > summary::-webkit-details-marker { display:none; }
-  details.drawer > summary::before { content:''; flex:none; width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:9px solid var(--acc); transform:rotate(-90deg); transition:transform .15s ease; }
-  details.drawer > summary:hover { border-color:var(--acc); color:var(--acc2); background:rgba(254,204,68,.10); }
-  details.drawer[open] > summary { background:transparent; border:none; padding:4px 0; color:var(--acc2); }
-  details.drawer[open] > summary::before { transform:none; }
-  .grouphead { border-top:1px solid var(--line); margin-top:7px; padding-top:5px; color:var(--acc2); font-weight:600; letter-spacing:.03em; font-size:12px; }
-  .govhead { color:var(--acc2); font-weight:600; font-size:12px; letter-spacing:.03em; margin:10px 0 4px; font-family:var(--pixel); text-transform:uppercase; border-top:1px solid var(--line); padding-top:9px; }
-  .search-hit { background:rgba(254,204,68,.13) !important; }
-  .legend span { display:inline-flex; align-items:center; gap:4px; margin-right:8px; font-size:11px; }
-  .dot { width:9px; height:9px; border-radius:2px; display:inline-block; }
-  #log { font:11px/1.4 ui-monospace,Consolas,monospace; color:var(--mut); white-space:pre-wrap; max-height:220px; overflow-y:auto; overflow-wrap:anywhere; }
-  .stat { font-size:12px; color:var(--mut); margin:2px 0; overflow-wrap:anywhere; }
-  .stat b { color:var(--fg); font-weight:600; }
-  .bar { height:10px; background:#1c1916; border:1px solid var(--line); border-radius:2px; overflow:hidden; margin-top:4px; }
-  .bar > i { display:block; height:100%; background:var(--run); width:0; transition:width .3s ease; }
-  .bar > i.ok { background:var(--ok); } .bar > i.bad { background:var(--bad); }
-  .report { background:var(--bg); border:2px solid var(--line); border-radius:2px; padding:9px 11px; margin:4px 0 8px; }
-  .report .big { font-family:var(--pixel); font-size:18px; font-weight:700; color:var(--acc2); }
-  .report .lbl { color:var(--mut); font-size:11px; }
-  .wjob { display:flex; gap:8px; align-items:flex-start; padding:6px 0; border-bottom:1px solid var(--line); }
-  .wjob:last-child { border-bottom:0; }
-  .wnum { flex:0 0 auto; min-width:34px; text-align:center; font-family:var(--pixel); font-size:12px; padding:4px 6px; border-radius:2px; color:#241a02; background:var(--mut); }
-  .wnum.running { background:var(--acc); } .wnum.done, .wnum.skipped { background:var(--ok); } .wnum.failed { background:var(--bad); color:#fff; }
-  .wjbody { flex:1 1 auto; min-width:0; }
-  .wjtop { display:flex; justify-content:space-between; align-items:baseline; gap:6px; }
-  .wjkey { font-size:12px; color:var(--fg); overflow-wrap:anywhere; }
-  .wjpct { flex:0 0 auto; font-family:var(--pixel); font-size:12px; color:var(--acc2); font-variant-numeric:tabular-nums; }
-  .wjmsg { font-size:11px; color:var(--mut); overflow-wrap:anywhere; margin-top:2px; }
-  .pieces { display:flex; flex-wrap:wrap; gap:2px; margin-top:4px; }
-  .pieces i { width:8px; height:8px; background:var(--plan); }
-  .pieces i.start, .pieces i.retry { background:var(--run); }
-  .pieces i.done, .pieces i.skipped { background:var(--ok); }
-  .pieces i.failed { background:var(--bad); }
-  .wrow { display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:12px; padding:4px 0; border-bottom:1px solid var(--line); min-width:0; cursor:pointer; }
-  .wrow.on { color:var(--acc2); }
-  .wrow > span:first-child { min-width:0; overflow-wrap:anywhere; }
-  #coordbox { position:fixed; left:310px; bottom:10px; z-index:600; pointer-events:none; background:#141210; color:var(--fg); border:1px solid var(--line); padding:4px 9px; font:11px/1.3 ui-monospace,Consolas,monospace; }
-  #credit { position:fixed; left:310px; bottom:40px; z-index:600; background:#141210; color:var(--mut); border:1px solid var(--line); padding:3px 8px; font:10.5px/1.3 ui-monospace,Consolas,monospace; }
-  #credit a { color:var(--acc2); text-decoration:none; }
-  #projOverlay { display:none; position:fixed; top:12px; left:312px; width:460px; height:min(86vh,860px); max-width:calc(100vw - 664px); min-width:300px; z-index:6000; background:var(--glass); border:1px solid var(--hair); box-shadow:var(--ring); flex-direction:column; overflow:hidden; }
-  #projOverlay.on { display:flex; }
-  .pcard { border:1px solid var(--hair); background:var(--raise); padding:8px 10px; cursor:pointer; }
-  .pcard:hover { border-color:var(--acc); }
-  .pcard.on { border-color:var(--acc); background:rgba(254,204,68,.08); }
-  pre.console { font:11px/1.4 ui-monospace,Consolas,monospace; color:var(--mut); white-space:pre-wrap; overflow-wrap:anywhere; height:220px; overflow-y:auto; background:var(--bg); border:1px solid var(--line); padding:6px; margin:6px 0; }
-  textarea { width:100%; min-height:300px; resize:vertical; font:11.5px/1.45 ui-monospace,Consolas,monospace; }
-  .railfoot { order:99; text-align:center; color:var(--mut); font-size:11px; padding:14px 0 4px; }
-  .msg { font-size:12px; color:var(--mut); margin-top:5px; min-height:16px; overflow-wrap:anywhere; }
-  .msg.bad, .bad { color:#f08a70; } .good { color:var(--ok); }
+  #sideL, #side { position: absolute; top: 0; bottom: 0; z-index: 15; background: var(--ui-sidebar); overflow-y: auto; overflow-x: hidden; padding: 14px; }
+  #sideL { left: 0; width: 300px; border-right: 1px solid var(--ui-card-border); }
+  #side { right: 0; width: 380px; border-left: 1px solid var(--ui-card-border); display: flex; flex-direction: column; gap: 10px; }
+  * { scrollbar-width: thin; scrollbar-color: #555 transparent; }
+  ::-webkit-scrollbar { width: 10px; } ::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 5px; border: 2px solid var(--ui-sidebar); }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(254,204,68,.6); }
+  .icon { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; vertical-align: -3px; }
+  .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+  a { color: var(--ui-link); }
+  :focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
+
+  /* ---- Meld 1's animated wordmark, as it was (web/index.html) ---- */
+  /* ---- animated wordmark (mirrors the site hero's build-in) ---- */
+  .meld-mark { display:block; cursor:pointer; text-decoration:none !important; }
+  .mm-stage {
+    position:relative; display:block; width:100%; max-width:268px;
+    aspect-ratio:1022 / 400;      /* the art's own canvas */
+  }
+  .mm-stage img { position:absolute; display:block; image-rendering:pixelated; }
+  /* Measured placements as percentages of the 1022x400 canvas, same as the site:
+     M (3,0) 349x360 · E (332,0) 239x360 · L (565,0) 216x360 · D (752,0) 266x360 ·
+     subtitle (0,302) 1022x98 — it overlaps the letters' lower extrusions. */
+  .mm-m   { left:0.2935%;  top:0; width:34.1487%; height:90%; }
+  .mm-e   { left:32.4853%; top:0; width:23.3855%; height:90%; }
+  .mm-l   { left:55.2838%; top:0; width:21.1350%; height:90%; }
+  .mm-d   { left:73.5812%; top:0; width:26.0274%; height:90%; }
+  .mm-sub { left:0; top:75.5%; width:100%; height:24.5%; }
+  .mm-full{ inset:0; width:100%; height:100%; opacity:1; }
+
+  /* Choreography, in the site's timings. The letters and subtitle start hidden ONLY
+     once we know the animation will run, so a browser without animation support still
+     shows every layer stacked on the finished art rather than an empty box. */
+  @media (prefers-reduced-motion: no-preference) {
+    /* The clearing pass MUST fill forwards only. With `both` it back-fills its own
+       from-state (opacity 1) throughout its 2.2s delay, and because it is last in the
+       list it wins over the placement animation -- which made every letter simply
+       appear at full opacity instead of animating in. */
+    .mm-letter { opacity:0; animation:mm-place .42s cubic-bezier(.22,.9,.28,1) both, mm-clear .5s linear 2.2s forwards; }
+    .mm-m { animation-delay:.05s, 2.2s; }
+    .mm-e { animation-delay:.26s, 2.2s; }
+    .mm-l { animation-delay:.47s, 2.2s; }
+    .mm-d { animation-delay:.68s, 2.2s; }
+    .mm-sub  { opacity:0; animation:mm-rise .6s cubic-bezier(.16,1,.3,1) 1.02s both, mm-clear .5s linear 2.2s forwards; }
+    /* The finished art fades in UNDER the still-opaque build-up, then the layers
+       clear. Sequenced, not crossed, so nothing shows through mid-swap.
+       `backwards` (not `both`) is deliberate: the art's RESTING state is visible, and
+       the fill only hides it during the delay. So if the timeline never advances -- the
+       page was loaded in a background tab, animations are off -- the mark is the
+       finished composition rather than an empty box. */
+    .mm-full { animation:mm-settle .45s ease-in-out 1.7s backwards; }
+  }
+  /* Fades up while dropping in small, overshoots with a brightness flash on landing,
+     then settles. The fade carries the whole way in so the letter reads as arriving
+     rather than switching on. */
+  @keyframes mm-place {
+    0%   { opacity:0;   transform:translateY(-32%) scale(.35); filter:brightness(1); }
+    55%  { opacity:.85; transform:translateY(4%)   scale(1.12); filter:brightness(1.75); }
+    75%  { opacity:1;   transform:translateY(-1%)  scale(.98);  filter:brightness(1.25); }
+    100% { opacity:1;   transform:translateY(0)    scale(1);    filter:brightness(1); }
+  }
+  @keyframes mm-rise   { from { opacity:0; transform:translateY(42%); } to { opacity:1; transform:translateY(0); } }
+  @keyframes mm-settle { from { opacity:0; } to { opacity:1; } }
+  @keyframes mm-clear  { from { opacity:1; } to { opacity:0; } }
+  #sideL .logo { display: block; line-height: 0; margin-bottom: 4px; }
+
+  /* ---- section cards (settings.css .settings-section), collapsible like Meld 1's ---- */
+  .card { border: 1px solid var(--ui-card-border); border-radius: 12px; background: var(--ui-card); padding: 12px 14px; flex: none; }
+  #sideL .card { margin-top: 10px; }
+  .card-head { display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+  .card-head h3 { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.25; }
+  .card-head p { margin: 1px 0 0; font-size: 12px; line-height: 1.35; color: var(--ui-muted); }
+  .card-icon { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 9px; background: rgba(255,255,255,.06); color: var(--ui-text); }
+  .card-head .chev { margin-left: auto; color: var(--ui-muted); transition: transform .15s ease; }
+  .card.collapsed .chev { transform: rotate(-90deg); }
+  .card.collapsed > :not(.card-head) { display: none; }
+  .card > .card-head + * { margin-top: 12px; }
+  .card-body { display: flex; flex-direction: column; gap: 8px; }
+  .group-head { font-size: 12.5px; font-weight: 700; color: var(--ui-muted); text-transform: none; margin: 6px 0 0; }
+  details.group { border-top: 1px solid rgba(255,255,255,.07); padding-top: 8px; }
+  details.group > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; padding: 2px 0 6px; }
+  details.group > summary::-webkit-details-marker { display: none; }
+  details.group > summary::after { content: ""; margin-left: auto; width: 7px; height: 7px; border-right: 2px solid var(--ui-muted); border-bottom: 2px solid var(--ui-muted); transform: rotate(-45deg); transition: transform .15s ease; }
+  details.group[open] > summary::after { transform: rotate(45deg); }
+  details.group > summary .sdesc { font-size: 12px; font-weight: 400; color: var(--ui-muted); }
+  details.group > .card-body { padding-bottom: 6px; }
+
+  /* ---- setting tiles (settings.css .setting-tile) ---- */
+  .setting-tile { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; min-height: 56px; padding: 9px 12px; border: 1px solid var(--ui-tile-border); border-radius: 10px; background: var(--ui-tile); transition: background-color .15s ease, border-color .15s ease; }
+  .setting-tile:hover { background: var(--ui-tile-hover); }
+  .setting-tile.is-set { border-color: rgba(254,204,68,.45); }
+  .setting-label { display: flex; align-items: center; gap: 12px; flex: 1 1 150px; min-width: 0; }
+  .setting-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .setting-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 14px; font-weight: 600; line-height: 1.3; }
+  .setting-desc { font-size: 12px; line-height: 1.35; color: var(--ui-muted); }
+  .settings-control { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-shrink: 0; margin-left: auto; }
+  .setting-tile.stack .settings-control { flex: 1 1 100%; justify-content: flex-start; }
+  .tooltip-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; border-radius: 50%; background-color: rgba(255,255,255,.1); color: var(--ui-muted); font-size: 10.5px; font-weight: 700; cursor: help; }
+  .tooltip-icon:hover { background-color: rgba(254,204,68,.3); color: var(--primary-accent); }
+  .settings-notice { padding: 9px 12px; border: 1px solid rgba(254,204,68,.25); border-radius: 10px; background: rgba(254,204,68,.06); color: var(--ui-muted); font-size: 12.5px; line-height: 1.4; }
+
+  /* ---- fields (settings.css Fields), switch (styles.css input.switch), segmented control ---- */
+  input[type=text], input[type=number], select, textarea { box-sizing: border-box; height: 34px; padding: 0 10px; border: 1px solid var(--ui-field-border); border-radius: 8px; background-color: var(--ui-field); color: var(--ui-text); font-family: inherit; font-size: 13px; width: 150px; }
+  input[type=number] { width: 104px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ui-accent); box-shadow: 0 0 0 3px rgba(254,204,68,.18); }
+  input::placeholder { color: var(--ui-faint); }
+  select { padding-right: 30px; -webkit-appearance: none; appearance: none; cursor: pointer; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23b8b8b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 9px center; }
+  select option { background: #2c2c2c; color: #f2f2f2; }
+  .stack input[type=text] { width: 100%; }
+  textarea { height: auto; width: 100%; min-height: 300px; padding: 8px 10px; resize: vertical; font: 12px/1.45 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; }
+  input.switch { -webkit-appearance: none; appearance: none; position: relative; flex-shrink: 0; width: 42px; height: 24px; margin: 0; padding: 0; border: none; border-radius: 12px; background: #5e5e5e; cursor: pointer; transition: background-color .18s ease; }
+  input.switch::before { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #d6d6d6; box-shadow: 0 1px 2px rgba(0,0,0,.35); transition: transform .18s ease, background-color .18s ease; }
+  input.switch:checked { background: var(--ui-accent); }
+  input.switch:checked::before { transform: translateX(18px); background: #fff; }
+  .segmented-control { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--ui-field-border); border-radius: 9px; background: var(--ui-field); }
+  .segmented-control .segment { all: unset; box-sizing: border-box; padding: 5px 10px; border-radius: 6px; color: var(--ui-text); font-size: 12.5px; line-height: 1.2; white-space: nowrap; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
+  .segmented-control .segment:hover { background: rgba(255,255,255,.08); }
+  .segmented-control .segment.active { background: var(--ui-accent); color: var(--ui-on-accent); font-weight: 600; }
+
+  /* ---- preview cards (settings.css .preview-block): rows left, square picture right ---- */
+  .preview-block { --preview-size: 118px; display: grid; grid-template-columns: minmax(0, 1fr) var(--preview-size); gap: 12px; align-items: start; padding: 2px 12px; border: 1px solid var(--ui-tile-border); border-radius: 10px; background: var(--ui-tile); }
+  .preview-controls { display: flex; flex-direction: column; min-width: 0; }
+  .preview-controls > .setting-tile { padding: 10px 0; border: none; border-radius: 0; background: none; min-height: 0; }
+  .preview-controls > .setting-tile + .setting-tile { border-top: 1px solid rgba(255,255,255,.07); }
+  .preview-frame { position: relative; width: var(--preview-size); margin: 12px 0; overflow: hidden; border: 1px solid var(--ui-tile-border); border-radius: 12px; background: var(--ui-field); aspect-ratio: 1 / 1; }
+  .preview-frame img { width: 100%; height: 100%; object-fit: cover; display: block; transition: opacity .2s ease; }
+  .preview-options { display: flex; flex-direction: column; gap: 2px; flex: 1 0 100%; }
+  .preview-options .segment { all: unset; position: relative; padding: 5px 10px 5px 30px; border-radius: 8px; color: var(--ui-text); font-size: 13px; cursor: pointer; transition: background-color .15s ease; }
+  .preview-options .segment:hover { background: rgba(255,255,255,.06); }
+  .preview-options .segment::before { content: ""; position: absolute; top: 50%; left: 8px; width: 14px; height: 14px; box-sizing: border-box; margin-top: -7px; border: 2px solid #6b6b6b; border-radius: 50%; }
+  .preview-options .segment.active { background: rgba(254,204,68,.07); color: var(--ui-accent); font-weight: 600; }
+  .preview-options .segment.active::before { border-color: var(--ui-accent); background: radial-gradient(circle, var(--ui-accent) 0 3px, transparent 3.5px); }
+  .realm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+  .realm-grid .segment { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border: 1px solid transparent; font-size: 12.5px; }
+  .realm-grid .segment::before { content: none; }
+  .realm-grid .segment.active { border-color: var(--ui-accent); }
+  .realm-grid .realm-auto { grid-column: 1 / -1; }
+  .realm-swatch { flex: none; width: 18px; height: 18px; border-radius: 5px; background-position: center; background-size: 400%; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); image-rendering: pixelated; }
+  .mix-list { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; flex: 1 0 100%; }
+  .mix-list label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ui-muted); }
+  .mix-list input { width: 100%; padding: 0 6px; }
+  .mix-list.rows { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 14px; }
+  .mix-list.rows label { flex-direction: row; align-items: center; justify-content: space-between; color: var(--ui-text); font-size: 13px; }
+  .mix-list.rows input { width: 70px; }
+
+  /* ---- buttons (dialogs.css / the main window) ---- */
+  button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font: inherit; font-size: 13px; font-weight: 600; color: var(--ui-text); background: var(--ui-field); border: 1px solid var(--ui-field-border); border-radius: 8px; padding: 8px 12px; cursor: pointer; transition: background-color .15s ease, border-color .15s ease; }
+  button:hover { border-color: var(--ui-accent); background: rgba(254,204,68,.10); }
+  button.primary { background: var(--ui-accent); border-color: var(--ui-accent); color: var(--ui-on-accent); }
+  button.primary:hover { background: var(--accent-dark); }
+  button.danger:hover { border-color: var(--ui-danger); background: rgba(207,102,121,.12); }
+  button.small { padding: 4px 8px; font-size: 12px; }
+  button.icon-only { padding: 6px; }
+  button:disabled { opacity: .45; cursor: default; }
+  button.wide { width: 100%; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > button { flex: 1; }
+
+  /* ---- left rail: Meld 1's build, workers and log, on Arnis surfaces ---- */
+  .sub { color: var(--ui-muted); font-size: 12px; }
+  .stat { font-size: 12.5px; color: var(--ui-muted); margin: 2px 0; overflow-wrap: anywhere; }
+  .stat b { color: var(--ui-text); font-weight: 600; }
+  .report { background: var(--ui-tile); border: 1px solid var(--ui-tile-border); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+  .report .big { font-size: 20px; font-weight: 700; color: var(--ui-accent); font-variant-numeric: tabular-nums; }
+  .report .lbl { color: var(--ui-muted); font-size: 12px; }
+  .bar { height: 8px; background: var(--ui-field); border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .bar > i { display: block; height: 100%; background: var(--run); width: 0; transition: width .3s ease; }
+  .bar > i.ok { background: var(--ok); } .bar > i.bad { background: var(--ui-danger); }
+  .chip { display: inline-block; padding: 1px 8px; font-size: 11.5px; border-radius: 9px; background: rgba(255,255,255,.08); color: var(--ui-muted); margin-left: auto; }
+  .chip.on { background: rgba(254,204,68,.14); color: var(--ui-accent); }
+  .wjob { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid rgba(255,255,255,.07); }
+  .wnum { flex: none; min-width: 38px; text-align: center; font-size: 12px; font-weight: 700; padding: 4px 6px; border-radius: 6px; color: var(--ui-on-accent); background: var(--ui-muted); font-variant-numeric: tabular-nums; }
+  .wnum.running { background: var(--ui-accent); } .wnum.done, .wnum.skipped { background: var(--ok); } .wnum.failed { background: var(--ui-danger); color: #fff; }
+  .wjbody { flex: 1; min-width: 0; }
+  .wjtop { display: flex; justify-content: space-between; gap: 6px; font-size: 13px; }
+  .wjpct { font-weight: 700; color: var(--ui-accent); font-variant-numeric: tabular-nums; }
+  .wjmsg { font-size: 11.5px; color: var(--ui-muted); overflow-wrap: anywhere; margin-top: 2px; }
+  .pieces { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 5px; }
+  .pieces i { width: 8px; height: 8px; border-radius: 2px; background: var(--plan); }
+  .pieces i.start, .pieces i.retry { background: var(--run); } .pieces i.done, .pieces i.skipped { background: var(--ok); } .pieces i.failed { background: var(--ui-danger); }
+  #log { font: 11px/1.45 ui-monospace, "Cascadia Code", Menlo, Consolas, monospace; color: var(--ui-muted); white-space: pre-wrap; max-height: 230px; overflow-y: auto; overflow-wrap: anywhere; }
+  #log:empty::before { content: "What a run says appears here."; color: var(--ui-faint); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--ui-muted); }
+  .dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 4px; }
+  .wrow { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 8px 10px; border: 1px solid var(--ui-tile-border); border-radius: 10px; background: var(--ui-tile); cursor: pointer; }
+  .wrow:hover { background: var(--ui-tile-hover); }
+  .wrow.on { border-color: var(--ui-accent); }
+  .wrow > span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .msg { font-size: 12px; color: var(--ui-muted); min-height: 16px; overflow-wrap: anywhere; }
+  .msg.bad, .bad { color: var(--err); } .good { color: var(--ok); }
+  pre.console { margin: 0; font: 11px/1.45 ui-monospace, Consolas, monospace; color: var(--ui-muted); white-space: pre-wrap; overflow-wrap: anywhere; height: 220px; overflow-y: auto; background: var(--ui-field); border: 1px solid var(--ui-field-border); border-radius: 8px; padding: 8px; }
+  #targetBar { position: sticky; top: -14px; z-index: 2; margin: 0 -14px; padding: 8px 14px; background: var(--ui-sidebar); border-bottom: 1px solid var(--ui-card-border); display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ui-muted); }
+  #targetBar select { flex: 1; width: auto; }
+  .search-hit { box-shadow: 0 0 0 2px var(--ui-accent) inset; }
+  #coordbox, #credit { position: fixed; left: 312px; z-index: 600; background: rgba(46,46,46,.9); border: 1px solid rgba(255,255,255,.14); border-radius: 6px; font: 11px/1.3 ui-monospace, Consolas, monospace; }
+  #coordbox { bottom: 10px; pointer-events: none; color: #ececec; padding: 4px 9px; }
+  #credit { bottom: 40px; color: #b5b5b5; padding: 3px 8px; }
+  #projOverlay { display: none; position: fixed; top: 12px; left: 312px; width: 460px; height: min(86vh, 860px); max-width: calc(100vw - 704px); min-width: 300px; z-index: 6000; background: var(--ui-card); border: 1px solid var(--ui-card-border); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,.45); flex-direction: column; overflow: hidden; }
+  #projOverlay.on { display: flex; }
+  .pcard { border: 1px solid var(--ui-tile-border); border-radius: 10px; background: var(--ui-tile); padding: 10px 12px; cursor: pointer; }
+  .pcard:hover { background: var(--ui-tile-hover); }
+  .pcard.on { border-color: var(--ui-accent); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></symbol>
-  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
-  <symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
-  <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></symbol>
-  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
-  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
-  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
-  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
-  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
-  <symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01"/><path d="M10 16h.01"/></symbol>
-  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></symbol>
-</svg>
+  <!-- Arnis at Scale's Lucide sprite (src/gui/index.html), plus the few Meld needs. -->
+  <svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></symbol>
+    <symbol id="i-earth" viewBox="0 0 24 24"><path d="M21.54 15H17a2 2 0 0 0-2 2v4.54"/><path d="M7 3.34V5a3 3 0 0 0 3 3a2 2 0 0 1 2 2c0 1.1.9 2 2 2a2 2 0 0 0 2-2c0-1.1.9-2 2-2h3.17"/><path d="M11 21.95V18a2 2 0 0 0-2-2a2 2 0 0 1-2-2v-1a2 2 0 0 0-2-2H2.05"/><circle cx="12" cy="12" r="10"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol>
+    <symbol id="i-trees" viewBox="0 0 24 24"><path d="M10 10v.2A3 3 0 0 1 8.9 16H5a3 3 0 0 1-1-5.8V10a3 3 0 0 1 6 0Z"/><path d="M7 16v6"/><path d="M13 19v3"/><path d="M12 19h8.3a1 1 0 0 0 .7-1.7L18 14h.3a1 1 0 0 0 .7-1.7L16 9h.2a1 1 0 0 0 .8-1.7L13 3l-1.4 1.5"/></symbol>
+    <symbol id="i-tree" viewBox="0 0 24 24"><path d="M8 19a4 4 0 0 1-2.24-7.32A3.5 3.5 0 0 1 9 6.03V6a3 3 0 1 1 6 0v.04a3.5 3.5 0 0 1 3.24 5.65A4 4 0 0 1 16 19Z"/><path d="M12 19v3"/></symbol>
+    <symbol id="i-mountain" viewBox="0 0 24 24"><path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M4.14 15.08c2.62-1.57 5.24-1.43 7.86.42 2.74 1.94 5.49 2 8.23.19"/></symbol>
+    <symbol id="i-cave" viewBox="0 0 24 24"><path d="m8 3 4 8 5-5 5 15H2L8 3z"/><path d="M9 21v-2.5a3 3 0 0 1 6 0V21"/></symbol>
+    <symbol id="i-pickaxe" viewBox="0 0 24 24"><path d="M9 4.5Q18.5 4 19.5 15"/><path d="M15.5 8.5 4 20"/></symbol>
+    <symbol id="i-brick-wall" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 9v6"/><path d="M16 15v6"/><path d="M16 3v6"/><path d="M3 15h18"/><path d="M3 9h18"/><path d="M8 15v6"/><path d="M8 3v6"/></symbol>
+    <symbol id="i-map" viewBox="0 0 24 24"><path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/></symbol>
+    <symbol id="i-map-plus" viewBox="0 0 24 24"><path d="m11 19-1.106-.552a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0l4.212 2.106a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619V12"/><path d="M15 5.764V12"/><path d="M18 15v6"/><path d="M21 18h-6"/><path d="M9 3.236v15"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></symbol>
+    <symbol id="i-blocks" viewBox="0 0 24 24"><rect width="7" height="7" x="14" y="3" rx="1"/><path d="M10 21V8a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5a1 1 0 0 0-1-1H3"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></symbol>
+    <symbol id="i-landmark" viewBox="0 0 24 24"><path d="M3 22h18"/><path d="M6 18v-7"/><path d="M10 18v-7"/><path d="M14 18v-7"/><path d="M18 18v-7"/><path d="M12 2 20 7H4z"/></symbol>
+    <symbol id="i-house" viewBox="0 0 24 24"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-signpost" viewBox="0 0 24 24"><path d="M12 13v8"/><path d="M12 3v3"/><path d="M4 6a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1h13a2 2 0 0 0 1.152-.365l3.424-2.317a1 1 0 0 0 0-1.635l-3.424-2.318A2 2 0 0 0 17 6z"/></symbol>
+    <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/><path d="m11.5 9.5 2-2"/><path d="m8.5 6.5 2-2"/><path d="m17.5 15.5 2-2"/></symbol>
+    <symbol id="i-off" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z"/><circle cx="12" cy="13" r="3"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-frame" viewBox="0 0 24 24"><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M21 19a2 2 0 0 1-2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h1"/><path d="M14 3h1"/><path d="M14 21h1"/><path d="M3 9v1"/><path d="M21 9v1"/><path d="M3 14v1"/><path d="M21 14v1"/></symbol>
+    <symbol id="i-scale" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 22a1 1 0 0 1 0-20 10 9 0 0 1 10 9 5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+    <symbol id="i-languages" viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+    <symbol id="i-folder-open" viewBox="0 0 24 24"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-hard-drive" viewBox="0 0 24 24"><path d="M22 12H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><path d="M6 16h.01"/><path d="M10 16h.01"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+    <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></symbol>
+    <symbol id="i-minimize" viewBox="0 0 24 24"><path d="m14 10 7-7"/><path d="M20 10h-6V4"/><path d="m3 21 7-7"/><path d="M4 14h6v6"/></symbol>
+    <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="m21 3-7 7"/><path d="m3 21 7-7"/><path d="M9 21H3v-6"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+    <symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></symbol>
+    <symbol id="i-flask" viewBox="0 0 24 24"><path d="M10 2v7.527a2 2 0 0 1-.211.896L4.72 20.55a1 1 0 0 0 .9 1.45h12.76a1 1 0 0 0 .9-1.45l-5.069-10.127A2 2 0 0 1 14 9.527V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></symbol>
+    <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M15.914 4a1.5 1.5 0 00-2.474-1.561l-9 9A1.5 1.5 0 005.5 14h4.002a.5.5 0 01.471.666L8.086 20a1.5 1.5 0 002.475 1.56l9-9A1.5 1.5 0 0018.5 10h-3.997a.5.5 0 01-.472-.667z"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+    <symbol id="i-cpu" viewBox="0 0 24 24"><path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></symbol>
+    <symbol id="i-memory-stick" viewBox="0 0 24 24"><path d="M12 12v-2"/><path d="M12 18v-2"/><path d="M16 12v-2"/><path d="M16 18v-2"/><path d="M2 11h1.5"/><path d="M20 18v-2"/><path d="M20.5 11H22"/><path d="M4 18v-2"/><path d="M8 12v-2"/><path d="M8 18v-2"/><rect x="2" y="6" width="20" height="10" rx="2"/></symbol>
+    <symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z"/></symbol>
+    <symbol id="i-snowflake" viewBox="0 0 24 24"><path d="M2 12h20"/><path d="M12 2v20"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/></symbol>
+    <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></symbol>
+    <symbol id="i-shrub" viewBox="0 0 24 24"><path d="M12 22v-7l-2-2"/><path d="M17 8v.8A6 6 0 0 1 13.8 20H10A6.5 6.5 0 0 1 7 8a5 5 0 0 1 10 0Z"/><path d="m14 14-2 2"/></symbol>
+    <symbol id="i-wheat" viewBox="0 0 24 24"><path d="M2 22 16 8"/><path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/><path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/><path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z"/><path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z"/><path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/><path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/><path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z"/></symbol>
+    <symbol id="i-sprout" viewBox="0 0 24 24"><path d="M7 20h10"/><path d="M10 20c5.5-2.5.8-6.4 3-10"/><path d="M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z"/><path d="M14.1 6a7 7 0 0 0-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z"/></symbol>
+    <symbol id="i-waves" viewBox="0 0 24 24"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></symbol>
+    <symbol id="i-droplets" viewBox="0 0 24 24"><path d="M7 16.3c2.2 0 4-1.83 4-4.05 0-1.16-.57-2.26-1.71-3.19S7.29 6.75 7 5.3c-.29 1.45-1.14 2.84-2.29 3.76S3 11.1 3 12.25c0 2.22 1.8 4.05 4 4.05z"/><path d="M12.56 6.6A10.97 10.97 0 0 0 14 3.02c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a6.98 6.98 0 0 1-11.91 4.97"/></symbol>
+    <symbol id="i-dices" viewBox="0 0 24 24"><rect width="12" height="12" x="2" y="10" rx="2" ry="2"/><path d="m17.92 14 3.5-3.5a2.24 2.24 0 0 0 0-3l-5-4.92a2.24 2.24 0 0 0-3 0L10 6"/><path d="M6 18h.01"/><path d="M10 14h.01"/><path d="M15 6h.01"/><path d="M18 9h.01"/></symbol>
+    <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5V19A9 3 0 0 0 21 19V5"/><path d="M3 12A9 3 0 0 0 21 12"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></symbol>
+    <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></symbol>
+    <symbol id="i-thermometer" viewBox="0 0 24 24"><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></symbol>
+    <symbol id="i-grid-2x2" viewBox="0 0 24 24"><path d="M12 3v18"/><path d="M3 12h18"/><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
+    <symbol id="i-square" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
+    <symbol id="i-fence" viewBox="0 0 24 24"><path d="M4 3 2 5v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/><path d="M6 8h4"/><path d="M6 18h4"/><path d="m12 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/><path d="M14 8h4"/><path d="M14 18h4"/><path d="m20 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z"/></symbol>
+  
+    <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+  </svg>
 
 <div id="app">
   <div id="sideL">
-    <div class="wordmark">MELD</div>
-    <div class="sub" style="font-size:10px;line-height:1.3;margin:6px 0 8px">Arnis worlds, at scale. From a city block to a whole continent, in Minecraft.</div>
-    <button class="sec" id="btnProjects"><svg class="icon"><use href="#i-globe"/></svg>Projects</button>
-    <div class="sub" style="margin:12px 0 4px">Live status <span id="conn" style="float:right">connecting…</span></div>
+      <a href="https://meldmc.com" target="_blank" rel="noopener" title="meldmc.com &mdash; Meld, Arnis worlds at scale" class="logo meld-mark" style="margin:0" aria-label="Meld &mdash; Arnis worlds, at scale. Opens meldmc.com">
+        <span class="mm-stage" aria-hidden="true">
+          <img class="mm-letter mm-m" src="assets/hero-m.webp" alt="" width="349" height="360" decoding="async"/>
+          <img class="mm-letter mm-e" src="assets/hero-e.webp" alt="" width="239" height="360" decoding="async"/>
+          <img class="mm-letter mm-l" src="assets/hero-l.webp" alt="" width="216" height="360" decoding="async"/>
+          <img class="mm-letter mm-d" src="assets/hero-d.webp" alt="" width="266" height="360" decoding="async"/>
+          <img class="mm-sub" src="assets/hero-arnis-worlds.webp" alt="" width="1022" height="98" decoding="async"/>
+          <img class="mm-full" src="assets/hero-title-full.webp" alt="" width="1022" height="400" decoding="async"/>
+        </span>
+      </a>
+    <div class="sub" style="font-size:10.5px;line-height:1.3;margin:2px 0 10px">From a city block to a whole continent, in Minecraft.</div>
+    <button class="wide" id="btnProjects"><svg class="icon"><use href="#i-globe"/></svg>Projects</button>
     <div class="card">
-      <h2>Build</h2>
-      <div class="stat" id="projLine">No project open.</div>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-hard-drive"/></svg></span><div><h3>Build</h3><p id="projLine">No project open.</p></div><span id="conn" class="chip">connecting…</span></div>
       <div class="report">
         <div><span id="estSize" class="big">–</span> <span class="lbl">estimated size</span></div>
         <div class="stat" id="estSub">Plan to see the pieces and size.</div>
@@ -159,11 +345,11 @@
       </div>
     </div>
     <div class="card">
-      <h2>Workers <span id="workersCount" class="chip" style="float:right">idle</span></h2>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-cpu"/></svg></span><div><h3>Workers</h3><p>One row per piece job</p></div><span id="workersCount" class="chip">idle</span></div>
       <div id="workersState"><div class="stat">Idle. Generate to see live workers here.</div></div>
     </div>
     <div class="card">
-      <h2>Log</h2>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-file-text"/></svg></span><div><h3>Log</h3></div></div>
       <div id="log"></div>
     </div>
   </div>
@@ -171,86 +357,71 @@
   <div id="map"></div>
 
   <div id="projOverlay">
-    <div style="display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--hair)">
-      <div style="font-weight:700;font-size:14px;color:var(--acc2)">Projects</div>
-      <input id="projSearch" placeholder="filter…" style="flex:1;min-width:0;padding:4px 8px;font-size:12px">
-      <button class="small xbtn" id="projClose" title="Close"><svg class="icon" style="margin:0"><use href="#i-x"/></svg></button>
+    <div style="display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--ui-card-border)">
+      <h3 style="margin:0;font-size:17px">Projects</h3>
+      <input id="projSearch" placeholder="Filter…" style="flex:1;min-width:0;width:auto">
+      <button class="icon-only" id="projClose" title="Close"><svg class="icon"><use href="#i-x"/></svg></button>
     </div>
-    <div style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line)">
-      <input id="newName" placeholder="new project: letters, digits, - and _" maxlength="64" style="flex:1;min-width:0;width:auto">
-      <button class="sec small" id="newBtn" style="padding:5px 9px"><svg class="icon"><use href="#i-plus"/></svg>New</button>
+    <div style="display:flex;gap:8px;padding:10px 14px;border-bottom:1px solid var(--ui-card-border)">
+      <input id="newName" placeholder="New project: letters, digits, - and _" maxlength="64" style="flex:1;min-width:0;width:auto">
+      <button class="primary" id="newBtn"><svg class="icon"><use href="#i-plus"/></svg>New</button>
     </div>
-    <div class="msg" id="newMsg" style="padding:0 12px"></div>
-    <div id="projCards" style="flex:1;overflow:auto;padding:8px 10px;display:flex;flex-direction:column;gap:8px"></div>
+    <div class="msg" id="newMsg" style="padding:4px 14px 0"></div>
+    <div id="projCards" style="flex:1;overflow:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px"></div>
   </div>
 
-  <div id="coordbox">move the mouse over the map</div>
+  <div id="coordbox">Move the mouse over the map</div>
   <div id="credit">Arnis by <a href="https://github.com/louis-e/arnis" target="_blank" rel="noopener">louis-e</a> · Meld by <a href="https://github.com/Teddy563/meld" target="_blank" rel="noopener">Teddy563</a></div>
 
   <div id="side">
-    <div style="order:-1;margin-bottom:10px">
-      <input id="railSearch" type="text" placeholder="Search settings…" autocomplete="off" style="width:100%;padding:7px 9px;font-size:12px">
-    </div>
-
-    <div class="card collapsed" id="cardSettings">
-      <h2><span class="stepnum">1</span>Settings</h2>
-      <label><span class="lt">Settings for <span class="i" title="Project defaults apply to every selection; a selection's own value wins. Blank fields inherit.">i</span></span>
-        <select id="target" style="width:170px"></select></label>
-      <div id="settingsForm"></div>
-      <div class="msg" id="saveMsg"></div>
-    </div>
-
-    <div class="card collapsed" id="cardPrep">
-      <h2><span class="stepnum">2</span>Prepare data</h2>
-      <div class="stat">A bake cuts an .osm.pbf extract once, before the builds that read it. The selections need the same <b>osm_pbf</b> (and <b>osm_pbf_url</b>) under Settings › OSM source, where prewarm and offline are too.</div>
-      <div id="bakeList"></div>
-      <button class="sec" id="bakeAdd"><svg class="icon"><use href="#i-plus"/></svg>Add a bake</button>
-    </div>
+    <input id="railSearch" type="text" placeholder="Search settings…" autocomplete="off" style="width:100%;flex:none">
 
     <div class="card" id="cardGen">
-      <h2><span class="stepnum">3</span>Generate</h2>
-      <div class="legend">
-        <span><i class="dot" style="background:var(--acc)"></i>planned</span>
-        <span><i class="dot" style="background:var(--run)"></i>running</span>
-        <span><i class="dot" style="background:var(--ok)"></i>built</span>
-        <span><i class="dot" style="background:var(--bad)"></i>failed</span>
-        <span><i class="dot" style="background:var(--mut)"></i>stopped</span>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-play"/></svg></span><div><h3>Generate</h3><p>Build, stop, resume</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div>
+      <div class="card-body">
+        <div class="legend"><span><i class="dot" style="background:var(--ui-accent)"></i>planned</span><span><i class="dot" style="background:var(--run)"></i>running</span><span><i class="dot" style="background:var(--ok)"></i>built</span><span><i class="dot" style="background:var(--ui-danger)"></i>failed</span><span><i class="dot" style="background:var(--ui-muted)"></i>stopped</span></div>
+        <button class="primary wide" id="btnRun"><svg class="icon"><use href="#i-play"/></svg>Generate World</button>
+        <div class="row">
+          <button id="btnPlan" title="Arnis's dry run: pieces, chunks and size per selection, against free disk."><svg class="icon"><use href="#i-ruler"/></svg>Plan</button>
+          <button id="btnStop"><svg class="icon"><use href="#i-square"/></svg>Stop</button>
+          <button id="btnRebuild" class="icon-only danger" title="Build every selection again from scratch." style="flex:none"><svg class="icon"><use href="#i-reset"/></svg></button>
+        </div>
+        <div class="stat">Stop keeps what is built; Generate resumes.</div>
+        <div id="planOut" class="stat" style="white-space:pre-wrap"></div>
       </div>
-      <button id="btnRun" class="go"><svg class="icon"><use href="#i-play"/></svg>Generate world</button>
-      <button id="btnPlan" class="sec" title="Arnis's dry run: pieces, chunks and size per selection, against free disk."><svg class="icon"><use href="#i-ruler"/></svg>Plan</button>
-      <div class="row" style="margin-top:6px">
-        <button class="sec" id="btnStop"><svg class="icon"><use href="#i-square"/></svg>Stop</button>
-        <button class="sec" id="btnRebuild" title="Build every selection again from scratch." style="width:auto;flex:0 0 auto;padding:8px 12px"><svg class="icon" style="margin:0"><use href="#i-rotate"/></svg></button>
-      </div>
-      <div class="stat" style="margin-top:6px">Stop keeps what is built; Generate resumes.</div>
-      <div id="planOut" class="stat" style="white-space:pre-wrap;margin-top:4px"></div>
     </div>
 
     <div class="card" id="cardSel">
-      <h2>Selections / worlds</h2>
-      <div class="stat">Draw a rectangle or polygon on the map to add one; edit or delete it with the map tools. Click one to give it its own settings.</div>
-      <div id="selList"></div>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-map"/></svg></span><div><h3>Selections</h3><p>Areas on the map and their worlds</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div>
+      <div class="card-body">
+        <div class="stat">Draw a rectangle or polygon on the map to add one; edit or delete it with the map tools. Click one to give it its own settings.</div>
+        <div id="selList" class="card-body"></div>
+      </div>
     </div>
 
+    <div id="targetBar"><span>Settings for</span><select id="target"></select><span class="tooltip-icon" title="Project defaults apply to every selection; a selection's own value wins. A setting left at its default inherits.">?</span></div>
+    <div id="settingsCards" style="display:contents"></div>
+    <div class="msg" id="saveMsg"></div>
+
     <div class="card collapsed" id="cardServer">
-      <h2>Server setup</h2>
-      <div id="serverBody"></div>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-server"/></svg></span><div><h3>Server</h3><p>Leaf or Paper for the worlds</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div>
+      <div class="card-body" id="serverBody"></div>
     </div>
 
     <div class="card collapsed" id="cardArnis">
-      <h2>Arnis</h2>
-      <div id="arnisBody" class="stat">…</div>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-box"/></svg></span><div><h3>Arnis</h3><p>The generator Meld drives</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div>
+      <div class="card-body" id="arnisBody">…</div>
     </div>
 
     <div class="card collapsed" id="cardToml">
-      <h2>Project file</h2>
-      <div class="stat">The project as TOML: everything the forms set, plus comments. Saving checks it first.</div>
-      <textarea id="toml" spellcheck="false"></textarea>
-      <button class="sec" id="tomlSave">Save</button>
-      <div class="msg" id="tomlMsg"></div>
+      <div class="card-head"><span class="card-icon"><svg class="icon"><use href="#i-file-text"/></svg></span><div><h3>Project File</h3><p>The TOML, with comments</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div>
+      <div class="card-body">
+        <textarea id="toml" spellcheck="false"></textarea>
+        <button class="wide" id="tomlSave">Save</button>
+        <div class="msg" id="tomlMsg"></div>
+      </div>
     </div>
-
-    <div class="railfoot"><a href="https://github.com/Teddy563/meld" target="_blank" rel="noopener">Meld 2</a> · not affiliated with Mojang AB or Minecraft. Built on the open source Arnis generator.</div>
+    <div class="sub" style="text-align:center;padding:4px 0 8px">Meld 2 · not affiliated with Mojang AB or Minecraft. Built on the open source Arnis generator.</div>
   </div>
 </div>
 
@@ -261,7 +432,6 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const icon = (n) => `<svg class="icon"><use href="#i-${n}"/></svg>`;
 const r6 = (x) => Math.round(x * 1e6) / 1e6;
-const tip = (t) => (t ? ` <span class="i" title="${esc(t)}">i</span>` : "");
 
 async function api(path, opt = {}) {
   const r = await fetch(path, { ...opt, headers: { "X-Meld-Token": token, ...(opt.headers || {}) } });
@@ -273,106 +443,148 @@ async function api(path, opt = {}) {
 const post = (path, body) => api(path, { method: "POST", body });
 const say = (el, text, bad) => { const e = $(el); if (e) { e.textContent = text; e.className = "msg" + (bad ? " bad" : ""); } };
 
-// ---- the settings rail: every key a selection may set, in Meld 1's order ----
-// [key, label, type, tip]; type: num | text | bool (off unless set) | on (on unless false) | list | [choices]
-const B = ["", "true", "false"];
-const SETTINGS = [
-  { rows: [
-    ["scale", "Scale", "num", "Blocks per metre: 1 = 1:1, 0.1 = 1:10. Arnis default 1."],
-    ["unit_regions", "Cell size (regions)", "num", "Side of each piece in 512-block regions. Pieces are what Arnis builds in parallel and what resumes. Default 4."],
-    ["ground_level", "Ground level", "num", "Arnis default -62."],
-    ["road_detail", "Road detail", ["", "clean", "compact"], "clean simplifies lane markings (from about scale 0.7); compact also leaves out footways, paths and service roads."],
-    ["mode", "Generation mode", ["", "geo-terrain", "geo-only", "terrain-only"], "geo-terrain: map objects on real terrain (default); geo-only: flat ground; terrain-only: no map objects."],
-    ["origin", "Origin lat, lon", "text", "Pins the One World frame. Unset: the centre of the world's first selection."],
+// ---- the settings: Arnis at Scale's sections, groups and labels, over Meld's keys ----
+// Row: { k: key, l: label, d: description, t: type, o: options, def: Arnis's default, tip }
+// Types: switch (on = true), off (on = false, e.g. No Buildings), num, text, select, seg
+// (segmented), radio (preview options), realm, sizes (tree sizes), props.
+// `run: key` writes to [run] when the target is the project; `project: true` rows only show there.
+const o = (s) => s.split(";").map((p) => p.split("="));
+const SECTIONS = [
+  { id: "world", title: "World", desc: "Game mode, time and map item", icon: "globe", rows: [
+    { k: "gamemode", l: "Game Mode", t: "seg", o: o("survival=Survival;creative=Creative;spectator=Spectator"), def: "creative" },
+    { k: "world_time", l: "World Time", d: "Time of day the world starts at.", t: "num", def: 6000 },
+    { k: "world_type", l: "World Type", d: "What lies past the edge of the area. Java only.", t: "seg", o: o("void=Void;flat=Flat"), def: "void" },
+    { k: "map_item", l: "World Map Item", d: "Start with a map of the whole area in your inventory. Java only.", t: "switch", def: true },
+    { note: "Every Meld selection builds into a One World, named per selection under Selections." },
   ] },
-  { head: "Terrain shaping", rows: [
-    ["height_multiplier", "Terrain height ×", "num", "Vertical exaggeration without widening the map."],
-    ["snow_mode", "Snow", ["", "realistic", "peaks", "manual", "off"], "realistic follows the climate snow line (default); manual from Snow Y up. One World refuses peaks."],
-    ["snow_percent", "Snow top %", "num", "peaks: the top share of the height range."],
-    ["snow_y", "Snow Y", "num", "manual: snow at and above this Y."],
-    ["disable_height_limit", "Extend build height", "bool", "One World already uses the extended height."],
-    ["aws_only_elevation", "Legacy AWS elevation", "bool", "The old elevation source only."],
-    ["climate_mode", "Climate (Köppen)", ["", "origin", "per-position"], "Experimental. origin: read once (default); per-position: at every block, so a large world crosses climate zones."],
+  { id: "generation", title: "Generation", desc: "What gets built", icon: "box", rows: [
+    { k: "mode", l: "Generation Mode", t: "select", o: o("geo-terrain=Objects + Terrain;geo-only=Objects only;terrain-only=Terrain only"), def: "geo-terrain" },
+    { k: "overture", l: "Additional Buildings", d: "Fills gaps in OpenStreetMap with satellite-detected footprints.", t: "switch", def: true },
+    { k: "use_3d", l: "3D Models & Props", d: "Famous landmarks plus cars, boats, cranes and wind turbines.", t: "switch", def: true },
+    { k: "interior", l: "Interior Generation", d: "Rooms, furniture and loot chests. Experimental and slower.", t: "switch", def: false },
+    { k: "overture_source", l: "Overture Source", d: "Which Overture transport to read. Both carry the same buildings.", t: "select", o: o("auto=Auto;tiles=Vector Tiles;parquet=GeoParquet"), def: "auto" },
+    { k: "signage", l: "Signage", d: "Readable street names, traffic signs and shop plates. Java only.", t: "seg", o: o("none=None;basic=Basic;full=Full"), def: "basic" },
   ] },
-  { drawer: "OSM source · data", rows: [
-    ["overpass_url", "Overpass URL", "text", "A private or self-hosted Overpass mirror."],
-    ["osm_pbf", "OSM .pbf", "text", "Read OSM from an .osm.pbf file, or 'geofabrik'. A bake (Prepare data) cuts it once."],
-    ["osm_pbf_url", "Geofabrik extract URL", "text", "With geofabrik: the extract to download. The bake and its selections need the same."],
-    ["osm_tiles_url", "Tile archive", "text", "A prepared local tile archive folder."],
-    ["max_downloads", "Downloads at once", "num", "Arnis default 16."],
-    ["prewarm", "Fill caches first (prewarm)", "bool", "Before the build, a step downloads everything the selection needs."],
-    ["prewarm_first", "Prewarm inside the run", "bool", "Arnis's own --prewarm-first."],
-    ["offline", "Cached data only (offline)", "bool", "Never touch the network: use with prewarm or a bake."],
+  { id: "nature", title: "Terrain & Nature", desc: "Height, ground, caves and trees", icon: "mountain", rows: [
+    { k: "height_multiplier", l: "Terrain Height", d: "1.00 is real height. Higher values make hills and mountains taller.", t: "num", def: 1 },
+    { k: "fillground", l: "Fill Ground", d: "Stone and ores below the surface for survival mining.", t: "switch", def: false },
+    { k: "caves", l: "Caves", d: "Caves, underground rivers and cave biomes under hills.", t: "switch", def: false },
+    { k: "canopy_height", l: "Real Tree Cover", d: "Trees stand where real ones do, at roughly their height.", t: "switch", def: true },
+    { k: "legacy_trees", l: "Legacy trees", d: "Simple procedural trees instead of detailed models.", t: "switch", def: false },
+    { preview: (g) => `tree-size-${g("max_tree_size")}`, rows: [
+      { k: "max_tree_size", l: "Max Tree Size", d: "Taller trees are swapped for a smaller species.", t: "radio", o: o("small=Small;medium=Medium;big=Big;tall=Tall;giant=Giant"), def: "giant" },
+    ] },
   ] },
-  { perf: true, head: "Generation performance", rows: [
-    ["workers", "Workers", "text", "Pieces Arnis builds at once: auto (default) or a number."],
-    ["threads", "Threads", "num", "Unset: Meld splits [run] cpu_target across the jobs running."],
-    ["cpu_target", "CPU limit %", "num", "Unset: Meld's share."],
-    ["ram_budget_mb", "RAM budget MB", "num", "Unset: Meld's share."],
+  { id: "facades", title: "Building Facades", desc: "Walls from street-level photos", icon: "building", rows: [
+    { k: "building_facades", l: "Building Facades", d: "Facade panels on buildings.", t: "switch", def: false },
+    { k: "mapillary_facades", l: "Mapillary Facades", d: "Wall colours, windows and doors from Mapillary photos. Needs MAPILLARY_TOKEN in Meld's environment.", t: "seg", o: o("true=On;false=Off"), def: true },
+    { k: "mapillary_facade_mode", l: "Facade Mode", d: "Hang the photos themselves, or match wall blocks to them.", t: "seg", o: o("blocks=Blocks;photos=Photos"), def: "photos" },
+    { k: "facade_detail", l: "Facade Detail", d: "Higher detail is sharper but needs a modern graphics card.", t: "seg", o: o("standard=Standard;high=High"), def: "standard" },
+    { k: "facade_px", l: "Facade Resolution", d: "Pixels per block of a facade panel.", t: "num", def: 16 },
   ] },
-  { rows: [["seed", "Seed", "num", "World seed."]] },
-  { drawer: "Props & 3D models", rows: [
-    ["props", "Prop families", "text", "all, none, or a comma list: boat, car, crane, excavator, fountain, helicopter, jetbridge, landmark, lighthouse, plane, playground, starship, tombstone, tractor, windturbine."],
-    ["use_3d", "Downloaded 3D models", "on", "Off adds --no-3d."],
+  { id: "map", title: "Map & Input", desc: "Scale and frame", icon: "map", rows: [
+    { k: "scale", l: "World Scale", d: "1.00 is real-world size. Smaller worlds generate faster.", t: "num", def: 1 },
+    { k: "origin", l: "Origin", d: "Pins the One World frame (lat,lon). Empty: the centre of the world's first selection.", t: "text" },
+    { k: "ground_level", l: "Ground Level", d: "Y of the ground.", t: "num", def: -62 },
   ] },
-  { rows: [
-    ["gamemode", "Game mode", ["", "survival", "creative", "adventure", "spectator"], "Arnis default creative."],
-    ["world_time", "Time of day", "num", "Ticks; Arnis default 6000 (noon)."],
-    ["map_item", "World map item", B, "A map of the area at spawn; Arnis default true."],
-    ["world_border", "World border", "bool", "Around all of the world's areas."],
+  { id: "advanced", title: "Advanced", desc: "Build height, lighting, mods", icon: "sliders", rows: [
+    { k: "disable_height_limit", l: "Extend build height", d: "Raises the height limit for 1:1 mountains. Not for Realms.", t: "switch", def: false },
+    { k: "aws_only_elevation", l: "Legacy Terrain", d: "Older, coarser elevation source for when the default fails.", t: "switch", def: false },
+    { k: "bake_lighting", l: "Bake lighting", d: "Precomputed light for LOD mods like Voxy. Slower.", t: "switch", def: false },
+    { k: "voxy_lod", l: "Pre-generate Voxy LOD", d: "Distant terrain renders on first join. Java only.", t: "switch", def: false },
   ] },
-  { head: "Buildings", rows: [
-    ["buildings", "Buildings", "on", "Off adds --no-buildings."],
-    ["overture", "Additional buildings (Overture)", B, "Arnis default true."],
-    ["overture_source", "Overture source", ["", "auto", "tiles", "parquet"], ""],
-    ["interior", "Interiors", B, "Arnis default false."],
-    ["signage", "Signs", ["", "basic", "full"], "basic: street names, traffic signs; full adds shop names and house numbers. Java only."],
+  { id: "features", title: "Extra Features", desc: "Pieces, Meld generation, experiments", icon: "sparkles", groups: [
+    { title: "Performance & Large Worlds", rows: [
+      { k: "jobs", run: "jobs", project: true, l: "Jobs at Once", d: "Selections built at the same time; never two on one world.", t: "num", def: 1 },
+      { k: "cpu_target", run: "cpu_target", l: "CPU Usage", d: "Share of the cores generation may use, in percent.", t: "num", def: 90 },
+      { k: "threads", l: "Threads", d: "Exact number of worker threads. Empty: Meld's share of CPU Usage.", t: "num" },
+      { k: "ram_budget_mb", run: "ram_budget_mb", l: "Memory Budget", d: "Memory a run may assume, in MB. Empty is automatic.", t: "num" },
+      { k: "max_downloads", l: "Parallel Downloads", d: "Downloads kept in flight at once.", t: "num", def: 16 },
+      { k: "workers", l: "Parallel Workers", d: "Pieces of a large area built at once.", t: "select", o: o("auto=Auto;1=1;2=2;3=3;4=4;5=5;6=6"), def: "auto" },
+      { k: "unit_regions", l: "Cell Size", d: "Regions in each piece; pieces are what resumes.", t: "seg", o: o("1=1x1;2=2x2;4=4x4;8=8x8"), def: 4 },
+      { k: "snap", l: "Selection Snap", d: "Whole cells inside the selection, or covering it. Off keeps the box as drawn.", t: "seg", o: o("=Off;fit=Fit Inside;cover=Cover"), def: "" },
+      { k: "min_free_mb", run: "min_free_mb", project: true, l: "Keep Free on Disk", d: "MB a run must leave free; one that would not is refused.", t: "num", def: 1024 },
+    ] },
+    { title: "Meld Generation (Experimental)", desc: "Changes what gets built: snow, roads, fields, trees, caves and water.", sub: [
+      { title: "Terrain", rows: [
+        { preview: (g) => `snow-mode-${g("snow_mode")}`, rows: [
+          { k: "snow_mode", l: "Snow", d: "Where snow lies on the terrain.", t: "radio", o: o("realistic=Realistic;peaks=Peaks;manual=Manual;off=Off"), def: "realistic" },
+          { k: "snow_percent", l: "Snow Cap Share", d: "Share of the height range under snow. Not for One World.", t: "num", def: 6 },
+          { k: "snow_y", l: "Snow Line Y", d: "Snow lies from this height up.", t: "num", def: 120 },
+        ] },
+        { preview: (g) => `scatter-${g("rocks") && g("bushes") ? "both" : g("rocks") ? "rocks" : g("bushes") ? "bushes" : "off"}`, rows: [
+          { k: "rocks", l: "Rocks", d: "Small rocks on open grass and cropland.", t: "switch", def: false },
+          { k: "bushes", l: "Bushes", d: "Small bushes on open grass and cropland.", t: "switch", def: false },
+          { k: "rock_density", l: "Rock Density", d: "Share of chunks that get a rock. Requires Rocks.", t: "num", def: 0.02 },
+          { k: "bush_density", l: "Bush Density", d: "Share of chunks that get a bush. Requires Bushes.", t: "num", def: 0.05 },
+        ] },
+      ] },
+      { title: "Roads & Buildings", rows: [
+        { preview: (g) => `road-detail-${g("road_detail")}`, rows: [
+          { k: "road_detail", l: "Road Detail", d: "How much road marking and minor ways to build.", t: "radio", o: o("max=Max;clean=Clean;compact=Compact"), def: "max" },
+        ] },
+        { k: "buildings", l: "No Buildings", d: "Roads, rail, water and land cover only.", t: "off", def: true },
+        { k: "loot_table", l: "Chest Loot Table", d: "Loot file for interior chests. Requires Interior Generation.", t: "text" },
+      ] },
+      { title: "Fields & Trees", rows: [
+        { preview: (g) => `field-mix-${["smallholding", "patchwork", "prairie", "pasture"].includes(g("field_mix")) ? g("field_mix") : "classic"}`, rows: [
+          { k: "field_mix", l: "Field Layout", d: "How farmland is split into parcels.", t: "radio", o: o("classic=Classic;smallholding=Smallholding;patchwork=Patchwork;prairie=Prairie;pasture=Pasture"), def: "classic" },
+          { k: "farm_crops", l: "Farm Crops", d: "Crop shares for farm plots, e.g. wheat=60,sunflower=20,fallow=20.", t: "text" },
+          { k: "field_scale", l: "Parcel Size", d: "Parcel size against the layout's own, in percent.", t: "num", def: 100 },
+        ] },
+        { preview: (g) => `tree-realm-${g("tree_realm")}`, rows: [
+          { k: "tree_realm", l: "Tree Realm", d: "Which region's trees to plant.", t: "realm", o: o("auto=Auto;afr=Africa;asn=Asia;aus=Oceania;ena=E. North America;eur=Europe;fl=Caribbean;ind=Tropical Asia;sam=South America;wna=W. North America;vanilla-plus=Vanilla Plus"), def: "auto" },
+          { k: "tree_size_weights", l: "Tree Sizes", d: "Which sizes to plant, and how often (percent of the usual).", t: "mix", names: o("small=Small;medium=Medium;big=Big;tall=Tall;giant=Giant") },
+        ] },
+      ] },
+      { title: "Caves & Water", rows: [
+        { preview: (g) => `cave-style-${g("cave_style")}${g("cave_ores") === "more" ? "-more-ores" : ""}`, rows: [
+          { k: "cave_style", l: "Cave Style", d: "How much of the underground the cave biomes take. Requires Caves.", t: "radio", o: o("vanilla=Vanilla;more-vanilla=More Vanilla;all-mix=All Mix;more-mix=More Mix"), def: "all-mix" },
+          { k: "cave_ores", l: "Ores", d: "How many ore veins the rock holds. Requires Caves.", t: "radio", o: o("normal=Normal;more=More"), def: "normal" },
+        ] },
+        { k: "cave_biomes", l: "Cave Biomes", d: "Each cave biome's amount, from the style's own (percent; 0 turns it off).", t: "mix", names: o("lush=Lush;dripstone=Dripstone;deepdark=Deep Dark;mushroom=Mushroom;ice=Ice;amethyst=Amethyst;volcanic=Volcanic;coral=Coral") },
+        { k: "cave_seed", l: "Cave Seed", d: "A different cave layout per seed. Requires Caves.", t: "num" },
+        { k: "cave_datum_y", l: "Cave Datum Y", d: "Lines caves up between areas. Requires Caves.", t: "num" },
+        { preview: (g) => `climate-mode-${g("climate_mode")}`, rows: [
+          { k: "climate_mode", l: "Climate Sampling", d: "Where the climate behind ground and biomes is read.", t: "radio", o: o("origin=Origin;per-position=Per Position"), def: "origin" },
+        ] },
+        { preview: (g) => `river-bed-${g("river_bed")}`, rows: [
+          { k: "river_bed", l: "River Bed", d: "Shape of river, canal and stream beds.", t: "radio", o: o("off=Off;v1=U-Shaped"), def: "off" },
+        ] },
+        { preview: (g) => `water-detail-${g("water_detail")}`, rows: [
+          { k: "water_detail", l: "Water Detail", d: "Finer water for small scales.", t: "radio", o: o("default=Default;scaled=Scaled"), def: "default" },
+        ] },
+      ] },
+    ] },
+    { title: "Experimental", rows: [
+      { preview: (g) => `grass-texture-${g("grass_texture") ? "on" : "off"}`, rows: [
+        { k: "grass_texture", l: "Grass Texture", d: "Mapped meadows as loose parcels of grass and flowers.", t: "switch", def: false },
+        { k: "grass_mix", l: "Grass Mix", d: "Parcel mix for grassland: a preset or a share list.", t: "text" },
+      ] },
+      { preview: (g) => `land-texture-${g("land_texture") ? "on" : "off"}`, rows: [
+        { k: "land_texture", l: "Land Texture", d: "Untagged land textured from satellite land cover.", t: "switch", def: false },
+        { k: "land_mix", l: "Land Mix", d: "Parcel mix for textured cropland, from a preset.", t: "text" },
+      ] },
+      { k: "seed", l: "World Seed", d: "A different but repeatable look per seed.", t: "num" },
+      { k: "props", l: "Props", d: "Which bundled props to place: cars, boats, cranes and more.", t: "props" },
+      { k: "props_min_scale", l: "Props Minimum Scale", d: "No props below this world scale. Empty places them at any.", t: "num" },
+      { k: "tree_pack_dir", l: "Tree Pack Folder", d: "Your own tree schematics.", t: "text" },
+      { k: "tree_pack_mode", l: "Tree Pack Mode", d: "Whether your trees join the built-in ones or replace them.", t: "select", o: o("add=Add to Built-in;replace=Replace Built-in"), def: "add" },
+      { k: "world_border", l: "World Border", d: "Keeps players inside the generated area. Java only.", t: "switch", def: false },
+      { k: "extra_args", l: "Extra Arnis Flags", d: "Flags Meld does not model, separated by spaces; passed unchecked.", t: "list" },
+    ] },
   ] },
-  { drawer: "Building facades", rows: [
-    ["building_facades", "Building facades", "bool", ""],
-    ["facade_detail", "Facade detail", ["", "standard", "high"], ""],
-    ["facade_px", "Facade px", "num", "Arnis default 16."],
-    ["mapillary_facades", "Mapillary facades", B, "Needs MAPILLARY_TOKEN in Meld's environment."],
-    ["mapillary_facade_mode", "Mapillary mode", ["", "photos", "blocks"], ""],
+  { id: "osm", title: "OSM Data Source", desc: "Where map data comes from", icon: "database", rows: [
+    { k: "osm_tiles_url", l: "Archive URL", d: "Address of a tile archive. Empty uses Arnis's own.", t: "text" },
+    { k: "overpass_url", l: "Overpass Servers", d: "Servers to ask, comma separated. Empty uses Arnis's own.", t: "text" },
+    { k: "osm_pbf", l: "PBF File", d: "An .osm.pbf extract covering the area, or geofabrik to download one.", t: "text" },
+    { k: "osm_pbf_url", l: "Geofabrik Extract", d: "With geofabrik: the extract to download. A bake and its selections need the same.", t: "text" },
+    { k: "bake_cpu", run: "bake_cpu", project: true, l: "Bake CPU Usage", d: "Share of the cores downloads and bakes may use. Empty: CPU Usage.", t: "num" },
+    { k: "offline", l: "Offline Mode", d: "Uses only data downloaded before. Fails and lists what is missing.", t: "switch", def: false },
+    { k: "prewarm", l: "Download Area For Offline Use", d: "A step before the build fetches what the selection needs.", t: "switch", def: false },
+    { k: "prewarm_first", l: "Warm Caches Before Building Pieces", d: "Downloads each piece's data first, one at a time.", t: "switch", def: false },
+    { bakes: true },
   ] },
-  { head: "Trees", rows: [
-    ["legacy_trees", "Legacy trees", "bool", "The old procedural trees instead of schematics."],
-    ["tree_realm", "Tree biome", ["", "auto", "afr", "asn", "aus", "ena", "eur", "fl", "ind", "sam", "wna", "vanilla-plus"], ""],
-  ] },
-  { drawer: "Tree sizes", rows: [["tree_size_weights", "Size weights", "text", "e.g. big=150,tall=50,giant=0 (small, medium, big, tall, giant; 0-200)."]] },
-  { drawer: "Farmland texture", rows: [
-    ["field_mix", "Profile", "text", "smallholding, patchwork, prairie, pasture, classic, or a list like farm=75,coarse=10,plains=8,moss=5,flower=2."],
-    ["farm_crops", "Crops", "text", "e.g. wheat=60,sunflower=20,fallow=20."],
-    ["field_scale", "Field scale", "num", "Arnis default 100."],
-    ["grass_texture", "Also texture open grassland", "bool", ""],
-    ["land_texture", "Also texture untagged land", "bool", ""],
-    ["rocks", "Rocks", "bool", ""],
-    ["rock_density", "Rock density", "num", "Arnis default 0.02."],
-    ["bushes", "Bushes", "bool", ""],
-    ["bush_density", "Bush density", "num", "Arnis default 0.05."],
-  ] },
-  { head: "Land & water", rows: [
-    ["fillground", "Fill ground", "bool", "Solid ground below the surface."],
-    ["river_bed", "River bed", ["", "v1"], "v1: smooth U-shaped beds."],
-    ["water_detail", "Water detail", ["", "scaled"], ""],
-    ["caves", "Caves", "bool", ""],
-  ] },
-  { drawer: "Cave biomes", rows: [
-    ["cave_style", "Cave style", ["", "vanilla", "more-vanilla", "all-mix", "more-mix"], "How much of the underground the themed cave biomes take; default all-mix."],
-    ["cave_ores", "Cave ores", ["", "normal", "more"], ""],
-    ["cave_seed", "Cave seed", "num", ""],
-  ] },
-  { head: "Output", rows: [
-    ["voxy_lod", "Voxy LOD pregeneration", "bool", ""],
-    ["bake_lighting", "Bake lighting (LOD mods)", "bool", ""],
-  ] },
-  { drawer: "Extra Arnis flags", rows: [["extra_args", "Arguments", "list", "Flags Meld does not model, separated by spaces; passed unchecked."]] },
-];
-const RUN = [
-  ["jobs", "Jobs at once", "num", "Arnis processes at once; never two on one world."],
-  ["cpu_target", "CPU limit %", "num", "Share of the cores all jobs split. Default 90."],
-  ["ram_budget_mb", "RAM budget MB", "num", "Split between jobs. Unset: 80 % of free RAM."],
-  ["min_free_mb", "Keep free on disk MB", "num", "A run that would leave less is refused. Default 1024."],
 ];
 
 // ---- state ----
@@ -384,6 +596,13 @@ const logs = {};
 let runStart = null;
 let lastPlan = null;
 
+// ---- cards: click a head to fold it (Meld 1) ----
+document.addEventListener("click", (e) => {
+  const h = e.target.closest(".card-head");
+  if (h && h.parentElement.id !== "" && h.querySelector(".chev")) h.parentElement.classList.toggle("collapsed");
+});
+const sectionCard = (s, body) => `<div class="card collapsed" id="card-${s.id}"><div class="card-head"><span class="card-icon">${icon(s.icon)}</span><div><h3>${esc(s.title)}</h3><p>${esc(s.desc)}</p></div><svg class="icon chev"><use href="#i-chevron"/></svg></div><div class="card-body">${body}</div></div>`;
+
 // ---- projects overlay ----
 async function listProjects() {
   let list = [];
@@ -393,8 +612,8 @@ async function listProjects() {
     if (p.error) return `<div class="pcard" data-open="${esc(p.name)}"><b>${esc(p.name)}</b><div class="stat bad">${esc(p.error)}</div></div>`;
     const st = Object.values(p.state || {});
     const done = st.filter((s) => s.status === "done").length;
-    const chip = p.running ? `<span class="chip" style="color:var(--acc)">running</span>` : st.length && done === st.length ? `<span class="chip" style="color:var(--ok)">built</span>` : "";
-    return `<div class="pcard ${cur && cur.name === p.name ? "on" : ""}" data-open="${esc(p.name)}"><div class="row" style="justify-content:space-between"><b>${esc(p.title)}</b>${chip}</div>
+    const chip = p.running ? `<span class="chip on">running</span>` : st.length && done === st.length ? `<span class="chip good">built</span>` : "";
+    return `<div class="pcard ${cur && cur.name === p.name ? "on" : ""}" data-open="${esc(p.name)}"><div class="row"><b style="flex:1">${esc(p.title)}</b>${chip}</div>
       <div class="stat">${esc(p.name)} · ${p.selections.length} selection(s)${st.length ? ` · ${done}/${st.length} built` : ""}</div></div>`;
   }).join("") || `<div class="stat">No projects yet. Name one above and press New.</div>`;
 }
@@ -410,11 +629,12 @@ $("newBtn").onclick = async () => {
     await api(`/api/projects/${name}`, { method: "PUT", body: JSON.stringify({ format: 1, name, output: "saves" }) });
     $("newName").value = "";
     say("newMsg", "");
+    cur = null; // a new project, even under an old name: read it fresh
     location.hash = `#/p/${name}`;
   } catch (e) { say("newMsg", e.message, true); }
 };
 
-// ---- map ----
+// ---- map (Meld 1's Leaflet + leaflet.draw setup) ----
 const map = L.map("map", { zoomControl: true }).setView([47.14, 9.52], 5);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
 const drawn = new L.FeatureGroup().addTo(map);
@@ -451,7 +671,6 @@ function geometryFromMap() {
     .map((s) => (s.polygon ? { ...s, polygon: rings[s.id].filter(Boolean) } : { ...s, bbox: boxes[s.id] }));
   if (target && !cur.model.selection.some((s) => s.id === target)) target = "";
 }
-
 function statusOf(id) {
   const l = ((cur && live[cur.name]) || {})[id];
   const s = ((cur && cur.state) || {})[id];
@@ -463,7 +682,7 @@ function selStatus(sel) {
   for (const k of ["running", "failed", "stopped", "pending"]) if (st.includes(k)) return k;
   return st.length ? "done" : "pending";
 }
-const colour = { pending: "#fecc44", running: "#cf9f3c", done: "#86b45a", skipped: "#86b45a", failed: "#cf5a3e", stopped: "#9a9079" };
+const colour = { pending: "#fecc44", running: "#ff9800", done: "#4caf50", skipped: "#4caf50", failed: "#cf6679", stopped: "#b8b8b8" };
 const styleOf = (s) => ({ color: colour[selStatus(s)], weight: s.id === target ? 4 : 2.5, opacity: 1, fillOpacity: s.id === target ? 0.25 : 0.1 });
 function drawShapes(fit) {
   drawn.clearLayers();
@@ -478,7 +697,7 @@ function drawShapes(fit) {
       drawn.addLayer(l);
     }
   }
-  for (const p of cur.parts) L.rectangle([[p.bbox[0], p.bbox[1]], [p.bbox[2], p.bbox[3]]], { color: "#f0e9da", weight: 1.2, opacity: 0.7, dashArray: "6 5", fill: false, interactive: false }).addTo(partsLayer);
+  for (const p of cur.parts) L.rectangle([[p.bbox[0], p.bbox[1]], [p.bbox[2], p.bbox[3]]], { color: "#f2f2f2", weight: 1.2, opacity: 0.7, dashArray: "6 5", fill: false, interactive: false }).addTo(partsLayer);
   if (fit && drawn.getLayers().length) map.fitBounds(drawn.getBounds(), { maxZoom: 14, padding: [40, 40] });
 }
 function restyle() {
@@ -501,7 +720,6 @@ async function openProject(name, keep, fresh) {
   if (first) renderSettings();
   renderTargets();
   renderSelections();
-  renderBakes();
   renderBuild();
   if (first) serverBody();
 }
@@ -514,7 +732,7 @@ async function saveModel(what, rerender) {
   await openProject(cur.name, true);
   if (rerender) { drawShapes(false); renderSettings(); }
 }
-const saveSoon = (what) => { clearTimeout(saveTimer); saveTimer = setTimeout(() => saveModel(what), 500); };
+const saveSoon = (what) => { clearTimeout(saveTimer); saveTimer = setTimeout(() => saveModel(what), 450); };
 
 function renderTargets() {
   const sels = cur.model.selection || [];
@@ -525,105 +743,211 @@ $("target").onchange = () => pickTarget($("target").value);
 function pickTarget(id) {
   target = id;
   $("target").value = id;
-  $("cardSettings").classList.remove("collapsed");
   renderSettings();
   renderSelections();
   restyle();
 }
 
-function fieldHtml([key, label, type, help], table, inherited, attr = "data-f") {
-  const v = table[key], inh = inherited[key];
-  const lab = `<span class="lt">${esc(label)}${tip(`${key}: ${help || ""}`)}</span>`;
-  if (type === "bool" || type === "on") {
-    const on = v ?? inh ?? type === "on";
-    return `<label data-key="${key}">${lab}<input type="checkbox" ${attr}="${key}" data-t="${type}" ${on ? "checked" : ""}></label>`;
-  }
-  if (Array.isArray(type)) {
-    const opts = type.map((o) => `<option value="${esc(o)}" ${String(v ?? "") === o ? "selected" : ""}>${o === "" ? (inh !== undefined ? `inherit (${esc(inh)})` : "default") : esc(o)}</option>`).join("");
-    return `<label data-key="${key}">${lab}<select ${attr}="${key}" data-t="choice">${opts}</select></label>`;
-  }
-  const val = type === "list" ? (v || []).join(" ") : v ?? "";
-  const ph = inh !== undefined ? (Array.isArray(inh) ? inh.join(" ") : String(inh)) : "";
-  return `<label data-key="${key}">${lab}<input ${attr}="${key}" data-t="${type}" value="${esc(val)}" placeholder="${esc(ph)}" ${type === "list" || type === "text" ? 'style="width:140px"' : ""}></label>`;
+// ---- settings: render Arnis-style rows over the target's table ----
+let ctxt = null; // { table, inherited, run, sel }
+const isProject = () => !ctxt.sel;
+function where(r) { return r.run && isProject() ? { t: ctxt.run, base: r.def } : { t: ctxt.table, base: ctxt.inherited[r.k] ?? r.def }; }
+function eff(k) {
+  const r = ROWS[k];
+  if (!r) return ctxt.table[k] ?? ctxt.inherited[k];
+  const w = where(r);
+  return w.t[r.k] ?? w.base;
 }
-// A field's value from its input; undefined removes the key (it inherits).
-function readField(el, dflt) {
-  const t = el.dataset.t, raw = el.value.trim();
-  if (t === "bool" || t === "on") return el.checked === dflt ? undefined : el.checked;
-  if (t === "list") return raw ? raw.split(/\s+/) : undefined;
-  if (t === "num") return raw === "" || Number.isNaN(Number(raw)) ? undefined : Number(raw);
-  if (t === "choice") return raw === "" ? undefined : raw === "true" ? true : raw === "false" ? false : raw;
-  return raw === "" ? undefined : /^\d+$/.test(raw) ? Number(raw) : raw;
+const ROWS = {};
+const walk = (rows, f) => rows.forEach((r) => (r.rows ? walk(r.rows, f) : f(r)));
+SECTIONS.forEach((s) => (s.groups || [{ rows: s.rows }]).forEach((g) => (g.sub || [g]).forEach((x) => walk(x.rows, (r) => r.k && (ROWS[r.k] = r)))));
+
+function control(r) {
+  const v = eff(r.k), k = esc(r.k);
+  switch (r.t) {
+    case "switch": return `<input type="checkbox" class="switch" data-k="${k}" ${v ? "checked" : ""}>`;
+    case "off": return `<input type="checkbox" class="switch" data-k="${k}" ${v === false ? "checked" : ""}>`;
+    case "num": return `<input type="number" data-k="${k}" value="${esc(where(r).t[r.k] ?? "")}" placeholder="${esc(where(r).base ?? "Auto")}">`;
+    case "text": case "list": {
+      const own = where(r).t[r.k];
+      return `<input type="text" data-k="${k}" value="${esc(Array.isArray(own) ? own.join(" ") : own ?? "")}" placeholder="${esc(ctxt.inherited[r.k] ?? "Default")}">`;
+    }
+    case "select": return `<select data-k="${k}">${r.o.map(([val, lab]) => `<option value="${esc(val)}" ${String(v) === val ? "selected" : ""}>${esc(lab)}</option>`).join("")}</select>`;
+    case "seg": return `<div class="segmented-control" data-k="${k}">${r.o.map(([val, lab]) => `<button type="button" class="segment ${String(v ?? "") === val ? "active" : ""}" data-v="${esc(val)}">${esc(lab)}</button>`).join("")}</div>`;
+    case "radio": return `<div class="preview-options" data-k="${k}">${r.o.map(([val, lab]) => `<button type="button" class="segment ${String(v) === val ? "active" : ""}" data-v="${esc(val)}">${esc(lab)}</button>`).join("")}</div>`;
+    case "realm": return `<div class="preview-options realm-grid" data-k="${k}">${r.o.map(([val, lab]) => `<button type="button" class="segment ${val === "auto" ? "realm-auto" : ""} ${String(v) === val ? "active" : ""}" data-v="${esc(val)}"><span class="realm-swatch" style="background-image:url(assets/tree-realm-${esc(val)}.webp)"></span>${esc(lab)}</button>`).join("")}</div>`;
+    case "mix": {
+      const w = Object.fromEntries(String(where(r).t[r.k] ?? ctxt.inherited[r.k] ?? "").split(",").filter(Boolean).map((x) => x.split("=")));
+      return `<div class="mix-list ${r.names.length > 5 ? "rows" : ""}" data-k="${k}">${r.names.map(([n, lab]) => `<label>${esc(lab)}<input type="number" min="0" max="200" step="5" data-size="${n}" value="${esc(w[n] ?? 100)}"></label>`).join("")}</div>`;
+    }
+    case "props": {
+      const own = where(r).t[r.k];
+      const mode = own === undefined ? "auto" : ["all", "none"].includes(own) ? own : "custom";
+      return `<div class="segmented-control" data-k="${k}" data-props="1">${o("auto=Auto;all=All;none=None;custom=Custom").map(([val, lab]) => `<button type="button" class="segment ${mode === val ? "active" : ""}" data-v="${val}">${lab}</button>`).join("")}</div>
+        <input type="text" data-k="${k}" data-custom="1" value="${mode === "custom" ? esc(own) : ""}" placeholder="boat,car,crane,…" style="${mode === "custom" ? "" : "display:none"};width:100%">`;
+    }
+  }
+  return "";
 }
+function tile(r) {
+  if (r.note) return `<div class="settings-notice">${esc(r.note)}</div>`;
+  if (r.bakes) return bakesHtml();
+  if (r.preview) return previewBlock(r);
+  if (r.project && !isProject()) return "";
+  const own = where(r).t[r.k] !== undefined;
+  const stack = ["radio", "realm", "mix", "props", "list"].includes(r.t) || (r.t === "text" && true) || (r.t === "seg" && r.o.length > 3);
+  const tipText = `${r.k}${r.run && isProject() ? ` ([run] ${r.run})` : ""}${r.d ? ": " + r.d : ""}`;
+  return `<div class="setting-tile ${stack ? "stack" : ""} ${own ? "is-set" : ""}" data-row="${esc(r.k)}"><div class="setting-label"><div class="setting-text">
+      <span class="setting-heading">${esc(r.l)}<span class="tooltip-icon" title="${esc(tipText)}">?</span></span>${r.d ? `<span class="setting-desc">${esc(r.d)}</span>` : ""}</div></div>
+    <div class="settings-control">${control(r)}</div></div>`;
+}
+function previewBlock(b) {
+  return `<div class="preview-block" data-preview="${SECTIONS_PREVIEWS.push(b) - 1}"><div class="preview-controls">${b.rows.map(tile).join("")}</div>
+    <figure class="preview-frame" style="margin:12px 0"><img alt="" src="assets/${esc(b.preview(eff))}.webp"></figure></div>`;
+}
+let SECTIONS_PREVIEWS = [];
+function updatePreviews() {
+  document.querySelectorAll("[data-preview]").forEach((el) => {
+    const img = el.querySelector("img"), src = `assets/${SECTIONS_PREVIEWS[el.dataset.preview].preview(eff)}.webp`;
+    if (!img.src.endsWith(src)) img.src = src;
+  });
+}
+function bakesHtml() {
+  const bakes = (cur && cur.model.bake) || [];
+  return `<div class="group-head">Bake Selection</div>
+    <div class="setting-desc">Cuts an extract once, before the builds that read it (the same PBF File and Geofabrik Extract).</div>
+    ${bakes.map((b, i) => `<div class="setting-tile stack"><div class="settings-control" style="flex-direction:column;align-items:stretch;gap:6px;width:100%">
+      <input type="text" data-bake="${i}" data-bk="id" value="${esc(b.id)}" placeholder="id" style="width:100%">
+      <input type="text" data-bake="${i}" data-bk="osm_pbf" value="${esc(b.osm_pbf)}" placeholder="osm_pbf: geofabrik or a path" style="width:100%">
+      <input type="text" data-bake="${i}" data-bk="osm_pbf_url" value="${esc(b.osm_pbf_url)}" placeholder="osm_pbf_url" style="width:100%">
+      <input type="text" data-bake="${i}" data-bk="bbox" value="${esc((b.bbox || []).join(","))}" placeholder="bbox: min_lat,min_lng,max_lat,max_lng (empty: around the selections)" style="width:100%">
+      <button class="small danger" data-unbake="${i}">${icon("trash")}Remove</button></div></div>`).join("")}
+    <button class="wide" id="bakeAdd">${icon("plus")}Add a Bake</button>`;
+}
+
 function renderSettings() {
-  if (!cur) { $("settingsForm").innerHTML = `<div class="stat">Open or create a project (Projects, on the left).</div>`; return; }
+  SECTIONS_PREVIEWS = [];
+  if (!cur) { $("settingsCards").innerHTML = `<div class="settings-notice">Open or create a project (Projects, on the left).</div>`; return; }
+  const open = new Set([...document.querySelectorAll("#settingsCards .card:not(.collapsed)")].map((c) => c.id));
+  const openGroups = new Set([...document.querySelectorAll("#settingsCards details[open]")].map((d) => d.dataset.g));
   const sel = (cur.model.selection || []).find((s) => s.id === target);
-  const table = sel ? (sel.settings = sel.settings || {}) : (cur.model.defaults = cur.model.defaults || {});
-  const inherited = sel ? cur.model.defaults || {} : {};
-  const known = new Set(SETTINGS.flatMap((g) => g.rows.map((r) => r[0])));
-  const other = options.filter((o) => !known.has(o.key)).map((o) => [o.key, o.key, o.switch ? "bool" : "text", "Arnis flag in snake case."]);
-  let html = "";
-  if (sel) {
-    html += `<label><span class="lt">Id</span><input data-sel="id" value="${esc(sel.id)}"></label>
-      <label><span class="lt">World${tip("The One World folder in the saves folder. Selections in one world extend it one after another.")}</span><input data-sel="world" value="${esc(sel.world)}"></label>`;
-  } else {
-    html += `<label><span class="lt">Name</span><input data-proj="name" value="${esc(cur.model.name)}"></label>
-      <label><span class="lt">Saves folder${tip("Where the worlds are built, relative to the project file.")}</span><input data-proj="output" value="${esc(cur.model.output)}"></label>`;
-  }
-  const run = (cur.model.run = cur.model.run || {});
-  for (const g of SETTINGS.concat(other.length ? [{ drawer: "Other Arnis settings", rows: other }] : [])) {
-    const rows = g.rows.map((r) => fieldHtml(r, table, inherited)).join("");
-    if (g.drawer) html += `<details class="drawer"><summary>${esc(g.drawer)}</summary><div class="dbody">${rows}</div></details>`;
-    else if (g.perf) html += `<div class="govhead">${esc(g.head)}</div>` + (sel ? "" : RUN.map((r) => fieldHtml(r, run, {}, "data-run")).join("") + `<div class="stat">Per selection, the share each job gets (overrides):</div>`) + rows;
-    else html += (g.head ? `<div class="grouphead">${esc(g.head)}</div>` : "") + rows;
-  }
-  if (cur.model.arnis) html += `<div class="stat">arnis = ${esc(cur.model.arnis)}: only an Arnis Meld installed or found, or one listed in trusted-executables.txt, runs.</div>`;
-  $("settingsForm").innerHTML = html;
-  $("settingsForm").querySelectorAll("[data-f],[data-run]").forEach((el) => (el.onchange = () => {
-    const key = el.dataset.f || el.dataset.run, into = el.dataset.run ? run : table;
-    cur.model.run = run;
-    const v = readField(el, inherited[key] ?? el.dataset.t === "on");
-    if (v === undefined) delete into[key]; else into[key] = v;
-    if (!Object.keys(run).length) delete cur.model.run;
-    saveSoon(`saved ${key}`);
+  ctxt = {
+    sel,
+    table: sel ? (sel.settings = sel.settings || {}) : (cur.model.defaults = cur.model.defaults || {}),
+    inherited: sel ? cur.model.defaults || {} : {},
+    run: (cur.model.run = cur.model.run || {}),
+  };
+  const head = sel
+    ? `<div class="setting-tile"><div class="setting-label"><div class="setting-text"><span class="setting-heading">Selection Id</span></div></div><div class="settings-control"><input type="text" data-sel="id" value="${esc(sel.id)}"></div></div>
+       <div class="setting-tile"><div class="setting-label"><div class="setting-text"><span class="setting-heading">World</span><span class="setting-desc">The One World folder; selections in one world extend it.</span></div></div><div class="settings-control"><input type="text" data-sel="world" value="${esc(sel.world)}"></div></div>`
+    : `<div class="setting-tile"><div class="setting-label"><div class="setting-text"><span class="setting-heading">Project Name</span></div></div><div class="settings-control"><input type="text" data-proj="name" value="${esc(cur.model.name)}"></div></div>
+       <div class="setting-tile"><div class="setting-label"><div class="setting-text"><span class="setting-heading">Saves Folder</span><span class="setting-desc">Where the worlds are built, relative to the project file.</span></div></div><div class="settings-control"><input type="text" data-proj="output" value="${esc(cur.model.output)}"></div></div>`;
+  const known = new Set(Object.keys(ROWS));
+  const other = options.filter((x) => !known.has(x.key)).map((x) => ({ k: x.key, l: x.key, t: x.switch ? "switch" : "text", def: x.switch ? false : undefined }));
+  other.forEach((r) => (ROWS[r.k] = r));
+  const html = SECTIONS.map((s) => {
+    let body = s.id === "world" ? head : "";
+    if (s.groups) {
+      body += s.groups.map((g, gi) => {
+        const inner = g.sub ? g.sub.map((x, xi) => `<details class="group" data-g="${s.id}-${gi}-${xi}" ${openGroups.has(`${s.id}-${gi}-${xi}`) ? "open" : ""}><summary>${esc(x.title)}</summary><div class="card-body">${x.rows.map(tile).join("")}</div></details>`).join("")
+          : g.rows.map(tile).join("");
+        return `<details class="group" data-g="${s.id}-${gi}" ${openGroups.has(`${s.id}-${gi}`) ? "open" : ""}><summary><span>${esc(g.title)}${g.desc ? `<br><span class="sdesc">${esc(g.desc)}</span>` : ""}</span></summary><div class="card-body">${inner}</div></details>`;
+      }).join("");
+      if (other.length) body += `<details class="group"><summary>Other Arnis Settings</summary><div class="card-body">${other.map(tile).join("")}</div></details>`;
+    } else body += s.rows.map(tile).join("");
+    if (s.id === "features") body = `<div class="settings-notice">Meld always builds One Worlds in pieces, so Arnis's Extra Features are always on.</div>` + body;
+    return sectionCard(s, body).replace(`class="card collapsed" id="card-${s.id}"`, `class="card ${open.has(`card-${s.id}`) ? "" : "collapsed"}" id="card-${s.id}"`);
+  }).join("");
+  $("settingsCards").innerHTML = html;
+  wire();
+  search();
+}
+function setVal(r, v) {
+  const w = where(r);
+  if (v === undefined || v === "" || (typeof v === "number" && Number.isNaN(v)) || v === w.base || String(v) === String(w.base ?? "\u0000")) delete w.t[r.k];
+  else w.t[r.k] = v;
+  if (!Object.keys(ctxt.run).length) delete cur.model.run; else cur.model.run = ctxt.run;
+  const t = document.querySelector(`[data-row="${CSS.escape(r.k)}"]`);
+  if (t) t.classList.toggle("is-set", w.t[r.k] !== undefined);
+  updatePreviews();
+  saveSoon(`saved ${r.l}`);
+}
+const typed = (r, raw) => (typeof r.def === "number" || r.t === "num") && raw !== "" && !Number.isNaN(Number(raw)) ? Number(raw) : raw === "true" ? true : raw === "false" ? false : raw;
+function wire() {
+  const root = $("settingsCards");
+  root.querySelectorAll("input.switch[data-k]").forEach((el) => (el.onchange = () => { const r = ROWS[el.dataset.k]; setVal(r, r.t === "off" ? !el.checked : el.checked); }));
+  root.querySelectorAll("input[type=number][data-k], input[type=text][data-k]:not([data-custom])").forEach((el) => (el.onchange = () => {
+    const r = ROWS[el.dataset.k], raw = el.value.trim();
+    setVal(r, r.t === "list" ? (raw ? raw.split(/\s+/) : undefined) : raw === "" ? undefined : typed(r, raw));
   }));
-  $("settingsForm").querySelectorAll("[data-sel]").forEach((el) => (el.onchange = () => {
+  root.querySelectorAll("select[data-k]").forEach((el) => (el.onchange = () => setVal(ROWS[el.dataset.k], typed(ROWS[el.dataset.k], el.value))));
+  root.querySelectorAll(".segmented-control[data-k], .preview-options[data-k]").forEach((g) => g.addEventListener("click", (e) => {
+    const b = e.target.closest(".segment");
+    if (!b) return;
+    g.querySelectorAll(".segment").forEach((x) => x.classList.toggle("active", x === b));
+    const r = ROWS[g.dataset.k];
+    if (g.dataset.props) {
+      const custom = g.parentElement.querySelector("[data-custom]");
+      custom.style.display = b.dataset.v === "custom" ? "" : "none";
+      if (b.dataset.v !== "custom") setVal(r, b.dataset.v === "auto" ? undefined : b.dataset.v);
+      return;
+    }
+    setVal(r, typed(r, b.dataset.v));
+  }));
+  root.querySelectorAll("[data-custom]").forEach((el) => (el.onchange = () => setVal(ROWS[el.dataset.k], el.value.trim() || undefined)));
+  root.querySelectorAll(".mix-list[data-k]").forEach((g) => (g.onchange = () => {
+    const parts = [...g.querySelectorAll("[data-size]")].filter((i) => i.value !== "" && Number(i.value) !== 100).map((i) => `${i.dataset.size}=${Number(i.value)}`);
+    setVal(ROWS[g.dataset.k], parts.join(",") || undefined);
+  }));
+  root.querySelectorAll("[data-sel]").forEach((el) => (el.onchange = () => {
     const v = el.value.trim();
     if (el.dataset.sel === "id") {
       if (!/^[A-Za-z0-9_-]+$/.test(v)) return say("saveMsg", "Ids use letters, digits, - and _.", true);
-      sel.id = v; target = v;
+      ctxt.sel.id = v; target = v;
       saveModel(`renamed to ${v}`, true);
-    } else { sel.world = v; saveSoon("saved world"); }
+    } else { ctxt.sel.world = v; saveSoon("saved world"); }
   }));
-  $("settingsForm").querySelectorAll("[data-proj]").forEach((el) => (el.onchange = () => { cur.model[el.dataset.proj] = el.value.trim(); saveSoon("saved"); }));
-  search();
+  root.querySelectorAll("[data-proj]").forEach((el) => (el.onchange = () => { cur.model[el.dataset.proj] = el.value.trim(); saveSoon("saved"); }));
+  root.querySelectorAll("[data-bake]").forEach((el) => (el.onchange = () => {
+    const b = cur.model.bake[el.dataset.bake], v = el.value.trim();
+    if (el.dataset.bk === "bbox") { if (v) b.bbox = v.split(",").map(Number); else delete b.bbox; }
+    else if (v) b[el.dataset.bk] = v; else delete b[el.dataset.bk];
+    saveSoon("saved the bake");
+  }));
+  root.querySelectorAll("[data-unbake]").forEach((el) => (el.onclick = () => { cur.model.bake.splice(Number(el.dataset.unbake), 1); if (!cur.model.bake.length) delete cur.model.bake; saveModel("removed the bake", true); }));
+  const add = $("bakeAdd");
+  if (add) add.onclick = () => {
+    const d = cur.model.defaults || {};
+    (cur.model.bake = cur.model.bake || []).push({ id: `bake${cur.model.bake.length + 1}`, osm_pbf: d.osm_pbf || "geofabrik", ...(d.osm_pbf_url ? { osm_pbf_url: d.osm_pbf_url } : {}) });
+    saveModel("added a bake", true);
+  };
 }
 
-// Settings search: highlight matching rows, open their cards and drawers.
+// Settings search: highlight matching rows and open their cards and groups.
 function search() {
   const q = $("railSearch").value.trim().toLowerCase();
   document.querySelectorAll("#side .search-hit").forEach((el) => el.classList.remove("search-hit"));
   if (!q) return;
   let first = null;
-  document.querySelectorAll("#side label").forEach((el) => {
-    if (!el.textContent.toLowerCase().includes(q) && !(el.dataset.key || "").includes(q)) return;
+  document.querySelectorAll("#settingsCards .setting-tile").forEach((el) => {
+    if (!el.textContent.toLowerCase().includes(q) && !(el.dataset.row || "").includes(q)) return;
     el.classList.add("search-hit");
-    const d = el.closest("details"); if (d) d.open = true;
+    let d = el.closest("details");
+    while (d) { d.open = true; d = d.parentElement.closest("details"); }
     const c = el.closest(".card"); if (c) c.classList.remove("collapsed");
     first = first || el;
   });
   if (first) first.scrollIntoView({ block: "center" });
 }
 $("railSearch").oninput = search;
-document.querySelectorAll("#side .card > h2").forEach((h) => (h.onclick = () => h.parentElement.classList.toggle("collapsed")));
 
 // ---- selections / worlds ----
 function renderSelections() {
   const sels = (cur && cur.model.selection) || [];
   $("selList").innerHTML = sels.map((s) => {
     const st = selStatus(s);
-    return `<div class="wrow ${s.id === target ? "on" : ""}" data-pick="${esc(s.id)}"><span><i class="dot" style="background:${colour[st]}"></i> <b>${esc(s.id)}</b> · ${esc(s.world)} · ${s.polygon ? `polygon, ${partsOf(s).length} part(s)` : "bbox"}</span>
-      <span class="row"><span class="stat">${st}</span><button class="sec small" data-del="${esc(s.id)}" title="Delete"><svg class="icon" style="margin:0"><use href="#i-trash"/></svg></button></span></div>`;
+    return `<div class="wrow ${s.id === target ? "on" : ""}" data-pick="${esc(s.id)}"><span><i class="dot" style="background:${colour[st]}"></i><b>${esc(s.id)}</b> · ${esc(s.world)} · ${s.polygon ? `polygon, ${partsOf(s).length} part(s)` : "bbox"}</span>
+      <span class="stat">${st}</span><button class="icon-only danger" data-del="${esc(s.id)}" title="Delete">${icon("trash")}</button></div>`;
   }).join("") || `<div class="stat">No selections yet.</div>`;
 }
 $("selList").addEventListener("click", (e) => {
@@ -640,30 +964,6 @@ $("selList").addEventListener("click", (e) => {
     if (ls.length) map.fitBounds(L.featureGroup(ls).getBounds(), { maxZoom: 15, padding: [60, 60] });
   }
 });
-
-// ---- prepare data: [[bake]] ----
-function renderBakes() {
-  const bakes = (cur && cur.model.bake) || [];
-  $("bakeList").innerHTML = bakes.map((b, i) => `<div style="border-bottom:1px solid var(--line);padding:4px 0">
-    <label><span class="lt">Id</span><input data-bake="${i}" data-k="id" value="${esc(b.id)}"></label>
-    <label><span class="lt">osm_pbf</span><input data-bake="${i}" data-k="osm_pbf" value="${esc(b.osm_pbf)}" style="width:170px"></label>
-    <label><span class="lt">osm_pbf_url</span><input data-bake="${i}" data-k="osm_pbf_url" value="${esc(b.osm_pbf_url)}" style="width:170px"></label>
-    <label><span class="lt">bbox${tip("min_lat,min_lng,max_lat,max_lng; blank: around the selections that read it")}</span><input data-bake="${i}" data-k="bbox" value="${esc((b.bbox || []).join(","))}" style="width:170px"></label>
-    <button class="sec small" data-unbake="${i}">${icon("trash")}Remove</button></div>`).join("");
-  $("bakeList").querySelectorAll("[data-bake]").forEach((el) => (el.onchange = () => {
-    const b = cur.model.bake[el.dataset.bake], v = el.value.trim();
-    if (el.dataset.k === "bbox") { if (v) b.bbox = v.split(",").map(Number); else delete b.bbox; }
-    else if (v) b[el.dataset.k] = v; else delete b[el.dataset.k];
-    saveSoon("saved the bake");
-  }));
-  $("bakeList").querySelectorAll("[data-unbake]").forEach((el) => (el.onclick = () => { cur.model.bake.splice(Number(el.dataset.unbake), 1); if (!cur.model.bake.length) delete cur.model.bake; saveModel("removed the bake"); }));
-}
-$("bakeAdd").onclick = () => {
-  if (!cur) return;
-  const d = cur.model.defaults || {};
-  (cur.model.bake = cur.model.bake || []).push({ id: `bake${cur.model.bake.length + 1}`, osm_pbf: d.osm_pbf || "geofabrik", ...(d.osm_pbf_url ? { osm_pbf_url: d.osm_pbf_url } : {}) });
-  saveModel("added a bake");
-};
 
 // ---- generate ----
 $("btnRun").onclick = () => run("");
@@ -683,19 +983,19 @@ $("btnPlan").onclick = async () => {
     renderBuild();
   } catch (e) { $("planOut").textContent = e.message; }
 };
-
 const dur = (s) => (s >= 3600 ? `${Math.floor(s / 3600)} h ${Math.round((s % 3600) / 60)} min` : s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
 // The left rail: size, disk, progress across the project, ETA, workers.
 function renderBuild() {
   if (!cur) return;
   const sels = cur.model.selection || [];
-  $("projLine").innerHTML = `Project <b>${esc(cur.model.name)}</b> · ${sels.length} selection(s)${cur.running ? ' · <span style="color:var(--acc)">running</span>' : ""}`;
+  $("projLine").innerHTML = `<b>${esc(cur.model.name)}</b> · ${sels.length} selection(s)${cur.running ? ' · <span style="color:var(--ui-accent)">running</span>' : ""}`;
+  if (!lastPlan) { $("estSize").textContent = "–"; $("estSub").textContent = "Plan to see the pieces and size."; $("diskLine").textContent = ""; }
   if (lastPlan) {
     $("estSize").textContent = lastPlan.need_mb >= 1024 ? `${(lastPlan.need_mb / 1024).toFixed(1)} GB` : `${lastPlan.need_mb.toFixed(0)} MB`;
     const pieces = lastPlan.selections.reduce((n, s) => n + s.pieces, 0);
     const chunks = lastPlan.selections.reduce((n, s) => n + s.todo_chunks, 0);
     $("estSub").textContent = `${pieces} pieces · ${chunks.toLocaleString()} chunks to build`;
-    $("diskLine").innerHTML = `disk <b style="color:${lastPlan.disk === "short" ? "var(--bad)" : lastPlan.disk === "tight" ? "var(--acc)" : "var(--ok)"}">${esc(lastPlan.disk)}</b> · ${(lastPlan.free_mb / 1024).toFixed(0)} GB free`;
+    $("diskLine").innerHTML = `disk <b style="color:${lastPlan.disk === "short" ? "var(--ui-danger)" : lastPlan.disk === "tight" ? "var(--ui-accent)" : "var(--ok)"}">${esc(lastPlan.disk)}</b> · ${(lastPlan.free_mb / 1024).toFixed(0)} GB free`;
   }
   // Every step's pieces, weighted by its live percentage.
   const L = live[cur.name] || {};
@@ -724,13 +1024,14 @@ function renderBuild() {
   const rows = Object.entries(L).sort(([, a], [, b]) => (b.status === "running") - (a.status === "running"));
   const running = rows.filter(([, l]) => l.status === "running").length;
   $("workersCount").textContent = running ? `${running} running` : "idle";
+  $("workersCount").className = "chip" + (running ? " on" : "");
   $("workersState").innerHTML = rows.length ? rows.map(([id, l]) => {
     const pieces = l.pieces || {};
     const strip = l.of ? `<div class="pieces">${Array.from({ length: Math.min(l.of, 300) }, (_, i) => `<i class="${pieces[i] || ""}" title="piece ${i + 1}${pieces[i] ? ": " + pieces[i] : ""}"></i>`).join("")}</div>` : "";
     const pd = Object.values(pieces).filter((x) => x === "done" || x === "skipped").length;
     const cls = l.status === "done" || l.status === "skipped" ? "ok" : l.status === "failed" ? "bad" : "";
     return `<div class="wjob"><div class="wnum ${esc(l.status)}">${l.of ? `${pd}/${l.of}` : "–"}</div><div class="wjbody">
-      <div class="wjtop"><span class="wjkey">${esc(id)}</span><span class="wjpct">${(l.pct || 0).toFixed(1)}%</span></div>
+      <div class="wjtop"><span>${esc(id)}</span><span class="wjpct">${(l.pct || 0).toFixed(1)}%</span></div>
       <div class="bar"><i class="${cls}" style="width:${Math.min(100, l.pct || 0)}%"></i></div>
       <div class="wjmsg">${esc(l.status)}${l.msg ? " · " + esc(l.msg) : ""}${l.error ? ` · <span class="bad">${esc(l.error)}</span>` : ""}</div>${strip}</div></div>`;
   }).join("") : `<div class="stat">Idle. Generate to see live workers here.</div>`;
@@ -744,18 +1045,18 @@ $("tomlSave").onclick = async () => {
 
 // ---- server ----
 const SRV = [
-  ["flavor", "Flavor", ["leaf", "paper"], "Leaf reads B_Linear."],
-  ["version", "Minecraft version", "text", "B_Linear needs Leaf 1.21.11 or newer."],
-  ["format", "Region format", ["mca", "blinear"], "blinear converts each world after its build and serves the copy."],
-  ["dir", "Server folder", "text", "Relative to the project file."],
-  ["ip", "IP", "text", ""],
-  ["port", "Port", "num", ""],
-  ["ram_mb", "RAM MB", "num", ""],
-  ["link", "Link worlds (no copy)", "on", "A junction or symlink; off copies the worlds."],
-  ["worlds", "Worlds", "csv", "Blank: every world, the first as the main level."],
-  ["plugins", "Plugins", "csv", "Modrinth slugs; slug@version pins a build."],
-  ["datapacks", "Datapacks", "csv", "Zips or folders for the main level."],
-  ["motd", "MOTD", "text", ""],
+  ["flavor", "Flavor", "Leaf reads B_Linear.", "seg", o("leaf=Leaf;paper=Paper"), "leaf"],
+  ["version", "Minecraft Version", "B_Linear needs Leaf 1.21.11 or newer.", "text", null, "1.21.11"],
+  ["format", "Region Format", "B_Linear converts each world after its build and serves the copy.", "seg", o("mca=Anvil;blinear=B_Linear"), "mca"],
+  ["dir", "Server Folder", "Relative to the project file.", "text", null, "server"],
+  ["ip", "IP", "", "text", null, "127.0.0.1"],
+  ["port", "Port", "", "num", null, 25565],
+  ["ram_mb", "Memory (MB)", "", "num", null, 4096],
+  ["link", "Link Worlds", "A junction or symlink; off copies the worlds.", "switch", null, true],
+  ["worlds", "Worlds", "Comma separated. Empty: every world, the first as the main level.", "csv"],
+  ["plugins", "Plugins", "Modrinth slugs, comma separated; slug@version pins a build.", "csv"],
+  ["datapacks", "Datapacks", "Zips or folders for the main level, comma separated.", "csv"],
+  ["motd", "MOTD", "", "text", null, "A Meld world"],
 ];
 let srvTimer = null;
 async function serverBody() {
@@ -763,36 +1064,45 @@ async function serverBody() {
   if (!cur) { $("serverBody").innerHTML = `<div class="stat">Open a project first.</div>`; return; }
   const name = cur.name, conf = cur.model.server;
   if (!conf) {
-    $("serverBody").innerHTML = `<div class="stat">A Leaf or Paper server for this project's worlds. Nothing is set up yet.</div><button class="sec" id="srvAdd">${icon("plus")}Add a server</button>`;
+    $("serverBody").innerHTML = `<div class="setting-desc">A Leaf or Paper server for this project's worlds. Nothing is set up yet.</div><button class="wide" id="srvAdd">${icon("plus")}Add a Server</button>`;
     $("srvAdd").onclick = async () => { cur.model.server = {}; await saveModel("added [server]"); serverBody(); };
     return;
   }
-  const fields = SRV.map(([k, label, t, help]) => {
+  const fields = SRV.map(([k, label, d, t, opts, def]) => {
     const v = conf[k];
-    const lab = `<span class="lt">${esc(label)}${tip(help)}</span>`;
-    if (Array.isArray(t)) return `<label>${lab}<select data-srv="${k}">${t.map((o) => `<option ${v === o ? "selected" : ""}>${o}</option>`).join("")}</select></label>`;
-    if (t === "on") return `<label>${lab}<input type="checkbox" data-srv="${k}" data-t="on" ${v ?? true ? "checked" : ""}></label>`;
-    return `<label>${lab}<input data-srv="${k}" data-t="${t}" value="${esc(t === "csv" ? (v || []).join(", ") : v ?? "")}" placeholder="default"></label>`;
+    let c;
+    if (t === "seg") c = `<div class="segmented-control" data-srv="${k}">${opts.map(([val, lab]) => `<button type="button" class="segment ${(v ?? def) === val ? "active" : ""}" data-v="${val}">${lab}</button>`).join("")}</div>`;
+    else if (t === "switch") c = `<input type="checkbox" class="switch" data-srv="${k}" data-t="on" ${v ?? def ? "checked" : ""}>`;
+    else c = `<input type="${t === "num" ? "number" : "text"}" data-srv="${k}" data-t="${t}" value="${esc(t === "csv" ? (v || []).join(", ") : v ?? "")}" placeholder="${esc(def ?? "")}">`;
+    return `<div class="setting-tile ${t === "csv" ? "stack" : ""}"><div class="setting-label"><div class="setting-text"><span class="setting-heading">${esc(label)}</span>${d ? `<span class="setting-desc">${esc(d)}</span>` : ""}</div></div><div class="settings-control">${c}</div></div>`;
   }).join("");
   const worlds = [...new Set((cur.model.selection || []).map((s) => s.world))];
-  $("serverBody").innerHTML = `<details class="drawer"><summary>Server settings</summary><div class="dbody">${fields}
-      ${conf.java ? `<div class="stat">java = ${esc(conf.java)}: must be a Java Meld finds, or one in trusted-executables.txt.</div>` : ""}</div></details>
+  $("serverBody").innerHTML = `<details class="group"><summary>Server Settings</summary><div class="card-body">${fields}
+      ${conf.java ? `<div class="settings-notice">java = ${esc(conf.java)}: it must be a Java Meld finds, or one listed in trusted-executables.txt.</div>` : ""}</div></details>
     <div class="stat" id="srvState">…</div>
-    <label style="justify-content:flex-start"><input type="checkbox" id="srvEula"> <span>I accept the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener">Minecraft EULA</a></span></label>
-    <button class="sec" id="srvSetup">${icon("download")}Set up</button>
-    <div class="row" style="margin-top:6px"><button class="go" id="srvStart">${icon("play")}Start</button><button class="sec" id="srvStop">${icon("square")}Stop</button></div>
+    <div class="setting-tile"><div class="setting-label"><div class="setting-text"><span class="setting-heading">Minecraft EULA</span><span class="setting-desc">I accept the <a href="https://aka.ms/MinecraftEULA" target="_blank" rel="noopener">Minecraft EULA</a>.</span></div></div><div class="settings-control"><input type="checkbox" class="switch" id="srvEula"></div></div>
+    <button class="wide" id="srvSetup">${icon("download")}Set Up</button>
+    <div class="row"><button class="primary" id="srvStart">${icon("play")}Start</button><button id="srvStop">${icon("square")}Stop</button></div>
     <div class="msg" id="srvMsg"></div>
     <pre class="console" id="console"></pre>
-    <div class="row"><input id="srvCmd" placeholder="console command, e.g. say hi" style="flex:1;width:auto"><button class="sec small" id="srvSend" style="padding:5px 10px">Send</button></div>
-    <div class="govhead">Back up</div>
-    <div class="stat">A world as a zip in exports/ beside the project, after a disk check. Send save-all first while it runs.</div>
-    ${worlds.map((w) => `<button class="sec" data-export="${esc(w)}">${icon("hard-drive")}${esc(w)}</button>`).join("")}
+    <div class="row"><input id="srvCmd" type="text" placeholder="Console command, e.g. say hi" style="flex:1;width:auto"><button id="srvSend" style="flex:none">Send</button></div>
+    <div class="group-head">Back Up</div>
+    <div class="setting-desc">A world as a zip in exports/ beside the project, after a disk check. Send save-all first while it runs.</div>
+    ${worlds.map((w) => `<button class="wide" data-export="${esc(w)}">${icon("hard-drive")}${esc(w)}</button>`).join("")}
     <div class="msg" id="exportMsg"></div>`;
-  $("serverBody").querySelectorAll("[data-srv]").forEach((el) => (el.onchange = () => {
+  const body = $("serverBody");
+  body.querySelectorAll("input[data-srv]").forEach((el) => (el.onchange = () => {
     const k = el.dataset.srv, t = el.dataset.t, raw = el.value.trim();
     const v = t === "on" ? (el.checked ? undefined : false) : t === "csv" ? (raw ? raw.split(",").map((x) => x.trim()).filter(Boolean) : undefined) : t === "num" ? (raw ? Number(raw) : undefined) : raw || undefined;
     if (v === undefined) delete conf[k]; else conf[k] = v;
     saveSoon(`saved server ${k}`);
+  }));
+  body.querySelectorAll(".segmented-control[data-srv]").forEach((g) => g.addEventListener("click", (e) => {
+    const b = e.target.closest(".segment");
+    if (!b) return;
+    g.querySelectorAll(".segment").forEach((x) => x.classList.toggle("active", x === b));
+    conf[g.dataset.srv] = b.dataset.v;
+    saveSoon(`saved server ${g.dataset.srv}`);
   }));
   const act = (what, path) => async () => {
     say("srvMsg", `${what}…`);
@@ -813,7 +1123,7 @@ async function serverBody() {
   };
   $("srvSend").onclick = send;
   $("srvCmd").onkeydown = (e) => { if (e.key === "Enter") send(); };
-  $("serverBody").querySelectorAll("[data-export]").forEach((b) => (b.onclick = async () => {
+  body.querySelectorAll("[data-export]").forEach((b) => (b.onclick = async () => {
     say("exportMsg", `zipping ${b.dataset.export}…`);
     try { const r = await post(`/api/projects/${name}/export?world=${encodeURIComponent(b.dataset.export)}`); say("exportMsg", `${r.path}: ${r.files} files, ${(r.zip_bytes / 1e6).toFixed(1)} MB`); }
     catch (e) { say("exportMsg", e.message, true); }
@@ -850,9 +1160,8 @@ async function arnisCard() {
     ${a.found ? `<div class="stat">Found as: <b>${esc(a.source)}</b></div>` : ""}
     <div class="stat">Version: ${a.version ? `<b>${esc(a.version)}</b> <span class="good">ok</span>` : a.error ? `<span class="bad">${esc(a.error)}</span>` : "–"}</div>
     <div class="stat">Pinned: <b>${esc(pin.repo)} v${esc(pin.version)}</b> (needs ${esc(pin.min)} or newer)</div>
-    ${a.caps ? `<details class="drawer"><summary>Capabilities (${a.caps.length})</summary><div class="stat">${a.caps.map((c) => (pin.required.includes(c) ? `<b style="color:var(--acc)">${esc(c)}</b>` : esc(c))).join(" · ")}</div><div class="stat">Gold: what Meld needs on every run.</div></details>` : ""}
-    <button class="sec" id="arnisInstall">${icon("download")}Install v${esc(pin.version)}</button>
-    <button class="sec" id="arnisRefresh">${icon("refresh")}Refresh</button>
+    ${a.caps ? `<details class="group"><summary>Capabilities (${a.caps.length})</summary><div class="stat">${a.caps.map((c) => (pin.required.includes(c) ? `<b style="color:var(--ui-accent)">${esc(c)}</b>` : esc(c))).join(" · ")}</div><div class="stat">Yellow: what Meld needs on every run.</div></details>` : ""}
+    <div class="row"><button class="primary" id="arnisInstall">${icon("download")}Install v${esc(pin.version)}</button><button id="arnisRefresh" style="flex:none">${icon("refresh")}Refresh</button></div>
     <div class="msg" id="arnisMsg"></div>`;
   $("arnisRefresh").onclick = arnisCard;
   $("arnisInstall").onclick = async () => {
@@ -906,8 +1215,8 @@ function onEvent(e) {
   later();
 }
 const es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
-es.onopen = () => ($("conn").textContent = "live");
-es.onerror = () => ($("conn").textContent = "reconnecting…");
+es.onopen = () => { $("conn").textContent = "live"; $("conn").className = "chip on"; };
+es.onerror = () => { $("conn").textContent = "reconnecting…"; $("conn").className = "chip"; };
 es.onmessage = (m) => onEvent(JSON.parse(m.data));
 
 function route() {
@@ -916,9 +1225,10 @@ function route() {
   else { $("projOverlay").classList.add("on"); listProjects(); renderSettings(); }
 }
 window.addEventListener("hashchange", route);
-api("/api/options").then((o) => { options = o; if (cur) renderSettings(); }, () => {});
+api("/api/options").then((x) => { options = x; if (cur) renderSettings(); }, () => {});
 arnisCard();
 route();
+
 </script>
 </body>
 </html>

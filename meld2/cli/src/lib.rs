@@ -11,6 +11,7 @@ use meld_core::report::Report;
 use meld_core::state::{self, State};
 use std::path::{Path, PathBuf};
 
+mod assets;
 pub mod serve;
 
 /// Finds (or downloads) Arnis and checks its version and capabilities.
